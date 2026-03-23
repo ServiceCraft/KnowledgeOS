@@ -107,7 +107,9 @@ export function QAListPage() {
         />
         <Select value={themeId} onValueChange={(v) => { setThemeId(v ?? ''); setPage(1); }}>
           <SelectTrigger className="w-48">
-            <SelectValue placeholder="Все темы" />
+            <SelectValue placeholder="Все темы">
+              {themeId ? themes.find((t) => t.id === themeId)?.name ?? 'Все темы' : 'Все темы'}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="">Все темы</SelectItem>
@@ -120,7 +122,9 @@ export function QAListPage() {
         </Select>
         <Select value={isFaq} onValueChange={(v) => { setIsFaq(v ?? ''); setPage(1); }}>
           <SelectTrigger className="w-36">
-            <SelectValue placeholder="Все" />
+            <SelectValue placeholder="Все">
+              {isFaq === 'true' ? 'Только FAQ' : isFaq === 'false' ? 'Не FAQ' : 'Все'}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="">Все</SelectItem>
@@ -223,7 +227,9 @@ export function QAListPage() {
               <Label htmlFor="theme">Тема</Label>
               <Select value={newThemeId} onValueChange={(v) => setNewThemeId(v ?? '')}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Без темы" />
+                  <SelectValue placeholder="Без темы">
+                    {newThemeId ? themes.find((t) => t.id === newThemeId)?.name ?? 'Без темы' : 'Без темы'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Без темы</SelectItem>

@@ -27,6 +27,11 @@ import type { Company } from '@/types';
 import { toast } from 'sonner';
 
 const TIERS = ['local', 'cloud', 'enterprise'];
+const TIER_LABELS: Record<string, string> = {
+  local: 'Локальный',
+  cloud: 'Облако',
+  enterprise: 'Корпоративный',
+};
 
 export function CompaniesPage() {
   const [page, setPage] = useState(1);
@@ -180,12 +185,12 @@ export function CompaniesPage() {
               <Label>Тариф</Label>
               <Select value={formTier} onValueChange={(v) => v && setFormTier(v)}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>{TIER_LABELS[formTier] ?? formTier}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {TIERS.map((t) => (
-                    <SelectItem key={t} value={t} className="capitalize">
-                      {t}
+                    <SelectItem key={t} value={t}>
+                      {TIER_LABELS[t] ?? t}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -235,12 +240,12 @@ export function CompaniesPage() {
               <Label>Тариф</Label>
               <Select value={formTier} onValueChange={(v) => v && setFormTier(v)}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>{TIER_LABELS[formTier] ?? formTier}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {TIERS.map((t) => (
-                    <SelectItem key={t} value={t} className="capitalize">
-                      {t}
+                    <SelectItem key={t} value={t}>
+                      {TIER_LABELS[t] ?? t}
                     </SelectItem>
                   ))}
                 </SelectContent>

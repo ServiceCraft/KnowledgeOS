@@ -5,6 +5,12 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ChevronRight, Pencil, Trash2, Plus } from 'lucide-react';
 import type { PricingNode } from '@/types';
 
+const NODE_TYPE_LABELS: Record<string, string> = {
+  category: 'Категория',
+  service: 'Услуга',
+  option: 'Опция',
+};
+
 interface TreeNode extends PricingNode {
   children: TreeNode[];
 }
@@ -43,8 +49,8 @@ export function PricingNodeItem({
             <div className="w-6" />
           )}
 
-          <Badge variant="outline" className="text-xs capitalize">
-            {node.node_type}
+          <Badge variant="outline" className="text-xs">
+            {NODE_TYPE_LABELS[node.node_type] ?? node.node_type}
           </Badge>
           <span className="font-medium text-sm flex-1">{node.name}</span>
           {node.price != null && (

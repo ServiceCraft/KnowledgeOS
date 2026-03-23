@@ -88,7 +88,7 @@ export function PricingNodeForm({
             <Label htmlFor="nodeType">Тип</Label>
             <Select value={nodeType} onValueChange={(v) => v && setNodeType(v)}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue>{NODE_TYPE_LABELS[nodeType] ?? nodeType}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {NODE_TYPES.map((t) => (
@@ -114,7 +114,9 @@ export function PricingNodeForm({
             <Label htmlFor="parent">Родительский узел</Label>
             <Select value={selectedParentId} onValueChange={(v) => setSelectedParentId(v ?? '')}>
               <SelectTrigger>
-                <SelectValue placeholder="Нет (корневой)" />
+                <SelectValue placeholder="Нет (корневой)">
+                  {selectedParentId ? nodes.find((n) => n.id === selectedParentId)?.name ?? 'Нет (корневой)' : 'Нет (корневой)'}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">Нет (корневой)</SelectItem>

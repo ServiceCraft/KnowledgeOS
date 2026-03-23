@@ -68,7 +68,7 @@ func main() {
 		Comment: handler.NewCommentHandler(commentSvc),
 		Link:    handler.NewLinkHandler(linkSvc),
 		Search:  handler.NewSearchHandler(searchSvc),
-		Export:  handler.NewExportHandler(exportSvc),
+		Export:  handler.NewExportHandler(exportSvc, userStore),
 		Sync:    handler.NewSyncHandler(syncSvc),
 		Admin:   handler.NewAdminHandler(adminSvc),
 	}
