@@ -29,18 +29,20 @@ export function QADetailPage() {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [isFaq, setIsFaq] = useState(false);
+  const [frequency, setFrequency] = useState(0);
 
   const startEditing = () => {
     if (!qa) return;
     setQuestion(qa.question);
-    setAnswer(qa.answer);
+    setAnswer(qa.answer || '');
     setIsFaq(qa.is_faq);
+    setFrequency(qa.frequency);
     setEditing(true);
   };
 
   const handleSave = () => {
     updateQA.mutate(
-      { id: id!, data: { question, answer, is_faq: isFaq } },
+      { id: id!, data: { question, answer, is_faq: isFaq, frequency } },
       {
         onSuccess: () => {
           setEditing(false);
@@ -116,9 +118,11 @@ export function QADetailPage() {
         </CardHeader>
         <CardContent>
           {editing ? (
-            <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} rows={6} />
-          ) : (
+            <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} rows={6} placeholder="Введите ответ..." />
+          ) : qa.answer ? (
             <p className="whitespace-pre-wrap">{qa.answer}</p>
+          ) : (
+            <p className="text-muted-foreground italic">Нет ответа</p>
           )}
         </CardContent>
       </Card>
@@ -139,6 +143,21 @@ export function QADetailPage() {
                 <Badge variant={qa.is_faq ? 'secondary' : 'outline'}>
                   {qa.is_faq ? 'Да' : 'Нет'}
                 </Badge>
+              )}
+            </div>
+            <Separator orientation="vertical" className="h-6" />
+            <div className="flex items-center gap-2">
+              <Label>Частота</Label>
+              {editing ? (
+                <Input
+                  type="number"
+                  min={0}
+                  value={frequency}
+                  onChange={(e) => setFrequency(Math.max(0, parseInt(e.target.value) || 0))}
+                  className="w-20 h-8"
+                />
+              ) : (
+                <Badge variant="outline">{qa.frequency}</Badge>
               )}
             </div>
             <Separator orientation="vertical" className="h-6" />

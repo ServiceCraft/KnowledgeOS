@@ -14,7 +14,6 @@ import {
 import {
   HelpCircle,
   BookOpen,
-  Tags,
   FileText,
   DollarSign,
   Search,
@@ -29,7 +28,6 @@ import { hasMinRole } from '@/lib/roles';
 
 const kbLinks = [
   { to: '/kb/qa', label: 'Вопросы и ответы', icon: HelpCircle },
-  { to: '/kb/themes', label: 'Темы', icon: Tags },
   { to: '/kb/articles', label: 'Статьи', icon: FileText },
   { to: '/kb/faq', label: 'FAQ', icon: MessageSquareQuote },
   { to: '/kb/pricing', label: 'Прайс', icon: DollarSign },

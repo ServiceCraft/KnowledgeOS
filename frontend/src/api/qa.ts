@@ -7,6 +7,7 @@ export interface QAFilter {
   query?: string;
   page?: number;
   limit?: number;
+  sort?: string;
 }
 
 export const qaApi = {

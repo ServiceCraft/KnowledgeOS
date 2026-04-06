@@ -9,6 +9,7 @@ type QAPair struct {
 	Answer       string     `gorm:"type:text;not null" json:"answer"`
 	IsFAQ        bool       `gorm:"not null;default:false" json:"is_faq"`
 	IsLocked     bool       `gorm:"not null;default:false" json:"is_locked"`
+	Frequency    int        `gorm:"not null;default:0" json:"frequency"`
 	SearchVector string     `gorm:"type:tsvector;->" json:"-"`
 }
 

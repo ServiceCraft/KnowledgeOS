@@ -202,7 +202,7 @@ export function UsersPage() {
               <Label htmlFor="role">Роль</Label>
               <Select value={formRole} onValueChange={(v) => v && setFormRole(v as Role)}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>{ROLE_LABELS[formRole as Role] ?? formRole}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {ROLES.map((r) => (

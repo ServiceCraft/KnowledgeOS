@@ -29,8 +29,8 @@ func paginate(page, limit int) func(db *gorm.DB) *gorm.DB {
 		if limit <= 0 {
 			limit = 50
 		}
-		if limit > 200 {
-			limit = 200
+		if limit > 10000 {
+			limit = 10000
 		}
 		if page <= 0 {
 			page = 1

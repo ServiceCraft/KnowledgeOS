@@ -37,7 +37,19 @@ func (s *QAStore) List(ctx context.Context, companyID uuid.UUID, filter domain.Q
 		return nil, 0, err
 	}
 
-	if err := q.Scopes(paginate(filter.Page, filter.Limit)).Order("created_at DESC").Find(&items).Error; err != nil {
+	orderClause := "created_at DESC"
+	switch filter.Sort {
+	case "frequency":
+		orderClause = "frequency ASC"
+	case "-frequency":
+		orderClause = "frequency DESC"
+	case "created_at":
+		orderClause = "created_at ASC"
+	case "-created_at":
+		orderClause = "created_at DESC"
+	}
+
+	if err := q.Scopes(paginate(filter.Page, filter.Limit)).Order(orderClause).Find(&items).Error; err != nil {
 		return nil, 0, err
 	}
 	return items, total, nil
@@ -72,7 +84,9 @@ func (s *QAStore) Update(ctx context.Context, companyID uuid.UUID, qa *domain.QA
 		}
 		qa.SyncVersion = seq
 		qa.SyncOrigin = s.origin
-		return tx.Model(qa).Scopes(tenantScope(companyID)).Where("id = ?", qa.ID).Updates(qa).Error
+		return tx.Model(qa).Scopes(tenantScope(companyID)).Where("id = ?", qa.ID).
+			Select("question", "answer", "is_faq", "is_locked", "frequency", "theme_id", "sync_version", "sync_origin", "updated_by").
+			Updates(qa).Error
 	})
 }
 

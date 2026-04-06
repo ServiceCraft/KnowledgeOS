@@ -36,6 +36,7 @@ func (h *QAHandler) List(w http.ResponseWriter, r *http.Request) {
 		val := faq == "true"
 		filter.IsFAQ = &val
 	}
+	filter.Sort = r.URL.Query().Get("sort")
 
 	items, total, err := h.svc.List(r.Context(), companyID, filter)
 	if err != nil {
@@ -89,19 +90,49 @@ func (h *QAHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var qa domain.QAPair
-	if err := Decode(r, &qa); err != nil {
+	var patch map[string]interface{}
+	if err := Decode(r, &patch); err != nil {
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	qa.ID = id
-	qa.UpdatedBy = &userID
 
-	if err := h.svc.Update(r.Context(), companyID, &qa); err != nil {
+	existing, err := h.svc.GetByID(r.Context(), companyID, id)
+	if err != nil {
+		Error(w, http.StatusNotFound, "qa pair not found")
+		return
+	}
+
+	if v, ok := patch["question"].(string); ok {
+		existing.Question = v
+	}
+	if v, ok := patch["answer"].(string); ok {
+		existing.Answer = v
+	}
+	if v, ok := patch["is_faq"].(bool); ok {
+		existing.IsFAQ = v
+	}
+	if v, ok := patch["is_locked"].(bool); ok {
+		existing.IsLocked = v
+	}
+	if v, ok := patch["frequency"].(float64); ok {
+		existing.Frequency = int(v)
+	}
+	if v, ok := patch["theme_id"].(string); ok {
+		tid, err := uuid.Parse(v)
+		if err == nil {
+			existing.ThemeID = &tid
+		}
+	}
+	if _, ok := patch["theme_id"]; ok && patch["theme_id"] == nil {
+		existing.ThemeID = nil
+	}
+	existing.UpdatedBy = &userID
+
+	if err := h.svc.Update(r.Context(), companyID, existing); err != nil {
 		Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	JSON(w, http.StatusOK, qa)
+	JSON(w, http.StatusOK, existing)
 }
 
 func (h *QAHandler) Delete(w http.ResponseWriter, r *http.Request) {

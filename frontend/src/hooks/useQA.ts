@@ -22,7 +22,10 @@ export function useCreateQA() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: qaApi.create,
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.qa.all }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.qa.all });
+      qc.refetchQueries({ queryKey: queryKeys.qa.all });
+    },
   });
 }
 
@@ -31,7 +34,10 @@ export function useUpdateQA() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Parameters<typeof qaApi.update>[1]> }) =>
       qaApi.update(id, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.qa.all }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.qa.all });
+      qc.refetchQueries({ queryKey: queryKeys.qa.all });
+    },
   });
 }
 

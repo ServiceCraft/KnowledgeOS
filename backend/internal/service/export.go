@@ -32,23 +32,23 @@ type ExportData struct {
 }
 
 func (s *ExportService) Export(ctx context.Context, companyID uuid.UUID) (*ExportData, error) {
-	bigLimit := domain.ThemeFilter{Page: 1, Limit: 200}
+	bigLimit := domain.ThemeFilter{Page: 1, Limit: 10000}
 	themes, _, err := s.themes.List(ctx, companyID, bigLimit)
 	if err != nil {
 		return nil, err
 	}
 
-	qas, _, err := s.qa.List(ctx, companyID, domain.QAPairFilter{Page: 1, Limit: 200})
+	qas, _, err := s.qa.List(ctx, companyID, domain.QAPairFilter{Page: 1, Limit: 10000})
 	if err != nil {
 		return nil, err
 	}
 
-	nodes, _, err := s.pricing.List(ctx, companyID, domain.PricingNodeFilter{Page: 1, Limit: 200})
+	nodes, _, err := s.pricing.List(ctx, companyID, domain.PricingNodeFilter{Page: 1, Limit: 10000})
 	if err != nil {
 		return nil, err
 	}
 
-	articles, _, err := s.articles.List(ctx, companyID, domain.ArticleFilter{Page: 1, Limit: 200})
+	articles, _, err := s.articles.List(ctx, companyID, domain.ArticleFilter{Page: 1, Limit: 10000})
 	if err != nil {
 		return nil, err
 	}
@@ -82,14 +82,24 @@ func (s *ExportService) Import(ctx context.Context, companyID uuid.UUID, data *I
 	result := &ImportResult{Errors: []string{}}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		omitCols := []string{"search_vector", "SearchVector"}
+		omitCols := []string{"search_vector", "SearchVector", "CreatedBy", "UpdatedBy"}
 
 		for i := range data.Themes {
-			ensureID(&data.Themes[i].BaseModel)
 			data.Themes[i].CompanyID = companyID
-			if err := tx.Omit(omitCols...).Where("id = ? AND company_id = ?", data.Themes[i].ID, companyID).
-				Assign(&data.Themes[i]).FirstOrCreate(&data.Themes[i]).Error; err != nil {
-				return fmt.Errorf("theme %q: %w", data.Themes[i].Name, err)
+			data.Themes[i].CreatedBy = nil
+			data.Themes[i].UpdatedBy = nil
+			// Дедупликация по name: если тема с таким именем уже есть — обновляем, иначе создаём
+			var existing domain.Theme
+			if err := tx.Where("name = ? AND company_id = ? AND deleted_at IS NULL", data.Themes[i].Name, companyID).First(&existing).Error; err == nil {
+				data.Themes[i].ID = existing.ID
+				if err := tx.Omit(omitCols...).Model(&existing).Updates(&data.Themes[i]).Error; err != nil {
+					return fmt.Errorf("theme %q: %w", data.Themes[i].Name, err)
+				}
+			} else {
+				ensureID(&data.Themes[i].BaseModel)
+				if err := tx.Omit(omitCols...).Create(&data.Themes[i]).Error; err != nil {
+					return fmt.Errorf("theme %q: %w", data.Themes[i].Name, err)
+				}
 			}
 			result.Imported++
 		}
@@ -97,6 +107,8 @@ func (s *ExportService) Import(ctx context.Context, companyID uuid.UUID, data *I
 		for i := range data.QAPairs {
 			ensureID(&data.QAPairs[i].BaseModel)
 			data.QAPairs[i].CompanyID = companyID
+			data.QAPairs[i].CreatedBy = nil
+			data.QAPairs[i].UpdatedBy = nil
 			if err := tx.Omit(omitCols...).Where("id = ? AND company_id = ?", data.QAPairs[i].ID, companyID).
 				Assign(&data.QAPairs[i]).FirstOrCreate(&data.QAPairs[i]).Error; err != nil {
 				return fmt.Errorf("qa %q: %w", data.QAPairs[i].Question, err)
@@ -109,6 +121,8 @@ func (s *ExportService) Import(ctx context.Context, companyID uuid.UUID, data *I
 		for i := range data.PricingNodes {
 			ensureID(&data.PricingNodes[i].BaseModel)
 			data.PricingNodes[i].CompanyID = companyID
+			data.PricingNodes[i].CreatedBy = nil
+			data.PricingNodes[i].UpdatedBy = nil
 			parentIDs[data.PricingNodes[i].ID] = data.PricingNodes[i].ParentID
 			data.PricingNodes[i].ParentID = nil
 			if err := tx.Omit(omitCols...).Where("id = ? AND company_id = ?", data.PricingNodes[i].ID, companyID).
@@ -130,6 +144,8 @@ func (s *ExportService) Import(ctx context.Context, companyID uuid.UUID, data *I
 		for i := range data.Articles {
 			ensureID(&data.Articles[i].BaseModel)
 			data.Articles[i].CompanyID = companyID
+			data.Articles[i].CreatedBy = nil
+			data.Articles[i].UpdatedBy = nil
 			if err := tx.Omit(omitCols...).Where("id = ? AND company_id = ?", data.Articles[i].ID, companyID).
 				Assign(&data.Articles[i]).FirstOrCreate(&data.Articles[i]).Error; err != nil {
 				return fmt.Errorf("article %q: %w", data.Articles[i].Title, err)

@@ -46,6 +46,7 @@ export interface QAPair {
   answer: string;
   is_faq: boolean;
   is_locked: boolean;
+  frequency: number;
 }
 
 export interface PricingNode {

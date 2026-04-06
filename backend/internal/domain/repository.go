@@ -14,6 +14,7 @@ type QAPairFilter struct {
 	Page    int
 	Limit   int
 	Query   string
+	Sort    string // "frequency", "-frequency", "created_at", "-created_at"
 }
 
 type ThemeFilter struct {

@@ -26,8 +26,8 @@ func (s *QAService) GetByID(ctx context.Context, companyID uuid.UUID, id uuid.UU
 }
 
 func (s *QAService) Create(ctx context.Context, companyID uuid.UUID, qa *domain.QAPair) error {
-	if qa.Question == "" || qa.Answer == "" {
-		return errors.New("question and answer are required")
+	if qa.Question == "" {
+		return errors.New("question is required")
 	}
 	if qa.ThemeID != nil {
 		if _, err := s.themes.GetByID(ctx, companyID, *qa.ThemeID); err != nil {
@@ -38,16 +38,9 @@ func (s *QAService) Create(ctx context.Context, companyID uuid.UUID, qa *domain.
 }
 
 func (s *QAService) Update(ctx context.Context, companyID uuid.UUID, qa *domain.QAPair) error {
-	existing, err := s.qa.GetByID(ctx, companyID, qa.ID)
-	if err != nil {
+	if _, err := s.qa.GetByID(ctx, companyID, qa.ID); err != nil {
 		return errors.New("qa pair not found")
 	}
-	if qa.ThemeID != nil {
-		if _, err := s.themes.GetByID(ctx, companyID, *qa.ThemeID); err != nil {
-			return errors.New("theme not found")
-		}
-	}
-	_ = existing
 	return s.qa.Update(ctx, companyID, qa)
 }
 
