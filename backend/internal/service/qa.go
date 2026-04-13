@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/domain"
@@ -49,4 +50,46 @@ func (s *QAService) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUI
 		return errors.New("qa pair not found")
 	}
 	return s.qa.Delete(ctx, companyID, id)
+}
+
+func (s *QAService) ReviewAIAnswer(ctx context.Context, companyID uuid.UUID, qaID uuid.UUID, userID uuid.UUID, action string, editedAnswer string) (*domain.QAPair, error) {
+	qa, err := s.qa.GetByID(ctx, companyID, qaID)
+	if err != nil {
+		return nil, errors.New("qa pair not found")
+	}
+
+	if qa.AIStatus == nil || *qa.AIStatus != "pending" {
+		return nil, errors.New("no pending AI answer to review")
+	}
+
+	now := time.Now()
+	qa.AIReviewedBy = &userID
+	qa.AIReviewedAt = &now
+	qa.UpdatedBy = &userID
+
+	switch action {
+	case "accept":
+		status := "accepted"
+		qa.AIStatus = &status
+		if qa.AIAnswer != nil {
+			qa.Answer = *qa.AIAnswer
+		}
+	case "reject":
+		status := "rejected"
+		qa.AIStatus = &status
+	case "edit":
+		if editedAnswer == "" {
+			return nil, errors.New("edited_answer is required for edit action")
+		}
+		status := "edited"
+		qa.AIStatus = &status
+		qa.Answer = editedAnswer
+	default:
+		return nil, errors.New("invalid action: must be accept, reject, or edit")
+	}
+
+	if err := s.qa.Update(ctx, companyID, qa); err != nil {
+		return nil, err
+	}
+	return qa, nil
 }

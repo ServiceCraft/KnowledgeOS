@@ -28,6 +28,9 @@ func (s *QAStore) List(ctx context.Context, companyID uuid.UUID, filter domain.Q
 	if filter.IsFAQ != nil {
 		q = q.Where("is_faq = ?", *filter.IsFAQ)
 	}
+	if filter.AIStatus != nil {
+		q = q.Where("ai_status = ?", *filter.AIStatus)
+	}
 	if filter.Query != "" {
 		like := "%" + filter.Query + "%"
 		q = q.Where("question ILIKE ? OR answer ILIKE ?", like, like)
@@ -40,9 +43,9 @@ func (s *QAStore) List(ctx context.Context, companyID uuid.UUID, filter domain.Q
 	orderClause := "created_at DESC"
 	switch filter.Sort {
 	case "frequency":
-		orderClause = "frequency ASC"
+		orderClause = "frequency ASC, created_at DESC"
 	case "-frequency":
-		orderClause = "frequency DESC"
+		orderClause = "frequency DESC, created_at DESC"
 	case "created_at":
 		orderClause = "created_at ASC"
 	case "-created_at":
@@ -85,7 +88,7 @@ func (s *QAStore) Update(ctx context.Context, companyID uuid.UUID, qa *domain.QA
 		qa.SyncVersion = seq
 		qa.SyncOrigin = s.origin
 		return tx.Model(qa).Scopes(tenantScope(companyID)).Where("id = ?", qa.ID).
-			Select("question", "answer", "is_faq", "is_locked", "frequency", "theme_id", "sync_version", "sync_origin", "updated_by").
+			Select("question", "answer", "is_faq", "is_locked", "frequency", "theme_id", "ai_answer", "ai_status", "ai_reviewed_by", "ai_reviewed_at", "sync_version", "sync_origin", "updated_by").
 			Updates(qa).Error
 	})
 }

@@ -46,6 +46,7 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 			r.Post("/qa", h.QA.Create)
 			r.Get("/qa/{id}", h.QA.Get)
 			r.Patch("/qa/{id}", h.QA.Update)
+			r.Post("/qa/{id}/review", h.QA.Review)
 			r.Delete("/qa/{id}", h.QA.Delete)
 
 			// Themes

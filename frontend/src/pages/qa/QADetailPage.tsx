@@ -8,8 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 
-import { ArrowLeft, Pencil, Trash2, Save, X } from 'lucide-react';
-import { useQADetail, useUpdateQA, useDeleteQA } from '@/hooks/useQA';
+import { ArrowLeft, Pencil, Trash2, Save, X, Bot, Check } from 'lucide-react';
+import { useQADetail, useUpdateQA, useDeleteQA, useReviewAIAnswer } from '@/hooks/useQA';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { LinksPanel } from '@/components/shared/LinksPanel';
 import { LoadingState } from '@/components/shared/LoadingState';
@@ -23,6 +23,7 @@ export function QADetailPage() {
   const { data: qa, isLoading, isError } = useQADetail(id!);
   const updateQA = useUpdateQA();
   const deleteQA = useDeleteQA();
+  const reviewAI = useReviewAIAnswer();
 
   const [editing, setEditing] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -30,6 +31,8 @@ export function QADetailPage() {
   const [answer, setAnswer] = useState('');
   const [isFaq, setIsFaq] = useState(false);
   const [frequency, setFrequency] = useState(0);
+  const [editingAI, setEditingAI] = useState(false);
+  const [editedAIAnswer, setEditedAIAnswer] = useState('');
 
   const startEditing = () => {
     if (!qa) return;
@@ -126,6 +129,100 @@ export function QADetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* AI review section */}
+      {qa.ai_status === 'pending' && qa.ai_answer && (
+        <Card className="border-violet-200 dark:border-violet-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Bot className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+              AI-предложенный ответ
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {editingAI ? (
+              <div className="space-y-2">
+                <Textarea
+                  value={editedAIAnswer}
+                  onChange={(e) => setEditedAIAnswer(e.target.value)}
+                  rows={6}
+                  className="resize-y"
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => {
+                    reviewAI.mutate(
+                      { id: id!, data: { action: 'edit', edited_answer: editedAIAnswer } },
+                      {
+                        onSuccess: () => { setEditingAI(false); toast.success('AI-ответ отредактирован и принят'); },
+                        onError: () => toast.error('Не удалось сохранить'),
+                      }
+                    );
+                  }} disabled={reviewAI.isPending} className="bg-green-600 hover:bg-green-700 text-white">
+                    {reviewAI.isPending ? 'Сохранение...' : 'Сохранить'}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => { setEditingAI(false); setEditedAIAnswer(qa.ai_answer || ''); }}>
+                    Отмена
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="whitespace-pre-wrap text-sm bg-violet-50 dark:bg-violet-950/30 rounded-md p-3">{qa.ai_answer}</p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950/30" onClick={() => {
+                    reviewAI.mutate(
+                      { id: id!, data: { action: 'reject' } },
+                      {
+                        onSuccess: () => toast.success('AI-ответ отклонён'),
+                        onError: () => toast.error('Не удалось отклонить'),
+                      }
+                    );
+                  }} disabled={reviewAI.isPending}>
+                    <X className="h-4 w-4 mr-1" />
+                    Отклонить
+                  </Button>
+                  <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => {
+                    reviewAI.mutate(
+                      { id: id!, data: { action: 'accept' } },
+                      {
+                        onSuccess: () => toast.success('AI-ответ принят'),
+                        onError: () => toast.error('Не удалось принять'),
+                      }
+                    );
+                  }} disabled={reviewAI.isPending}>
+                    <Check className="h-4 w-4 mr-1" />
+                    Принять
+                  </Button>
+                  <Button size="sm" variant="outline" className="text-yellow-600 border-yellow-200 hover:bg-yellow-50 dark:border-yellow-800 dark:hover:bg-yellow-950/30" onClick={() => { setEditedAIAnswer(qa.ai_answer || ''); setEditingAI(true); }} disabled={reviewAI.isPending}>
+                    <Pencil className="h-4 w-4 mr-1" />
+                    Править
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* AI audit trail */}
+      {qa.ai_status && qa.ai_status !== 'pending' && qa.ai_answer && (
+        <Card className="border-muted">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
+              <Bot className="h-3.5 w-3.5" />
+              AI-ответ ({qa.ai_status === 'accepted' ? 'принят' : qa.ai_status === 'rejected' ? 'отклонён' : 'исправлен'})
+              {qa.ai_reviewed_at && (
+                <span className="ml-auto text-xs font-normal">
+                  {new Date(qa.ai_reviewed_at).toLocaleString()}
+                </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="whitespace-pre-wrap text-xs text-muted-foreground bg-muted/50 rounded-md p-2">{qa.ai_answer}</p>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="pt-6">

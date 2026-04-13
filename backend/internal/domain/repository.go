@@ -9,12 +9,13 @@ import (
 // Filters
 
 type QAPairFilter struct {
-	ThemeID *uuid.UUID
-	IsFAQ   *bool
-	Page    int
-	Limit   int
-	Query   string
-	Sort    string // "frequency", "-frequency", "created_at", "-created_at"
+	ThemeID  *uuid.UUID
+	IsFAQ    *bool
+	AIStatus *string
+	Page     int
+	Limit    int
+	Query    string
+	Sort     string // "frequency", "-frequency", "created_at", "-created_at"
 }
 
 type ThemeFilter struct {

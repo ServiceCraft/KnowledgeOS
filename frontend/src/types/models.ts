@@ -31,6 +31,8 @@ export interface Theme {
   description: string;
 }
 
+export type AIStatus = 'pending' | 'accepted' | 'rejected' | 'edited';
+
 export interface QAPair {
   id: string;
   created_at: string;
@@ -47,6 +49,10 @@ export interface QAPair {
   is_faq: boolean;
   is_locked: boolean;
   frequency: number;
+  ai_answer?: string;
+  ai_status?: AIStatus;
+  ai_reviewed_by?: string;
+  ai_reviewed_at?: string;
 }
 
 export interface PricingNode {

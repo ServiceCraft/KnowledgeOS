@@ -4,10 +4,16 @@ import type { QAPair, PaginatedResponse } from '@/types';
 export interface QAFilter {
   theme_id?: string;
   is_faq?: boolean;
+  ai_status?: string;
   query?: string;
   page?: number;
   limit?: number;
   sort?: string;
+}
+
+export interface ReviewRequest {
+  action: 'accept' | 'reject' | 'edit';
+  edited_answer?: string;
 }
 
 export const qaApi = {
@@ -21,4 +27,6 @@ export const qaApi = {
     client.patch(`/qa/${id}`, data).then((r) => r.data.data as QAPair),
   delete: (id: string) =>
     client.delete(`/qa/${id}`),
+  reviewAIAnswer: (id: string, data: ReviewRequest) =>
+    client.post(`/qa/${id}/review`, data).then((r) => r.data.data as QAPair),
 };

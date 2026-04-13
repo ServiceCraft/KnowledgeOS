@@ -1,0 +1,51 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8081:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    expose:
+      - "8080"
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:-knowledgeos_staging}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_DB=${POSTGRES_DB:-knowledgeos_staging}
+      - APP_PROFILE=${APP_PROFILE:-staging}
+      - JWT_SECRET=${JWT_SECRET}
+      - SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL}
+      - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-knowledgeos_staging}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_DB=${POSTGRES_DB:-knowledgeos_staging}
+    volumes:
+      - pgdata-staging:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-knowledgeos_staging}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata-staging:

@@ -19,12 +19,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, ChevronRight, ChevronLeft, Star, ExternalLink } from 'lucide-react';
+import { Plus, ChevronRight, ChevronLeft, Star, ExternalLink, Bot, Check, X, Pencil } from 'lucide-react';
 import { SearchInput } from '@/components/shared/SearchInput';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { useQAList, useCreateQA, useUpdateQA } from '@/hooks/useQA';
+import { useQAList, useCreateQA, useUpdateQA, useReviewAIAnswer } from '@/hooks/useQA';
 import { useThemesList } from '@/hooks/useThemes';
 import type { QAPair } from '@/types';
 import { toast } from 'sonner';
@@ -42,15 +42,37 @@ function FrequencyBadge({ value }: { value: number }) {
   );
 }
 
+function AIStatusBadge({ status }: { status: string }) {
+  switch (status) {
+    case 'accepted':
+      return <Badge className="text-xs gap-1 px-1.5 py-0 bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"><Check className="h-3 w-3" />AI принят</Badge>;
+    case 'rejected':
+      return <Badge className="text-xs gap-1 px-1.5 py-0 bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"><X className="h-3 w-3" />AI отклонён</Badge>;
+    case 'edited':
+      return <Badge className="text-xs gap-1 px-1.5 py-0 bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400"><Pencil className="h-3 w-3" />AI исправлен</Badge>;
+    default:
+      return null;
+  }
+}
+
 function QARow({ item, themeName, onNavigate }: { item: QAPair; themeName: string | null; onNavigate: () => void }) {
   const [answer, setAnswer] = useState(item.answer || '');
   const [answerDirty, setAnswerDirty] = useState(false);
+  const [editingAI, setEditingAI] = useState(false);
+  const [editedAIAnswer, setEditedAIAnswer] = useState('');
   const updateQA = useUpdateQA();
+  const reviewAI = useReviewAIAnswer();
 
   useEffect(() => {
     setAnswer(item.answer || '');
     setAnswerDirty(false);
   }, [item.answer]);
+
+  useEffect(() => {
+    if (item.ai_answer) {
+      setEditedAIAnswer(item.ai_answer);
+    }
+  }, [item.ai_answer]);
 
   const saveAnswer = () => {
     updateQA.mutate(
@@ -61,6 +83,38 @@ function QARow({ item, themeName, onNavigate }: { item: QAPair; themeName: strin
       }
     );
   };
+
+  const handleAccept = () => {
+    reviewAI.mutate(
+      { id: item.id, data: { action: 'accept' } },
+      {
+        onSuccess: () => toast.success('AI-ответ принят'),
+        onError: () => toast.error('Не удалось принять'),
+      }
+    );
+  };
+
+  const handleReject = () => {
+    reviewAI.mutate(
+      { id: item.id, data: { action: 'reject' } },
+      {
+        onSuccess: () => toast.success('AI-ответ отклонён'),
+        onError: () => toast.error('Не удалось отклонить'),
+      }
+    );
+  };
+
+  const handleEditSave = () => {
+    reviewAI.mutate(
+      { id: item.id, data: { action: 'edit', edited_answer: editedAIAnswer } },
+      {
+        onSuccess: () => { setEditingAI(false); toast.success('AI-ответ отредактирован и принят'); },
+        onError: () => toast.error('Не удалось сохранить'),
+      }
+    );
+  };
+
+  const isPending = item.ai_status === 'pending';
 
   return (
     <div className="rounded-lg border bg-card p-4 space-y-2">
@@ -78,6 +132,9 @@ function QARow({ item, themeName, onNavigate }: { item: QAPair; themeName: strin
             )}
             {item.is_locked && (
               <Badge variant="outline" className="text-xs px-1.5 py-0">Заблокирован</Badge>
+            )}
+            {item.ai_status && item.ai_status !== 'pending' && (
+              <AIStatusBadge status={item.ai_status} />
             )}
             {themeName && (
               <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
@@ -100,21 +157,74 @@ function QARow({ item, themeName, onNavigate }: { item: QAPair; themeName: strin
         </Button>
       </div>
 
-      {/* Answer inline edit */}
-      <div className="flex gap-2 items-start">
-        <Textarea
-          value={answer}
-          onChange={(e) => { setAnswer(e.target.value); setAnswerDirty(true); }}
-          placeholder="Введите ответ..."
-          rows={2}
-          className="text-sm flex-1 min-h-[2.5rem] resize-y"
-        />
-        {answerDirty && (
-          <Button size="sm" className="shrink-0 h-9 px-4 bg-green-600 hover:bg-green-700 text-white" onClick={saveAnswer} disabled={updateQA.isPending}>
-            {updateQA.isPending ? 'Сохранение...' : 'Сохранить'}
-          </Button>
-        )}
-      </div>
+      {/* AI review section */}
+      {isPending && (
+        <div className="rounded-md border border-violet-200 bg-violet-50 dark:border-violet-800 dark:bg-violet-950/30 p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <Bot className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+            <span className="text-xs font-medium text-violet-700 dark:text-violet-300">AI-предложенный ответ</span>
+          </div>
+          {item.answer && (
+            <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2">
+              <span className="font-medium">Текущий ответ: </span>{item.answer}
+            </div>
+          )}
+          {editingAI ? (
+            <div className="space-y-2">
+              <Textarea
+                value={editedAIAnswer}
+                onChange={(e) => setEditedAIAnswer(e.target.value)}
+                rows={3}
+                className="text-sm resize-y"
+              />
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleEditSave} disabled={reviewAI.isPending} className="bg-green-600 hover:bg-green-700 text-white">
+                  {reviewAI.isPending ? 'Сохранение...' : 'Сохранить'}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => { setEditingAI(false); setEditedAIAnswer(item.ai_answer || ''); }}>
+                  Отмена
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm whitespace-pre-wrap">{item.ai_answer}</p>
+              <div className="flex gap-2 pt-1">
+                <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950/30" onClick={handleReject} disabled={reviewAI.isPending}>
+                  <X className="h-3.5 w-3.5 mr-1" />
+                  Отклонить
+                </Button>
+                <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={handleAccept} disabled={reviewAI.isPending}>
+                  <Check className="h-3.5 w-3.5 mr-1" />
+                  Принять
+                </Button>
+                <Button size="sm" variant="outline" className="text-yellow-600 border-yellow-200 hover:bg-yellow-50 dark:border-yellow-800 dark:hover:bg-yellow-950/30" onClick={() => setEditingAI(true)} disabled={reviewAI.isPending}>
+                  <Pencil className="h-3.5 w-3.5 mr-1" />
+                  Править
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Answer inline edit (hidden when AI pending) */}
+      {!isPending && (
+        <div className="flex gap-2 items-start">
+          <Textarea
+            value={answer}
+            onChange={(e) => { setAnswer(e.target.value); setAnswerDirty(true); }}
+            placeholder="Введите ответ..."
+            rows={2}
+            className="text-sm flex-1 min-h-[2.5rem] resize-y"
+          />
+          {answerDirty && (
+            <Button size="sm" className="shrink-0 h-9 px-4 bg-green-600 hover:bg-green-700 text-white" onClick={saveAnswer} disabled={updateQA.isPending}>
+              {updateQA.isPending ? 'Сохранение...' : 'Сохранить'}
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -126,6 +236,7 @@ export function QAListPage() {
   const [themeId, setThemeId] = useState<string>('');
   const [isFaq, setIsFaq] = useState<string>('');
   const [sort, setSort] = useState<string>('-frequency');
+  const [aiStatus, setAiStatus] = useState<string>('');
   const [showCreate, setShowCreate] = useState(false);
   const [newQuestion, setNewQuestion] = useState('');
   const [newAnswer, setNewAnswer] = useState('');
@@ -136,6 +247,7 @@ export function QAListPage() {
     query: query || undefined,
     theme_id: themeId || undefined,
     is_faq: isFaq === 'true' ? true : isFaq === 'false' ? false : undefined,
+    ai_status: aiStatus || undefined,
     sort: sort || undefined,
     page,
     limit,
@@ -222,6 +334,20 @@ export function QAListPage() {
             <SelectItem value="">Все</SelectItem>
             <SelectItem value="true">Только FAQ</SelectItem>
             <SelectItem value="false">Не FAQ</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={aiStatus} onValueChange={(v) => { setAiStatus(v ?? ''); setPage(1); }}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="AI статус">
+              {aiStatus === 'pending' ? 'Ожидает проверки' : aiStatus === 'accepted' ? 'AI принят' : aiStatus === 'rejected' ? 'AI отклонён' : aiStatus === 'edited' ? 'AI исправлен' : 'AI статус'}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Все</SelectItem>
+            <SelectItem value="pending">Ожидает проверки</SelectItem>
+            <SelectItem value="accepted">AI принят</SelectItem>
+            <SelectItem value="rejected">AI отклонён</SelectItem>
+            <SelectItem value="edited">AI исправлен</SelectItem>
           </SelectContent>
         </Select>
         <Select value={sort} onValueChange={(v) => { setSort(v ?? ''); setPage(1); }}>

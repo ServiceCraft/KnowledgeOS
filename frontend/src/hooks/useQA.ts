@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { qaApi, type QAFilter } from '@/api/qa';
+import { qaApi, type QAFilter, type ReviewRequest } from '@/api/qa';
 import { queryKeys } from '@/lib/queryKeys';
 
 export function useQAList(filters?: QAFilter) {
@@ -46,5 +46,17 @@ export function useDeleteQA() {
   return useMutation({
     mutationFn: qaApi.delete,
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.qa.all }),
+  });
+}
+
+export function useReviewAIAnswer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ReviewRequest }) =>
+      qaApi.reviewAIAnswer(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.qa.all });
+      qc.refetchQueries({ queryKey: queryKeys.qa.all });
+    },
   });
 }

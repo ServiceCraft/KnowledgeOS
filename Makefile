@@ -1,4 +1,4 @@
-.PHONY: up down db-shell db-reset sync-up secret lint
+.PHONY: up down db-shell db-reset sync-up secret lint stage-up stage-down stage-reset stage-db-shell
 
 up:
 	docker compose up --build -d
@@ -21,3 +21,16 @@ secret:
 
 lint:
 	cd backend && golangci-lint run ./...
+
+stage-up:
+	docker compose --env-file .env.staging -f docker-compose.staging.yml -p knowledgeos-staging up --build -d
+
+stage-down:
+	docker compose -f docker-compose.staging.yml -p knowledgeos-staging down
+
+stage-reset:
+	docker compose -f docker-compose.staging.yml -p knowledgeos-staging down -v
+	docker compose --env-file .env.staging -f docker-compose.staging.yml -p knowledgeos-staging up --build -d
+
+stage-db-shell:
+	docker compose -f docker-compose.staging.yml -p knowledgeos-staging exec postgres psql -U knowledgeos_staging -d knowledgeos_staging

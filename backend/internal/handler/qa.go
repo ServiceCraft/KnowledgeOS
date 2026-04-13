@@ -37,6 +37,9 @@ func (h *QAHandler) List(w http.ResponseWriter, r *http.Request) {
 		filter.IsFAQ = &val
 	}
 	filter.Sort = r.URL.Query().Get("sort")
+	if aiStatus := r.URL.Query().Get("ai_status"); aiStatus != "" {
+		filter.AIStatus = &aiStatus
+	}
 
 	items, total, err := h.svc.List(r.Context(), companyID, filter)
 	if err != nil {
@@ -126,6 +129,12 @@ func (h *QAHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if _, ok := patch["theme_id"]; ok && patch["theme_id"] == nil {
 		existing.ThemeID = nil
 	}
+	if v, ok := patch["ai_answer"].(string); ok {
+		existing.AIAnswer = &v
+	}
+	if v, ok := patch["ai_status"].(string); ok {
+		existing.AIStatus = &v
+	}
 	existing.UpdatedBy = &userID
 
 	if err := h.svc.Update(r.Context(), companyID, existing); err != nil {
@@ -148,6 +157,32 @@ func (h *QAHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *QAHandler) Review(w http.ResponseWriter, r *http.Request) {
+	companyID := middleware.GetCompanyID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		Error(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	var req struct {
+		Action       string `json:"action"`
+		EditedAnswer string `json:"edited_answer"`
+	}
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	result, err := h.svc.ReviewAIAnswer(r.Context(), companyID, id, userID, req.Action, req.EditedAnswer)
+	if err != nil {
+		Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, result)
 }
 
 func intQuery(r *http.Request, key string, def int) int {
