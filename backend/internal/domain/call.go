@@ -23,8 +23,8 @@ type QAPairCallMention struct {
 	QAPairID    uuid.UUID `gorm:"type:uuid;not null" json:"qa_pair_id"`
 	CallID      uuid.UUID `gorm:"type:uuid;not null" json:"call_id"`
 	Snippet     string    `gorm:"type:text;not null" json:"snippet"`
-	StartOffset int       `gorm:"not null" json:"start_offset"`
-	EndOffset   int       `gorm:"not null" json:"end_offset"`
+	StartOffset *int      `json:"start_offset,omitempty"`
+	EndOffset   *int      `json:"end_offset,omitempty"`
 	StartSec    *float64  `gorm:"type:numeric(10,3)" json:"start_sec,omitempty"`
 	EndSec      *float64  `gorm:"type:numeric(10,3)" json:"end_sec,omitempty"`
 	Confidence  *float64  `gorm:"type:numeric(4,3)" json:"confidence,omitempty"`

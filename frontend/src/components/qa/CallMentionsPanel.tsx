@@ -75,8 +75,8 @@ export function CallMentionsPanel({ qaId }: CallMentionsPanelProps) {
         open={!!selected}
         onOpenChange={(open) => !open && setSelected(null)}
         callId={selected?.call_id ?? null}
-        highlightStart={selected?.start_offset}
-        highlightEnd={selected?.end_offset}
+        highlightStart={selected?.start_offset ?? undefined}
+        highlightEnd={selected?.end_offset ?? undefined}
       />
     </>
   );

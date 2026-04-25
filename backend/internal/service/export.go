@@ -127,6 +127,7 @@ func (s *ExportService) Import(ctx context.Context, companyID uuid.UUID, data *I
 			data.QAPairs[i].CompanyID = companyID
 			data.QAPairs[i].CreatedBy = nil
 			data.QAPairs[i].UpdatedBy = nil
+			data.QAPairs[i].AIReviewedBy = nil
 			if err := tx.Omit(omitCols...).Where("id = ? AND company_id = ?", data.QAPairs[i].ID, companyID).
 				Assign(&data.QAPairs[i]).FirstOrCreate(&data.QAPairs[i]).Error; err != nil {
 				return fmt.Errorf("qa %q: %w", data.QAPairs[i].Question, err)
@@ -185,13 +186,25 @@ func (s *ExportService) Import(ctx context.Context, companyID uuid.UUID, data *I
 		}
 
 		for i := range data.Mentions {
-			ensureID(&data.Mentions[i].BaseModel)
-			data.Mentions[i].CompanyID = companyID
-			data.Mentions[i].CreatedBy = nil
-			data.Mentions[i].UpdatedBy = nil
-			if err := tx.Omit(omitCols...).Where("id = ? AND company_id = ?", data.Mentions[i].ID, companyID).
-				Assign(&data.Mentions[i]).FirstOrCreate(&data.Mentions[i]).Error; err != nil {
-				return fmt.Errorf("mention %s: %w", data.Mentions[i].ID, err)
+			m := &data.Mentions[i]
+			// Both offsets must be present together, or both absent.
+			// If present, they must satisfy the same CHECK as the DB.
+			hasStart, hasEnd := m.StartOffset != nil, m.EndOffset != nil
+			if hasStart != hasEnd {
+				result.Skipped++
+				continue
+			}
+			if hasStart && (*m.StartOffset < 0 || *m.EndOffset <= *m.StartOffset) {
+				result.Skipped++
+				continue
+			}
+			ensureID(&m.BaseModel)
+			m.CompanyID = companyID
+			m.CreatedBy = nil
+			m.UpdatedBy = nil
+			if err := tx.Omit(omitCols...).Where("id = ? AND company_id = ?", m.ID, companyID).
+				Assign(m).FirstOrCreate(m).Error; err != nil {
+				return fmt.Errorf("mention %s: %w", m.ID, err)
 			}
 			result.Imported++
 		}

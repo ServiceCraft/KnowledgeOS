@@ -158,8 +158,8 @@ export interface CallMention {
   qa_pair_id: string;
   call_id: string;
   snippet: string;
-  start_offset: number;
-  end_offset: number;
+  start_offset?: number;
+  end_offset?: number;
   start_sec?: number;
   end_sec?: number;
   confidence?: number;
