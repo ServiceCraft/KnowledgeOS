@@ -12,6 +12,7 @@ import { ArrowLeft, Pencil, Trash2, Save, X, Bot, Check } from 'lucide-react';
 import { useQADetail, useUpdateQA, useDeleteQA, useReviewAIAnswer } from '@/hooks/useQA';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { LinksPanel } from '@/components/shared/LinksPanel';
+import { CallMentionsPanel } from '@/components/qa/CallMentionsPanel';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
@@ -271,6 +272,8 @@ export function QADetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      <CallMentionsPanel qaId={id!} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <CommentsPanel entityType="qa" entityId={id!} />

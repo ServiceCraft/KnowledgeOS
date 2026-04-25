@@ -52,6 +52,17 @@ type CompanyFilter struct {
 	Limit int
 }
 
+type CallFilter struct {
+	Page  int
+	Limit int
+	Query string
+}
+
+type QACallMentionFilter struct {
+	Page  int
+	Limit int
+}
+
 type SearchFilter struct {
 	Query   string
 	Types   []string
@@ -127,6 +138,23 @@ type EntityLinkRepository interface {
 	Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error
 	ListSince(ctx context.Context, companyID uuid.UUID, sinceVersion int64) ([]EntityLink, error)
 	ApplyRemote(ctx context.Context, companyID uuid.UUID, link *EntityLink) error
+}
+
+type CallRepository interface {
+	GetByID(ctx context.Context, companyID uuid.UUID, id uuid.UUID) (*Call, error)
+	Create(ctx context.Context, companyID uuid.UUID, call *Call) error
+	Update(ctx context.Context, companyID uuid.UUID, call *Call) error
+	Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error
+	ApplyRemote(ctx context.Context, companyID uuid.UUID, call *Call) error
+	ListAll(ctx context.Context, companyID uuid.UUID) ([]Call, error)
+}
+
+type QACallMentionRepository interface {
+	ListByQA(ctx context.Context, companyID, qaID uuid.UUID, filter QACallMentionFilter) ([]QAPairCallMentionView, int64, error)
+	Create(ctx context.Context, companyID uuid.UUID, m *QAPairCallMention) error
+	Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error
+	ApplyRemote(ctx context.Context, companyID uuid.UUID, m *QAPairCallMention) error
+	ListAll(ctx context.Context, companyID uuid.UUID) ([]QAPairCallMention, error)
 }
 
 type CompanyRepository interface {

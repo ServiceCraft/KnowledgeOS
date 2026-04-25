@@ -41,6 +41,8 @@ func main() {
 	linkStore := store.NewLinkStore(s)
 	searchStore := store.NewSearchStore(s)
 	syncStore := store.NewSyncStore(s)
+	callStore := store.NewCallStore(s)
+	mentionStore := store.NewQACallMentionStore(s)
 
 	// Services
 	authSvc := service.NewAuthService(userStore, syncStore, jwtMgr)
@@ -51,8 +53,9 @@ func main() {
 	commentSvc := service.NewCommentService(commentStore, qaStore, articleStore, pricingStore)
 	linkSvc := service.NewLinkService(linkStore, qaStore, articleStore, pricingStore)
 	searchSvc := service.NewSearchService(searchStore)
-	exportSvc := service.NewExportService(db, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore)
+	exportSvc := service.NewExportService(db, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore, callStore, mentionStore)
 	syncSvc := service.NewSyncService(syncStore, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore)
+	callSvc := service.NewCallService(callStore, mentionStore, qaStore)
 	adminSvc := service.NewAdminService(companyStore, userStore, syncStore)
 
 	// Bootstrap: seed superadmin if no companies exist
@@ -71,6 +74,7 @@ func main() {
 		Export:  handler.NewExportHandler(exportSvc, userStore),
 		Sync:    handler.NewSyncHandler(syncSvc),
 		Admin:   handler.NewAdminHandler(adminSvc),
+		Call:    handler.NewCallHandler(callSvc),
 	}
 
 	var syncRepo domain.SyncRepository = syncStore

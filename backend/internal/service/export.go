@@ -18,17 +18,21 @@ type ExportService struct {
 	articles domain.ArticleRepository
 	comments domain.CommentRepository
 	links    domain.EntityLinkRepository
+	calls    domain.CallRepository
+	mentions domain.QACallMentionRepository
 }
 
-func NewExportService(db *gorm.DB, themes domain.ThemeRepository, qa domain.QAPairRepository, pricing domain.PricingNodeRepository, articles domain.ArticleRepository, comments domain.CommentRepository, links domain.EntityLinkRepository) *ExportService {
-	return &ExportService{db: db, themes: themes, qa: qa, pricing: pricing, articles: articles, comments: comments, links: links}
+func NewExportService(db *gorm.DB, themes domain.ThemeRepository, qa domain.QAPairRepository, pricing domain.PricingNodeRepository, articles domain.ArticleRepository, comments domain.CommentRepository, links domain.EntityLinkRepository, calls domain.CallRepository, mentions domain.QACallMentionRepository) *ExportService {
+	return &ExportService{db: db, themes: themes, qa: qa, pricing: pricing, articles: articles, comments: comments, links: links, calls: calls, mentions: mentions}
 }
 
 type ExportData struct {
-	Themes       []domain.Theme       `json:"themes"`
-	QAPairs      []domain.QAPair      `json:"qa_pairs"`
-	PricingNodes []domain.PricingNode `json:"pricing_nodes"`
-	Articles     []domain.Article     `json:"articles"`
+	Themes       []domain.Theme              `json:"themes"`
+	QAPairs      []domain.QAPair             `json:"qa_pairs"`
+	PricingNodes []domain.PricingNode        `json:"pricing_nodes"`
+	Articles     []domain.Article            `json:"articles"`
+	Calls        []domain.Call               `json:"calls,omitempty"`
+	Mentions     []domain.QAPairCallMention  `json:"qa_pair_call_mentions,omitempty"`
 }
 
 func (s *ExportService) Export(ctx context.Context, companyID uuid.UUID) (*ExportData, error) {
@@ -53,19 +57,33 @@ func (s *ExportService) Export(ctx context.Context, companyID uuid.UUID) (*Expor
 		return nil, err
 	}
 
+	calls, err := s.calls.ListAll(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+
+	mentions, err := s.mentions.ListAll(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+
 	return &ExportData{
 		Themes:       themes,
 		QAPairs:      qas,
 		PricingNodes: nodes,
 		Articles:     articles,
+		Calls:        calls,
+		Mentions:     mentions,
 	}, nil
 }
 
 type ImportData struct {
-	Themes       []domain.Theme       `json:"themes"`
-	QAPairs      []domain.QAPair      `json:"qa_pairs"`
-	PricingNodes []domain.PricingNode `json:"pricing_nodes"`
-	Articles     []domain.Article     `json:"articles"`
+	Themes       []domain.Theme              `json:"themes"`
+	QAPairs      []domain.QAPair             `json:"qa_pairs"`
+	PricingNodes []domain.PricingNode        `json:"pricing_nodes"`
+	Articles     []domain.Article            `json:"articles"`
+	Calls        []domain.Call               `json:"calls,omitempty"`
+	Mentions     []domain.QAPairCallMention  `json:"qa_pair_call_mentions,omitempty"`
 }
 
 type ImportResult struct {
@@ -149,6 +167,31 @@ func (s *ExportService) Import(ctx context.Context, companyID uuid.UUID, data *I
 			if err := tx.Omit(omitCols...).Where("id = ? AND company_id = ?", data.Articles[i].ID, companyID).
 				Assign(&data.Articles[i]).FirstOrCreate(&data.Articles[i]).Error; err != nil {
 				return fmt.Errorf("article %q: %w", data.Articles[i].Title, err)
+			}
+			result.Imported++
+		}
+
+		// Calls must be inserted before mentions to satisfy FK.
+		for i := range data.Calls {
+			ensureID(&data.Calls[i].BaseModel)
+			data.Calls[i].CompanyID = companyID
+			data.Calls[i].CreatedBy = nil
+			data.Calls[i].UpdatedBy = nil
+			if err := tx.Omit(omitCols...).Where("id = ? AND company_id = ?", data.Calls[i].ID, companyID).
+				Assign(&data.Calls[i]).FirstOrCreate(&data.Calls[i]).Error; err != nil {
+				return fmt.Errorf("call %q: %w", data.Calls[i].Title, err)
+			}
+			result.Imported++
+		}
+
+		for i := range data.Mentions {
+			ensureID(&data.Mentions[i].BaseModel)
+			data.Mentions[i].CompanyID = companyID
+			data.Mentions[i].CreatedBy = nil
+			data.Mentions[i].UpdatedBy = nil
+			if err := tx.Omit(omitCols...).Where("id = ? AND company_id = ?", data.Mentions[i].ID, companyID).
+				Assign(&data.Mentions[i]).FirstOrCreate(&data.Mentions[i]).Error; err != nil {
+				return fmt.Errorf("mention %s: %w", data.Mentions[i].ID, err)
 			}
 			result.Imported++
 		}

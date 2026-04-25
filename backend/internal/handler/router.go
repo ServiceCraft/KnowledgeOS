@@ -20,6 +20,7 @@ type Handlers struct {
 	Export  *ExportHandler
 	Sync    *SyncHandler
 	Admin   *AdminHandler
+	Call    *CallHandler
 }
 
 func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncRepository) *chi.Mux {
@@ -48,6 +49,10 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 			r.Patch("/qa/{id}", h.QA.Update)
 			r.Post("/qa/{id}/review", h.QA.Review)
 			r.Delete("/qa/{id}", h.QA.Delete)
+			r.Get("/qa/{id}/mentions", h.Call.ListMentionsForQA)
+
+			// Calls
+			r.Get("/calls/{id}", h.Call.GetCall)
 
 			// Themes
 			r.Get("/themes", h.Theme.List)
