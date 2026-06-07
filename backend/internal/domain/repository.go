@@ -38,18 +38,26 @@ type ArticleFilter struct {
 }
 
 type CommentFilter struct {
-	Page int
+	Page  int
 	Limit int
 }
 
 type EntityLinkFilter struct {
-	Page int
+	Page  int
 	Limit int
 }
 
 type CompanyFilter struct {
 	Page  int
 	Limit int
+}
+
+type UserFilter struct {
+	Page  int
+	Limit int
+	Query string // matches against email
+	Role  *Role  // optional role filter
+	Sort  string // "created_at" or "-created_at"
 }
 
 type CallFilter struct {
@@ -167,10 +175,12 @@ type CompanyRepository interface {
 }
 
 type UserRepository interface {
+	List(ctx context.Context, companyID uuid.UUID, filter UserFilter) ([]User, int64, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	Create(ctx context.Context, user *User) error
 	Update(ctx context.Context, user *User) error
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 type SearchRepository interface {

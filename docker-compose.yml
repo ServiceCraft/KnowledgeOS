@@ -15,8 +15,14 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     expose:
       - "8080"
+    # Mount the repository read-only so the backup snapshot endpoint can serve
+    # the current full-project source (BACKUP_CODE_PATH=/src).
+    volumes:
+      - ./:/src:ro
     environment:
       - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
@@ -27,6 +33,10 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL}
       - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD}
+      # Backup snapshot endpoint
+      - BACKUP_API_KEY=${BACKUP_API_KEY:-}
+      - BACKUP_CODE_PATH=/src
+      - BACKUP_GIT_COMMIT=${GIT_COMMIT:-}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -67,5 +77,31 @@ services:
       postgres:
         condition: service_healthy
 
+  # Backup service. Normally deployed on an INDEPENDENT host pointing at the
+  # public HTTPS URL of the app; included here (profile "backup") for local
+  # end-to-end testing against the in-compose app over the internal network.
+  backup-service:
+    build:
+      context: ./backup-service
+      dockerfile: Dockerfile
+    profiles:
+      - backup
+    environment:
+      - APP_URL=${BACKUP_APP_URL:-http://app:8080}
+      - APP_API_KEY=${BACKUP_API_KEY}
+      - GITHUB_REPO_URL=${GITHUB_REPO_URL}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_BRANCH=${GITHUB_BRANCH:-backup}
+      - BACKUPS_PATH=/data/backups
+      - BACKUPS_KEEP=${BACKUPS_KEEP:-30}
+      - SCHEDULE_CRON=${SCHEDULE_CRON:-0 3 * * *}
+      - HTTP_TIMEOUT_SECONDS=${HTTP_TIMEOUT_SECONDS:-600}
+    volumes:
+      - backup-data:/data
+    restart: unless-stopped
+    depends_on:
+      - app
+
 volumes:
   pgdata:
+  backup-data:

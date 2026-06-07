@@ -26,6 +26,7 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { useQAList, useCreateQA, useUpdateQA, useReviewAIAnswer } from '@/hooks/useQA';
 import { useThemesList } from '@/hooks/useThemes';
+import { usePermissions } from '@/hooks/usePermissions';
 import type { QAPair } from '@/types';
 import { toast } from 'sonner';
 
@@ -55,7 +56,7 @@ function AIStatusBadge({ status }: { status: string }) {
   }
 }
 
-function QARow({ item, themeName, onNavigate }: { item: QAPair; themeName: string | null; onNavigate: () => void }) {
+function QARow({ item, themeName, onNavigate, canWrite }: { item: QAPair; themeName: string | null; onNavigate: () => void; canWrite: boolean }) {
   const [answer, setAnswer] = useState(item.answer || '');
   const [answerDirty, setAnswerDirty] = useState(false);
   const [editingAI, setEditingAI] = useState(false);
@@ -158,7 +159,7 @@ function QARow({ item, themeName, onNavigate }: { item: QAPair; themeName: strin
       </div>
 
       {/* AI review section */}
-      {isPending && (
+      {isPending && canWrite && (
         <div className="rounded-md border border-violet-200 bg-violet-50 dark:border-violet-800 dark:bg-violet-950/30 p-3 space-y-2">
           <div className="flex items-center gap-2">
             <Bot className="h-4 w-4 text-violet-600 dark:text-violet-400" />
@@ -208,29 +209,35 @@ function QARow({ item, themeName, onNavigate }: { item: QAPair; themeName: strin
         </div>
       )}
 
-      {/* Answer inline edit (hidden when AI pending) */}
-      {!isPending && (
-        <div className="flex gap-2 items-start">
-          <Textarea
-            value={answer}
-            onChange={(e) => { setAnswer(e.target.value); setAnswerDirty(true); }}
-            placeholder="Введите ответ..."
-            rows={2}
-            className="text-sm flex-1 min-h-[2.5rem] resize-y"
-          />
-          {answerDirty && (
-            <Button size="sm" className="shrink-0 h-9 px-4 bg-green-600 hover:bg-green-700 text-white" onClick={saveAnswer} disabled={updateQA.isPending}>
-              {updateQA.isPending ? 'Сохранение...' : 'Сохранить'}
-            </Button>
-          )}
-        </div>
-      )}
+      {/* Answer inline edit (hidden when AI pending). Read-only for operators. */}
+      {(!isPending || !canWrite) &&
+        (canWrite ? (
+          <div className="flex gap-2 items-start">
+            <Textarea
+              value={answer}
+              onChange={(e) => { setAnswer(e.target.value); setAnswerDirty(true); }}
+              placeholder="Введите ответ..."
+              rows={2}
+              className="text-sm flex-1 min-h-[2.5rem] resize-y"
+            />
+            {answerDirty && (
+              <Button size="sm" className="shrink-0 h-9 px-4 bg-green-600 hover:bg-green-700 text-white" onClick={saveAnswer} disabled={updateQA.isPending}>
+                {updateQA.isPending ? 'Сохранение...' : 'Сохранить'}
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="text-sm whitespace-pre-wrap">
+            {item.answer || <span className="text-muted-foreground">Ответ не задан</span>}
+          </div>
+        ))}
     </div>
   );
 }
 
 export function QAListPage() {
   const navigate = useNavigate();
+  const { canWrite } = usePermissions();
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
   const [themeId, setThemeId] = useState<string>('');
@@ -297,10 +304,12 @@ export function QAListPage() {
           <h1 className="text-2xl font-semibold">Вопросы и ответы</h1>
           <p className="text-sm text-muted-foreground mt-1">{total} записей</p>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Добавить Q&A
-        </Button>
+        {canWrite && (
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Добавить Q&A
+          </Button>
+        )}
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
@@ -375,6 +384,7 @@ export function QAListPage() {
               item={item}
               themeName={getThemeName(item.theme_id)}
               onNavigate={() => navigate(`/kb/qa/${item.id}`)}
+              canWrite={canWrite}
             />
           ))}
         </div>

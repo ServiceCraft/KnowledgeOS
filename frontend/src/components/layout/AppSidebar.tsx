@@ -17,7 +17,7 @@ import {
   FileText,
   DollarSign,
   Search,
-  // Users,
+  Users,
   RefreshCw,
   Download,
   Building2,
@@ -38,9 +38,9 @@ const toolLinks = [
 ];
 
 const settingsLinks = [
-  // { to: '/settings/users', label: 'Пользователи', icon: Users, minRole: 'admin' as const },
+  { to: '/settings/users', label: 'Пользователи', icon: Users, minRole: 'admin' as const },
   { to: '/settings/sync', label: 'Статус синхронизации', icon: RefreshCw, minRole: 'admin' as const },
-  { to: '/settings/export', label: 'Экспорт / Импорт', icon: Download, minRole: 'admin' as const },
+  { to: '/settings/export', label: 'Экспорт / Импорт', icon: Download, minRole: 'superadmin' as const },
 ];
 
 const adminLinks = [

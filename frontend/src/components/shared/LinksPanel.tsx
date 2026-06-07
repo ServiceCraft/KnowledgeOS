@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Link2, Trash2, Plus, ExternalLink } from 'lucide-react';
 import { useLinksList, useCreateLink, useDeleteLink } from '@/hooks/useLinks';
+import { usePermissions } from '@/hooks/usePermissions';
 import { LoadingState } from './LoadingState';
 import { ConfirmDialog } from './ConfirmDialog';
 import { toast } from 'sonner';
@@ -14,6 +15,7 @@ interface LinksPanelProps {
 }
 
 export function LinksPanel({ entityType, entityId }: LinksPanelProps) {
+  const { canWrite } = usePermissions();
   const { data, isLoading } = useLinksList(entityType, entityId);
   const createLink = useCreateLink(entityType, entityId);
   const deleteLink = useDeleteLink(entityType, entityId);
@@ -62,10 +64,12 @@ export function LinksPanel({ entityType, entityId }: LinksPanelProps) {
             <Link2 className="h-4 w-4" />
             Ссылки ({data?.total ?? 0})
           </CardTitle>
-          <Button variant="ghost" size="sm" onClick={() => setShowForm(!showForm)}>
-            <Plus className="h-4 w-4 mr-1" />
-            Добавить
-          </Button>
+          {canWrite && (
+            <Button variant="ghost" size="sm" onClick={() => setShowForm(!showForm)}>
+              <Plus className="h-4 w-4 mr-1" />
+              Добавить
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -109,14 +113,16 @@ export function LinksPanel({ entityType, entityId }: LinksPanelProps) {
                 <span className="text-sm truncate">{link.label || 'Внутренняя ссылка'}</span>
               )}
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-destructive shrink-0"
-              onClick={() => setDeleteId(link.id)}
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
+            {canWrite && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-destructive shrink-0"
+                onClick={() => setDeleteId(link.id)}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            )}
           </div>
         ))}
 

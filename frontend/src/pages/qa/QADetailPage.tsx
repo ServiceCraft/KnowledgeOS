@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 
 import { ArrowLeft, Pencil, Trash2, Save, X, Bot, Check } from 'lucide-react';
 import { useQADetail, useUpdateQA, useDeleteQA, useReviewAIAnswer } from '@/hooks/useQA';
+import { usePermissions } from '@/hooks/usePermissions';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
 import { LinksPanel } from '@/components/shared/LinksPanel';
 import { CallMentionsPanel } from '@/components/qa/CallMentionsPanel';
@@ -21,6 +22,7 @@ import { toast } from 'sonner';
 export function QADetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { canWrite } = usePermissions();
   const { data: qa, isLoading, isError } = useQADetail(id!);
   const updateQA = useUpdateQA();
   const deleteQA = useDeleteQA();
@@ -77,7 +79,7 @@ export function QADetailPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <h1 className="text-2xl font-semibold flex-1">Детали Q&A</h1>
-        {!editing && (
+        {!editing && canWrite && (
           <div className="flex gap-2">
             <Button variant="outline" onClick={startEditing}>
               <Pencil className="h-4 w-4 mr-2" />
@@ -132,7 +134,7 @@ export function QADetailPage() {
       </Card>
 
       {/* AI review section */}
-      {qa.ai_status === 'pending' && qa.ai_answer && (
+      {qa.ai_status === 'pending' && qa.ai_answer && canWrite && (
         <Card className="border-violet-200 dark:border-violet-800">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">

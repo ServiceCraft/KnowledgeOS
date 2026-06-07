@@ -9,10 +9,12 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { usePricingList, useCreatePricingNode, useUpdatePricingNode, useDeletePricingNode } from '@/hooks/usePricing';
+import { usePermissions } from '@/hooks/usePermissions';
 import type { PricingNode } from '@/types';
 import { toast } from 'sonner';
 
 export function PricingPage() {
+  const { canWrite } = usePermissions();
   const { data, isLoading, isError } = usePricingList({ limit: 1000 });
   const createNode = useCreatePricingNode();
   const updateNode = useUpdatePricingNode();
@@ -76,10 +78,12 @@ export function PricingPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Прайс</h1>
-        <Button onClick={handleAddRoot}>
-          <Plus className="h-4 w-4 mr-2" />
-          Добавить корневой узел
-        </Button>
+        {canWrite && (
+          <Button onClick={handleAddRoot}>
+            <Plus className="h-4 w-4 mr-2" />
+            Добавить корневой узел
+          </Button>
+        )}
       </div>
 
       <SearchInput
@@ -96,6 +100,7 @@ export function PricingPage() {
           <PricingTree
             nodes={nodes}
             query={query}
+            canWrite={canWrite}
             onEdit={handleEdit}
             onDelete={(id) => setDeleteId(id)}
             onAddChild={handleAddChild}

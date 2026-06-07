@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/knowledgeos/backend/internal/auth"
 	"github.com/knowledgeos/backend/internal/config"
@@ -57,6 +58,17 @@ func main() {
 	syncSvc := service.NewSyncService(syncStore, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore)
 	callSvc := service.NewCallService(callStore, mentionStore, qaStore)
 	adminSvc := service.NewAdminService(companyStore, userStore, syncStore)
+	userSvc := service.NewUserService(userStore, syncStore)
+	snapshotSvc := service.NewSnapshotService(service.SnapshotConfig{
+		PGHost:     cfg.PostgresHost,
+		PGPort:     cfg.PostgresPort,
+		PGUser:     cfg.PostgresUser,
+		PGPassword: cfg.PostgresPassword,
+		PGDatabase: cfg.PostgresDB,
+		CodePath:   cfg.BackupCodePath,
+		GitCommit:  cfg.BackupGitCommit,
+		CommitFile: cfg.BackupCommitFile,
+	}, db)
 
 	// Bootstrap: seed superadmin if no companies exist
 	bootstrap(cfg, companyStore, userStore, syncStore)
@@ -74,11 +86,16 @@ func main() {
 		Export:  handler.NewExportHandler(exportSvc, userStore),
 		Sync:    handler.NewSyncHandler(syncSvc),
 		Admin:   handler.NewAdminHandler(adminSvc),
+		User:    handler.NewUserHandler(userSvc),
 		Call:    handler.NewCallHandler(callSvc),
+		Backup:  handler.NewBackupHandler(snapshotSvc),
 	}
 
 	var syncRepo domain.SyncRepository = syncStore
-	router := handler.NewRouter(h, jwtMgr, syncRepo)
+	// The backup API key is read per-request so it can be rotated/revoked
+	// without restarting the process.
+	backupKey := func() string { return os.Getenv("BACKUP_API_KEY") }
+	router := handler.NewRouter(h, jwtMgr, syncRepo, backupKey)
 
 	log.Println("KnowledgeOS API starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", router))
@@ -120,6 +137,7 @@ func bootstrap(cfg *config.Config, companies *store.CompanyStore, users *store.U
 		PasswordHash: hash,
 		Role:         domain.RoleSuperadmin,
 		CompanyID:    &company.ID,
+		IsActive:     true,
 	}
 	if err := users.Create(ctx, user); err != nil {
 		log.Fatalf("Failed to create superadmin user: %v", err)

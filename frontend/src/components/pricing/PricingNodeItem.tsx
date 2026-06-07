@@ -17,6 +17,7 @@ interface TreeNode extends PricingNode {
 
 interface PricingNodeItemProps {
   node: TreeNode;
+  canWrite?: boolean;
   onEdit: (node: PricingNode) => void;
   onDelete: (id: string) => void;
   onAddChild: (parentId: string) => void;
@@ -25,6 +26,7 @@ interface PricingNodeItemProps {
 
 export function PricingNodeItem({
   node,
+  canWrite = false,
   onEdit,
   onDelete,
   onAddChild,
@@ -59,22 +61,24 @@ export function PricingNodeItem({
             </span>
           )}
 
-          <div className="opacity-0 group-hover:opacity-100 flex gap-1">
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onAddChild(node.id)}>
-              <Plus className="h-3 w-3" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onEdit(node)}>
-              <Pencil className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-destructive"
-              onClick={() => onDelete(node.id)}
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
-          </div>
+          {canWrite && (
+            <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onAddChild(node.id)}>
+                <Plus className="h-3 w-3" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onEdit(node)}>
+                <Pencil className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-destructive"
+                onClick={() => onDelete(node.id)}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
         </div>
 
         {hasChildren && (
@@ -83,6 +87,7 @@ export function PricingNodeItem({
               <PricingNodeItem
                 key={child.id}
                 node={child}
+                canWrite={canWrite}
                 onEdit={onEdit}
                 onDelete={onDelete}
                 onAddChild={onAddChild}

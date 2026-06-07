@@ -13,6 +13,7 @@ export interface User {
   company_id?: string;
   email: string;
   role: Role;
+  is_active: boolean;
 }
 
 export type Role = 'superadmin' | 'admin' | 'editor' | 'viewer';

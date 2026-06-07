@@ -19,11 +19,13 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { useThemesList, useCreateTheme, useUpdateTheme, useDeleteTheme } from '@/hooks/useThemes';
+import { usePermissions } from '@/hooks/usePermissions';
 import type { Theme } from '@/types';
 import { toast } from 'sonner';
 
 export function ThemesPage() {
   const navigate = useNavigate();
+  const { canWrite } = usePermissions();
   const [query, setQuery] = useState('');
   const [page] = useState(1);
 
@@ -90,10 +92,12 @@ export function ThemesPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Темы</h1>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-2" />
-          Добавить тему
-        </Button>
+        {canWrite && (
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4 mr-2" />
+            Добавить тему
+          </Button>
+        )}
       </div>
 
       <SearchInput onSearch={setQuery} placeholder="Поиск по темам..." className="max-w-sm" />
@@ -111,19 +115,21 @@ export function ThemesPage() {
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">{theme.name}</CardTitle>
-                  <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(theme)}>
-                      <Pencil className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive"
-                      onClick={() => setDeleteId(theme.id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
+                  {canWrite && (
+                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(theme)}>
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive"
+                        onClick={() => setDeleteId(theme.id)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
