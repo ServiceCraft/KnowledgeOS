@@ -65,9 +65,9 @@ export default function App() {
                 <Route element={<ProtectedRoute minimumRole="admin" />}>
                   <Route path="/settings/users" element={<UsersPage />} />
                   <Route path="/settings/sync" element={<SyncPage />} />
-                  <Route path="/settings/export" element={<ExportPage />} />
                 </Route>
                 <Route element={<ProtectedRoute minimumRole="superadmin" />}>
+                  <Route path="/settings/export" element={<ExportPage />} />
                   <Route path="/admin/companies" element={<CompaniesPage />} />
                 </Route>
               </Route>

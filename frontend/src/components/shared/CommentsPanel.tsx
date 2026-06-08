@@ -6,6 +6,7 @@ import { Separator } from '@/components/ui/separator';
 import { MessageSquare, Pencil, Trash2, Send } from 'lucide-react';
 import { useCommentsList, useCreateComment, useUpdateComment, useDeleteComment } from '@/hooks/useComments';
 import { useAuthStore } from '@/stores/authStore';
+import { usePermissions } from '@/hooks/usePermissions';
 import { LoadingState } from './LoadingState';
 import { ConfirmDialog } from './ConfirmDialog';
 import { toast } from 'sonner';
@@ -16,6 +17,7 @@ interface CommentsPanelProps {
 }
 
 export function CommentsPanel({ entityType, entityId }: CommentsPanelProps) {
+  const { canWrite } = usePermissions();
   const { data, isLoading } = useCommentsList(entityType, entityId);
   const createComment = useCreateComment(entityType, entityId);
   const updateComment = useUpdateComment(entityType, entityId);
@@ -105,7 +107,7 @@ export function CommentsPanel({ entityType, entityId }: CommentsPanelProps) {
                     <p className="text-sm">{comment.body}</p>
                   )}
                 </div>
-                {user && comment.author_id === user.id && editingId !== comment.id && (
+                {canWrite && user && comment.author_id === user.id && editingId !== comment.id && (
                   <div className="flex gap-1 ml-2">
                     <Button
                       variant="ghost"
@@ -137,22 +139,28 @@ export function CommentsPanel({ entityType, entityId }: CommentsPanelProps) {
           ))}
         </div>
 
-        <div className="flex gap-2">
-          <Textarea
-            value={newBody}
-            onChange={(e) => setNewBody(e.target.value)}
-            placeholder="Добавить комментарий..."
-            rows={2}
-            className="flex-1"
-          />
-          <Button
-            size="icon"
-            onClick={handleCreate}
-            disabled={!newBody.trim() || createComment.isPending}
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
+        {canWrite ? (
+          <div className="flex gap-2">
+            <Textarea
+              value={newBody}
+              onChange={(e) => setNewBody(e.target.value)}
+              placeholder="Добавить комментарий..."
+              rows={2}
+              className="flex-1"
+            />
+            <Button
+              size="icon"
+              onClick={handleCreate}
+              disabled={!newBody.trim() || createComment.isPending}
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          comments.length === 0 && (
+            <p className="text-sm text-muted-foreground">Комментариев пока нет.</p>
+          )
+        )}
 
         <ConfirmDialog
           open={!!deleteId}

@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, Pencil, Trash2, Save, X } from 'lucide-react';
 import { useArticleDetail, useUpdateArticle, useDeleteArticle } from '@/hooks/useArticles';
+import { usePermissions } from '@/hooks/usePermissions';
 import { MarkdownEditor } from '@/components/shared/MarkdownEditor';
 import { MarkdownViewer } from '@/components/shared/MarkdownViewer';
 import { CommentsPanel } from '@/components/shared/CommentsPanel';
@@ -17,6 +18,7 @@ import { toast } from 'sonner';
 export function ArticleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { canWrite } = usePermissions();
   const { data: article, isLoading, isError } = useArticleDetail(id!);
   const updateArticle = useUpdateArticle();
   const deleteArticle = useDeleteArticle();
@@ -76,7 +78,7 @@ export function ArticleDetailPage() {
             article.title
           )}
         </h1>
-        {!editing && (
+        {!editing && canWrite && (
           <div className="flex gap-2">
             <Button variant="outline" onClick={startEditing}>
               <Pencil className="h-4 w-4 mr-2" />

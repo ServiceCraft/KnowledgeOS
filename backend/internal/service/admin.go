@@ -57,8 +57,9 @@ type CreateCompanyAdminRequest struct {
 }
 
 func (s *AdminService) CreateCompanyAdmin(ctx context.Context, companyID uuid.UUID, req CreateCompanyAdminRequest) (*domain.User, error) {
-	if req.Email == "" || req.Password == "" {
-		return nil, errors.New("email and password are required")
+	email, err := ValidateNewCredentials(req.Email, req.Password)
+	if err != nil {
+		return nil, err
 	}
 
 	hash, err := auth.HashPassword(req.Password)
@@ -68,9 +69,10 @@ func (s *AdminService) CreateCompanyAdmin(ctx context.Context, companyID uuid.UU
 
 	user := &domain.User{
 		CompanyID:    &companyID,
-		Email:        req.Email,
+		Email:        email,
 		PasswordHash: hash,
 		Role:         domain.RoleAdmin,
+		IsActive:     true,
 	}
 
 	if err := s.users.Create(ctx, user); err != nil {

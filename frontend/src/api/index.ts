@@ -10,3 +10,4 @@ export { syncApi } from './sync';
 export { exportApi } from './export';
 export { adminApi } from './admin';
 export { usersApi } from './users';
+export { callsApi } from './calls';

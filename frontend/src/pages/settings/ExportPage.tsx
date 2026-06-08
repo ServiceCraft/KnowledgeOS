@@ -118,6 +118,8 @@ export function ExportPage() {
         onConfirm={handleImport}
         loading={importMutation.isPending}
         destructive={false}
+        confirmLabel="Импортировать"
+        loadingLabel="Импорт..."
       />
     </div>
   );

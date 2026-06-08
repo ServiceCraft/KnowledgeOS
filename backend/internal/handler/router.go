@@ -20,9 +20,16 @@ type Handlers struct {
 	Export  *ExportHandler
 	Sync    *SyncHandler
 	Admin   *AdminHandler
+	User    *UserHandler
+	Call    *CallHandler
+	Backup  *BackupHandler
 }
 
-func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncRepository) *chi.Mux {
+// writeRoles are allowed to mutate business entities. Viewer (Оператор) is
+// intentionally excluded — it is a read-only role.
+var writeRoles = []domain.Role{domain.RoleEditor, domain.RoleAdmin, domain.RoleSuperadmin}
+
+func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncRepository, backupKey func() string) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chiMiddleware.Recoverer)
@@ -34,75 +41,97 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 		r.Post("/auth/login", h.Auth.Login)
 		r.Post("/auth/refresh", h.Auth.Refresh)
 
-		// Protected (JWT + tenant)
+		// Protected (JWT + tenant). All reads available to any authenticated
+		// role (viewer included); writes are gated to editor and above.
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.JWTAuth(jwtMgr))
 			r.Use(middleware.Tenant)
 
 			r.Post("/auth/logout", h.Auth.Logout)
 
-			// QA
+			// --- Reads (viewer+) ---
 			r.Get("/qa", h.QA.List)
-			r.Post("/qa", h.QA.Create)
 			r.Get("/qa/{id}", h.QA.Get)
-			r.Patch("/qa/{id}", h.QA.Update)
-			r.Post("/qa/{id}/review", h.QA.Review)
-			r.Delete("/qa/{id}", h.QA.Delete)
-
-			// Themes
+			r.Get("/qa/{id}/mentions", h.Call.ListMentionsForQA)
+			r.Get("/calls/{id}", h.Call.GetCall)
 			r.Get("/themes", h.Theme.List)
-			r.Post("/themes", h.Theme.Create)
 			r.Get("/themes/{id}", h.Theme.Get)
-			r.Patch("/themes/{id}", h.Theme.Update)
-			r.Delete("/themes/{id}", h.Theme.Delete)
 			r.Get("/themes/{id}/qa", h.Theme.ListQA)
-
-			// Pricing
 			r.Get("/pricing", h.Pricing.List)
-			r.Post("/pricing", h.Pricing.Create)
 			r.Get("/pricing/{id}", h.Pricing.Get)
-			r.Patch("/pricing/{id}", h.Pricing.Update)
-			r.Delete("/pricing/{id}", h.Pricing.Delete)
-			r.Post("/pricing/{id}/move", h.Pricing.Move)
-
-			// Articles
 			r.Get("/articles", h.Article.List)
-			r.Post("/articles", h.Article.Create)
 			r.Get("/articles/{id}", h.Article.Get)
-			r.Patch("/articles/{id}", h.Article.Update)
-			r.Delete("/articles/{id}", h.Article.Delete)
+			r.Get("/search", h.Search.Search)
+			r.Get("/sync/status", h.Sync.Status)
 
-			// Comments (polymorphic)
+			// --- Writes (editor+) ---
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRole(writeRoles...))
+
+				// QA
+				r.Post("/qa", h.QA.Create)
+				r.Patch("/qa/{id}", h.QA.Update)
+				r.Post("/qa/{id}/review", h.QA.Review)
+				r.Delete("/qa/{id}", h.QA.Delete)
+
+				// Themes
+				r.Post("/themes", h.Theme.Create)
+				r.Patch("/themes/{id}", h.Theme.Update)
+				r.Delete("/themes/{id}", h.Theme.Delete)
+
+				// Pricing
+				r.Post("/pricing", h.Pricing.Create)
+				r.Patch("/pricing/{id}", h.Pricing.Update)
+				r.Delete("/pricing/{id}", h.Pricing.Delete)
+				r.Post("/pricing/{id}/move", h.Pricing.Move)
+
+				// Articles
+				r.Post("/articles", h.Article.Create)
+				r.Patch("/articles/{id}", h.Article.Update)
+				r.Delete("/articles/{id}", h.Article.Delete)
+			})
+
+			// Comments (polymorphic): read for everyone, write for editor+.
 			r.Route("/{entityType}/{entityID}/comments", func(r chi.Router) {
 				r.Use(middleware.EntityType)
 				r.Get("/", h.Comment.List)
-				r.Post("/", h.Comment.Create)
-				r.Patch("/{id}", h.Comment.Update)
-				r.Delete("/{id}", h.Comment.Delete)
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireRole(writeRoles...))
+					r.Post("/", h.Comment.Create)
+					r.Patch("/{id}", h.Comment.Update)
+					r.Delete("/{id}", h.Comment.Delete)
+				})
 			})
 
-			// Links (polymorphic)
+			// Links (polymorphic): read for everyone, write for editor+.
 			r.Route("/{entityType}/{entityID}/links", func(r chi.Router) {
 				r.Use(middleware.EntityType)
 				r.Get("/", h.Link.List)
-				r.Post("/", h.Link.Create)
-				r.Delete("/{id}", h.Link.Delete)
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireRole(writeRoles...))
+					r.Post("/", h.Link.Create)
+					r.Delete("/{id}", h.Link.Delete)
+				})
 			})
 
-			// Search
-			r.Get("/search", h.Search.Search)
-
-			// Export/Import (admin+)
+			// User administration (admin + superadmin). Assigning the
+			// superadmin role is further restricted inside the service.
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole(domain.RoleAdmin, domain.RoleSuperadmin))
+				r.Get("/admin/users", h.User.List)
+				r.Post("/admin/users", h.User.Create)
+				r.Patch("/admin/users/{id}", h.User.Update)
+				r.Delete("/admin/users/{id}", h.User.Delete)
+			})
+
+			// Import/Export of the knowledge base — superadmin only.
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRole(domain.RoleSuperadmin))
 				r.Get("/export", h.Export.Export)
 				r.Post("/import", h.Export.Import)
 			})
 
-			// Sync status (JWT-authenticated)
-			r.Get("/sync/status", h.Sync.Status)
-
-			// Superadmin routes
+			// Company administration — superadmin only.
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole(domain.RoleSuperadmin))
 				r.Get("/admin/companies", h.Admin.ListCompanies)
@@ -119,6 +148,12 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 			r.Use(middleware.SyncAPIKeyAuth(syncRepo))
 			r.Post("/sync/push", h.Sync.Push)
 			r.Get("/sync/pull", h.Sync.Pull)
+		})
+
+		// Backup snapshot endpoint (dedicated backup API key, not JWT).
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.BackupAPIKeyAuth(backupKey))
+			r.Get("/backup/snapshot", h.Backup.Snapshot)
 		})
 	})
 

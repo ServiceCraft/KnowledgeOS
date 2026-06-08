@@ -13,6 +13,7 @@ export interface User {
   company_id?: string;
   email: string;
   role: Role;
+  is_active: boolean;
 }
 
 export type Role = 'superadmin' | 'admin' | 'editor' | 'viewer';
@@ -125,4 +126,44 @@ export interface SyncStatus {
   last_sync_result?: string;
   last_error?: string;
   subscription_active: boolean;
+}
+
+export interface Call {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  company_id: string;
+  sync_version: number;
+  sync_origin: string;
+  created_by?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  external_id?: string;
+  title: string;
+  occurred_at?: string;
+  duration_sec?: number;
+  audio_url?: string;
+  transcript: string;
+}
+
+export interface CallMention {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  company_id: string;
+  sync_version: number;
+  sync_origin: string;
+  created_by?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  qa_pair_id: string;
+  call_id: string;
+  snippet: string;
+  start_offset?: number;
+  end_offset?: number;
+  start_sec?: number;
+  end_sec?: number;
+  confidence?: number;
+  call_title: string;
+  call_occurred_at?: string;
 }

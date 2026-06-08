@@ -52,6 +52,10 @@ func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*LoginRespon
 		return nil, errors.New("invalid credentials")
 	}
 
+	if !user.IsActive {
+		return nil, errors.New("account is deactivated")
+	}
+
 	pair, refreshHash, err := s.jwtMgr.Issue(user)
 	if err != nil {
 		return nil, err
@@ -102,6 +106,10 @@ func (s *AuthService) Refresh(ctx context.Context, req RefreshRequest) (*LoginRe
 	user, err := s.users.GetByID(ctx, stored.UserID)
 	if err != nil {
 		return nil, err
+	}
+
+	if !user.IsActive {
+		return nil, errors.New("account is deactivated")
 	}
 
 	pair, newHash, err := s.jwtMgr.Issue(user)

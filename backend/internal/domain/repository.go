@@ -38,16 +38,35 @@ type ArticleFilter struct {
 }
 
 type CommentFilter struct {
-	Page int
+	Page  int
 	Limit int
 }
 
 type EntityLinkFilter struct {
-	Page int
+	Page  int
 	Limit int
 }
 
 type CompanyFilter struct {
+	Page  int
+	Limit int
+}
+
+type UserFilter struct {
+	Page  int
+	Limit int
+	Query string // matches against email
+	Role  *Role  // optional role filter
+	Sort  string // "created_at" or "-created_at"
+}
+
+type CallFilter struct {
+	Page  int
+	Limit int
+	Query string
+}
+
+type QACallMentionFilter struct {
 	Page  int
 	Limit int
 }
@@ -129,6 +148,23 @@ type EntityLinkRepository interface {
 	ApplyRemote(ctx context.Context, companyID uuid.UUID, link *EntityLink) error
 }
 
+type CallRepository interface {
+	GetByID(ctx context.Context, companyID uuid.UUID, id uuid.UUID) (*Call, error)
+	Create(ctx context.Context, companyID uuid.UUID, call *Call) error
+	Update(ctx context.Context, companyID uuid.UUID, call *Call) error
+	Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error
+	ApplyRemote(ctx context.Context, companyID uuid.UUID, call *Call) error
+	ListAll(ctx context.Context, companyID uuid.UUID) ([]Call, error)
+}
+
+type QACallMentionRepository interface {
+	ListByQA(ctx context.Context, companyID, qaID uuid.UUID, filter QACallMentionFilter) ([]QAPairCallMentionView, int64, error)
+	Create(ctx context.Context, companyID uuid.UUID, m *QAPairCallMention) error
+	Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error
+	ApplyRemote(ctx context.Context, companyID uuid.UUID, m *QAPairCallMention) error
+	ListAll(ctx context.Context, companyID uuid.UUID) ([]QAPairCallMention, error)
+}
+
 type CompanyRepository interface {
 	List(ctx context.Context, filter CompanyFilter) ([]Company, int64, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*Company, error)
@@ -139,10 +175,12 @@ type CompanyRepository interface {
 }
 
 type UserRepository interface {
+	List(ctx context.Context, companyID uuid.UUID, filter UserFilter) ([]User, int64, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	Create(ctx context.Context, user *User) error
 	Update(ctx context.Context, user *User) error
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 type SearchRepository interface {

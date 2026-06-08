@@ -16,10 +16,12 @@ import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { useArticlesList, useCreateArticle } from '@/hooks/useArticles';
+import { usePermissions } from '@/hooks/usePermissions';
 import { toast } from 'sonner';
 
 export function ArticleListPage() {
   const navigate = useNavigate();
+  const { canWrite } = usePermissions();
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -63,10 +65,12 @@ export function ArticleListPage() {
           <h1 className="text-2xl font-semibold">Статьи</h1>
           <p className="text-sm text-muted-foreground mt-1">{total} {total === 1 ? 'статья' : total >= 2 && total <= 4 ? 'статьи' : 'статей'}</p>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Новая статья
-        </Button>
+        {canWrite && (
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Новая статья
+          </Button>
+        )}
       </div>
 
       <SearchInput

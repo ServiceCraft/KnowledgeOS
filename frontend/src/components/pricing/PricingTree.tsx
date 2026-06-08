@@ -10,6 +10,7 @@ interface TreeNode extends PricingNode {
 interface PricingTreeProps {
   nodes: PricingNode[];
   query?: string;
+  canWrite?: boolean;
   onEdit: (node: PricingNode) => void;
   onDelete: (id: string) => void;
   onAddChild: (parentId: string) => void;
@@ -28,7 +29,7 @@ function filterTree(roots: TreeNode[], q: string): TreeNode[] {
   return roots.map(keep).filter(Boolean) as TreeNode[];
 }
 
-export function PricingTree({ nodes, query, onEdit, onDelete, onAddChild }: PricingTreeProps) {
+export function PricingTree({ nodes, query, canWrite = false, onEdit, onDelete, onAddChild }: PricingTreeProps) {
   const tree = useMemo(() => {
     const map = new Map<string, TreeNode>();
     const roots: TreeNode[] = [];
@@ -68,6 +69,7 @@ export function PricingTree({ nodes, query, onEdit, onDelete, onAddChild }: Pric
         <PricingNodeItem
           key={node.id}
           node={node}
+          canWrite={canWrite}
           onEdit={onEdit}
           onDelete={onDelete}
           onAddChild={onAddChild}

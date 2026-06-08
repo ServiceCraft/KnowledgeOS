@@ -15,15 +15,20 @@ type Config struct {
 	PostgresDB       string
 
 	// App
-	AppProfile        string // "local" or "cloud"
-	JWTSecret         string
-	SuperadminEmail   string
+	AppProfile         string // "local" or "cloud"
+	JWTSecret          string
+	SuperadminEmail    string
 	SuperadminPassword string
 
 	// Sync
 	CloudAPIURL         string
 	CloudAPIKey         string
 	SyncIntervalSeconds int
+
+	// Backup snapshot endpoint
+	BackupCodePath   string // path to the source tree included in code.tar.gz
+	BackupGitCommit  string // current commit hash, surfaced in metadata.json
+	BackupCommitFile string // optional file to read the commit hash from when env is empty
 }
 
 func (c *Config) DSN() string {
@@ -50,6 +55,9 @@ func Load() *Config {
 		CloudAPIURL:         getEnv("CLOUD_API_URL", ""),
 		CloudAPIKey:         getEnv("CLOUD_API_KEY", ""),
 		SyncIntervalSeconds: syncInterval,
+		BackupCodePath:      getEnv("BACKUP_CODE_PATH", "/app/src"),
+		BackupGitCommit:     getEnv("BACKUP_GIT_COMMIT", ""),
+		BackupCommitFile:    getEnv("BACKUP_COMMIT_FILE", "/app/COMMIT"),
 	}
 }
 

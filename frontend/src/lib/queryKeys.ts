@@ -54,4 +54,9 @@ export const queryKeys = {
     list: (filters?: CompanyFilter) => ['companies', 'list', filters] as const,
     detail: (id: string) => ['companies', id] as const,
   },
+  calls: {
+    all: ['calls'] as const,
+    detail: (id: string) => ['calls', id] as const,
+    mentionsForQA: (qaId: string) => ['calls', 'mentions', 'qa', qaId] as const,
+  },
 };

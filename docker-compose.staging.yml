@@ -15,8 +15,12 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     expose:
       - "8080"
+    volumes:
+      - ./:/src:ro
     environment:
       - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
@@ -27,6 +31,9 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL}
       - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD}
+      - BACKUP_API_KEY=${BACKUP_API_KEY:-}
+      - BACKUP_CODE_PATH=/src
+      - BACKUP_GIT_COMMIT=${GIT_COMMIT:-}
     restart: unless-stopped
     depends_on:
       postgres:

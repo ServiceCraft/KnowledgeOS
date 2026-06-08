@@ -16,6 +16,10 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   loading?: boolean;
   destructive?: boolean;
+  /** Label for the confirm button (default: "Подтвердить"). */
+  confirmLabel?: string;
+  /** Label shown on the confirm button while `loading` (default: "Удаление..."). */
+  loadingLabel?: string;
 }
 
 export function ConfirmDialog({
@@ -26,6 +30,8 @@ export function ConfirmDialog({
   onConfirm,
   loading = false,
   destructive = true,
+  confirmLabel = 'Подтвердить',
+  loadingLabel = 'Удаление...',
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -43,7 +49,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={loading}
           >
-            {loading ? 'Удаление...' : 'Подтвердить'}
+            {loading ? loadingLabel : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
