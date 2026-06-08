@@ -18,9 +18,7 @@ import {
   DollarSign,
   Search,
   Users,
-  RefreshCw,
   Download,
-  Building2,
   MessageSquareQuote,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
@@ -39,12 +37,7 @@ const toolLinks = [
 
 const settingsLinks = [
   { to: '/settings/users', label: 'Пользователи', icon: Users, minRole: 'admin' as const },
-  { to: '/settings/sync', label: 'Статус синхронизации', icon: RefreshCw, minRole: 'admin' as const },
   { to: '/settings/export', label: 'Экспорт / Импорт', icon: Download, minRole: 'superadmin' as const },
-];
-
-const adminLinks = [
-  { to: '/admin/companies', label: 'Компании', icon: Building2, minRole: 'superadmin' as const },
 ];
 
 export function AppSidebar() {
@@ -110,24 +103,6 @@ export function AppSidebar() {
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-
-        {hasMinRole(role, 'superadmin') && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Администрирование</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {adminLinks.map((link) => (
-                  <SidebarMenuItem key={link.to}>
-                    <SidebarMenuButton render={<Link to={link.to} />} isActive={isActive(link.to)}>
-                      <link.icon className="h-4 w-4" />
-                      <span>{link.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

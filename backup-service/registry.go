@@ -22,6 +22,12 @@ type IndexEntry struct {
 	DumpBytes        int64     `json:"dump_bytes"`         // compressed size
 	Checksum         string    `json:"checksum_sha256"`    // of dump.sql.gz
 	DumpSourceSHA256 string    `json:"dump_source_sha256"` // of the uncompressed dump.sql
+
+	// Logical export bundle (export.json) stored gzipped alongside the dump.
+	// Empty when the snapshot carries no export (older app versions).
+	ExportFile     string `json:"export_file,omitempty"`
+	ExportBytes    int64  `json:"export_bytes,omitempty"`          // compressed size
+	ExportChecksum string `json:"export_checksum_sha256,omitempty"` // of export.json.gz
 }
 
 func indexPath(cfg Config) string { return filepath.Join(cfg.BackupsPath, "index.json") }
@@ -50,13 +56,39 @@ func storeDump(cfg Config, extractedDir, timestamp, tag string, meta Metadata) (
 		_ = os.RemoveAll(dir)
 		return IndexEntry{}, err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "checksum.sha256"), []byte(sum+"  dump.sql.gz\n"), 0o600); err != nil {
+
+	info, err := os.Stat(dumpGz)
+	if err != nil {
 		_ = os.RemoveAll(dir)
 		return IndexEntry{}, err
 	}
 
-	info, err := os.Stat(dumpGz)
-	if err != nil {
+	// Optional logical export bundle: store gzipped beside the dump.
+	checksums := sum + "  dump.sql.gz\n"
+	var exportFile, exportSum string
+	var exportBytes int64
+	if _, serr := os.Stat(filepath.Join(extractedDir, "export.json")); serr == nil {
+		exportGz := filepath.Join(dir, "export.json.gz")
+		if err := gzipFile(filepath.Join(extractedDir, "export.json"), exportGz); err != nil {
+			_ = os.RemoveAll(dir)
+			return IndexEntry{}, fmt.Errorf("gzip export: %w", err)
+		}
+		exportSum, err = sha256File(exportGz)
+		if err != nil {
+			_ = os.RemoveAll(dir)
+			return IndexEntry{}, err
+		}
+		einfo, err := os.Stat(exportGz)
+		if err != nil {
+			_ = os.RemoveAll(dir)
+			return IndexEntry{}, err
+		}
+		exportFile = "export.json.gz"
+		exportBytes = einfo.Size()
+		checksums += exportSum + "  export.json.gz\n"
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "checksum.sha256"), []byte(checksums), 0o600); err != nil {
 		_ = os.RemoveAll(dir)
 		return IndexEntry{}, err
 	}
@@ -71,6 +103,9 @@ func storeDump(cfg Config, extractedDir, timestamp, tag string, meta Metadata) (
 		DumpBytes:        info.Size(),
 		Checksum:         sum,
 		DumpSourceSHA256: meta.Components["dump.sql"].SHA256,
+		ExportFile:       exportFile,
+		ExportBytes:      exportBytes,
+		ExportChecksum:   exportSum,
 	}, nil
 }
 

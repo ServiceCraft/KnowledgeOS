@@ -22,7 +22,13 @@ Authorization: Bearer <BACKUP_API_KEY>
 |-----------------|------------------------------------------------------------------|
 | `dump.sql`      | Дамп БД (`pg_dump --serializable-deferrable`)                    |
 | `code.tar.gz`   | Снимок исходников проекта (без `.git`, `node_modules`, `vendor`…) |
+| `export.json`   | Логический экспорт базы знаний по всем компаниям (то же, что отдаёт кнопка «Экспортировать» / `GET /api/v1/export`) |
 | `metadata.json` | Дата (UTC), хэш коммита, версия схемы БД, размеры и SHA-256       |
+
+`export.json` имеет вид `{ "exported_at": …, "companies": [ { "company_id", "company_name", "data": { themes, qa_pairs, pricing_nodes, articles, calls, … } } ] }`,
+где блок `data` каждой компании идентичен ответу `GET /api/v1/export`. Это
+портативный, пригодный для `POST /api/v1/import` слепок в дополнение к «сырому»
+`dump.sql`.
 
 Свойства:
 
@@ -60,7 +66,7 @@ Authorization: Bearer <BACKUP_API_KEY>
 ```bash
 curl -fSL -H "Authorization: Bearer $BACKUP_API_KEY" \
   https://<APP_HOST>/api/v1/backup/snapshot -o snapshot.tar.gz
-tar tzf snapshot.tar.gz          # metadata.json, dump.sql, code.tar.gz
+tar tzf snapshot.tar.gz          # metadata.json, dump.sql, code.tar.gz, export.json
 ```
 
 ---
@@ -88,13 +94,16 @@ tar tzf snapshot.tar.gz          # metadata.json, dump.sql, code.tar.gz
 ### Цикл (TZ §5.4)
 
 1. Скачивает слепок, проверяет целостность по `metadata.json` (размер + SHA-256
-   каждого компонента). При несовпадении цикл прерывается, временные файлы
-   удаляются.
+   каждого компонента, включая `export.json`, если он есть). При несовпадении
+   цикл прерывается, временные файлы удаляются.
 2. Распаковывает `code.tar.gz` в рабочую копию, делает коммит на ветке
    `GITHUB_BRANCH` (с ссылкой на хэш и дату исходного снимка), ставит тег
    `snapshot-YYYYMMDD-HHMMSS`, выполняет `push`.
-3. Сохраняет дамп: `$BACKUPS_PATH/<timestamp>/{dump.sql.gz, metadata.json,
-   checksum.sha256}`, регистрирует запись в `$BACKUPS_PATH/index.json`.
+3. Сохраняет данные: `$BACKUPS_PATH/<timestamp>/{dump.sql.gz, export.json.gz,
+   metadata.json, checksum.sha256}`, регистрирует запись в
+   `$BACKUPS_PATH/index.json` (с размерами и SHA-256 дампа и экспорта).
+   `export.json.gz` хранится рядом с дампом и **не** коммитится в git-ветку
+   `backup` (там только исходный код).
 4. Ротация: при превышении `BACKUPS_KEEP` старшие снимки удаляются (FIFO).
 5. Итог цикла (успех/ошибка/длительность/размеры) пишется в лог.
 
@@ -176,3 +185,27 @@ cat dump.sql | docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POS
 > Дамп снят в текстовом формате `pg_dump`, поэтому накатывается через `psql`.
 > Восстановление — **ручная** операция администратора (автоматический откат
 > основного приложения в объём работ не входит).
+
+### 3.3. Восстановление из логического экспорта (`export.json.gz`)
+
+Альтернатива полному дампу: точечно восстановить базу знаний одной компании
+в **работающее** приложение через стандартный импорт (идемпотентный upsert по
+id/имени, не затрагивает пользователей и системные таблицы).
+
+```bash
+cd $BACKUPS_PATH/20260607-030000
+gunzip -k export.json.gz                    # → export.json
+
+# взять блок data нужной компании из export.json и отправить в импорт.
+# (export.json: { "companies": [ { "company_id", "company_name", "data": {…} } ] })
+jq '.companies[0].data' export.json > company.json
+
+curl -fSL -X POST https://<APP_HOST>/api/v1/import \
+  -H "Authorization: Bearer <JWT супер-администратора>" \
+  -H "Content-Type: application/json" \
+  --data-binary @company.json
+```
+
+> Импорт доступен только Супер администратору и применяется в рамках его
+> компании. Подходит для миграции/частичного отката контента; для полного
+> побайтового восстановления используйте `dump.sql` (см. 3.2).

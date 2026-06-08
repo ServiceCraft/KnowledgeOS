@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/knowledgeos/backend/internal/domain"
 	"gorm.io/gorm"
 )
 
@@ -95,13 +96,15 @@ type SnapshotConfig struct {
 }
 
 type SnapshotService struct {
-	cfg SnapshotConfig
-	db  *gorm.DB
-	mu  sync.Mutex
+	cfg       SnapshotConfig
+	db        *gorm.DB
+	exporter  *ExportService
+	companies domain.CompanyRepository
+	mu        sync.Mutex
 }
 
-func NewSnapshotService(cfg SnapshotConfig, db *gorm.DB) *SnapshotService {
-	return &SnapshotService{cfg: cfg, db: db}
+func NewSnapshotService(cfg SnapshotConfig, db *gorm.DB, exporter *ExportService, companies domain.CompanyRepository) *SnapshotService {
+	return &SnapshotService{cfg: cfg, db: db, exporter: exporter, companies: companies}
 }
 
 type componentMeta struct {
@@ -159,6 +162,14 @@ func (s *SnapshotService) Build(ctx context.Context) (archivePath string, cleanu
 		return "", nil, err
 	}
 
+	// Logical export (the same JSON the admin "Export" button produces, for every
+	// company) — a portable, re-importable complement to the raw pg_dump.
+	exportPath := filepath.Join(workDir, "export.json")
+	exportBytes, exportSum, err := s.writeExport(ctx, exportPath)
+	if err != nil {
+		return "", nil, err
+	}
+
 	meta := snapshotMetadata{
 		CreatedAt:     time.Now().UTC(),
 		GitCommit:     s.resolveCommit(),
@@ -166,6 +177,7 @@ func (s *SnapshotService) Build(ctx context.Context) (archivePath string, cleanu
 		Components: map[string]componentMeta{
 			"dump.sql":    {Bytes: dumpBytes, SHA256: dumpSum},
 			"code.tar.gz": {Bytes: codeBytes, SHA256: codeSum, Files: codeFiles},
+			"export.json": {Bytes: exportBytes, SHA256: exportSum},
 		},
 	}
 	metaPath := filepath.Join(workDir, "metadata.json")
@@ -174,7 +186,7 @@ func (s *SnapshotService) Build(ctx context.Context) (archivePath string, cleanu
 	}
 
 	archivePath = filepath.Join(workDir, "snapshot.tar.gz")
-	if err := buildArchive(archivePath, []string{metaPath, dumpPath, codePath}); err != nil {
+	if err := buildArchive(archivePath, []string{metaPath, dumpPath, codePath, exportPath}); err != nil {
 		return "", nil, err
 	}
 
@@ -202,6 +214,48 @@ func (s *SnapshotService) pgDump(ctx context.Context, outPath string) error {
 		return fmt.Errorf("pg_dump failed: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
+}
+
+// companyExport pairs a company with the logical export of its knowledge base.
+type companyExport struct {
+	CompanyID   string      `json:"company_id"`
+	CompanyName string      `json:"company_name"`
+	Data        *ExportData `json:"data"`
+}
+
+// exportBundle is the export.json payload: the logical export of every company,
+// each Data block identical to what GET /api/v1/export returns for that company.
+type exportBundle struct {
+	ExportedAt time.Time       `json:"exported_at"`
+	Companies  []companyExport `json:"companies"`
+}
+
+// writeExport produces export.json (the logical export of all companies) and
+// returns its size and sha256. When the exporter is not wired it writes an
+// empty bundle so the component is always present and verifiable.
+func (s *SnapshotService) writeExport(ctx context.Context, outPath string) (int64, string, error) {
+	bundle := exportBundle{ExportedAt: time.Now().UTC(), Companies: []companyExport{}}
+	if s.exporter != nil && s.companies != nil {
+		companies, _, err := s.companies.List(ctx, domain.CompanyFilter{Page: 1, Limit: 10000})
+		if err != nil {
+			return 0, "", fmt.Errorf("list companies for export: %w", err)
+		}
+		for _, c := range companies {
+			data, err := s.exporter.Export(ctx, c.ID)
+			if err != nil {
+				return 0, "", fmt.Errorf("export company %s: %w", c.ID, err)
+			}
+			bundle.Companies = append(bundle.Companies, companyExport{
+				CompanyID:   c.ID.String(),
+				CompanyName: c.Name,
+				Data:        data,
+			})
+		}
+	}
+	if err := writeJSON(outPath, bundle); err != nil {
+		return 0, "", err
+	}
+	return fileStat(outPath)
 }
 
 func (s *SnapshotService) resolveCommit() string {

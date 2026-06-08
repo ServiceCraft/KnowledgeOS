@@ -532,6 +532,8 @@ export function UsersPage() {
         onConfirm={doSubmit}
         loading={submitting}
         destructive={false}
+        confirmLabel="Назначить"
+        loadingLabel="Сохранение..."
       />
     </div>
   );

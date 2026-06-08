@@ -55,6 +55,12 @@ func runCycle(cfg Config, log *Logger) error {
 	if err := verifyComponent(filepath.Join(extracted, "code.tar.gz"), meta.Components["code.tar.gz"]); err != nil {
 		return fmt.Errorf("verify: %w", err)
 	}
+	// export.json is optional (absent in snapshots from older app versions).
+	if c, ok := meta.Components["export.json"]; ok {
+		if err := verifyComponent(filepath.Join(extracted, "export.json"), c); err != nil {
+			return fmt.Errorf("verify: %w", err)
+		}
+	}
 	log.Infof("snapshot verified: commit=%s schema=%s dump=%d bytes code=%d bytes",
 		meta.GitCommit, meta.SchemaVersion, meta.Components["dump.sql"].Bytes, meta.Components["code.tar.gz"].Bytes)
 
@@ -94,7 +100,11 @@ func runCycle(cfg Config, log *Logger) error {
 		if removed > 0 {
 			log.Infof("rotation removed %d old snapshot(s), keeping %d", removed, cfg.BackupsKeep)
 		}
-		log.Infof("stored data snapshot %s (%d bytes gz)", timestamp, entry.DumpBytes)
+		if entry.ExportFile != "" {
+			log.Infof("stored data snapshot %s (dump %d bytes gz, export %d bytes gz)", timestamp, entry.DumpBytes, entry.ExportBytes)
+		} else {
+			log.Infof("stored data snapshot %s (%d bytes gz)", timestamp, entry.DumpBytes)
+		}
 	}
 
 	// --- Step 5: outcome ---

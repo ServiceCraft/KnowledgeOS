@@ -68,7 +68,7 @@ func main() {
 		CodePath:   cfg.BackupCodePath,
 		GitCommit:  cfg.BackupGitCommit,
 		CommitFile: cfg.BackupCommitFile,
-	}, db)
+	}, db, exportSvc, companyStore)
 
 	// Bootstrap: seed superadmin if no companies exist
 	bootstrap(cfg, companyStore, userStore, syncStore)
