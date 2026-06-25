@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// RunMigrations executes the database.RunMigrations operation.
 func RunMigrations(db *gorm.DB, migrationsDir string) error {
 	db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
 		filename TEXT PRIMARY KEY,

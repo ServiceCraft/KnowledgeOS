@@ -17,6 +17,7 @@ type Agent struct {
 	puller    *Puller
 }
 
+// NewAgent executes the sync.NewAgent operation.
 func NewAgent(cfg *config.Config, syncSvc *service.SyncService, companyID uuid.UUID) *Agent {
 	return &Agent{
 		cfg:       cfg,
@@ -27,6 +28,7 @@ func NewAgent(cfg *config.Config, syncSvc *service.SyncService, companyID uuid.U
 	}
 }
 
+// Run executes the sync.Agent.Run operation.
 func (a *Agent) Run() {
 	interval := time.Duration(a.cfg.SyncIntervalSeconds) * time.Second
 	ticker := time.NewTicker(interval)

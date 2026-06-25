@@ -14,17 +14,20 @@ type responseWriter struct {
 	size   int
 }
 
+// WriteHeader executes the middleware.responseWriter.WriteHeader operation.
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.status = code
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+// Write executes the middleware.responseWriter.Write operation.
 func (rw *responseWriter) Write(p []byte) (int, error) {
 	n, err := rw.ResponseWriter.Write(p)
 	rw.size += n
 	return n, err
 }
 
+// Logger executes the middleware.Logger operation.
 func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

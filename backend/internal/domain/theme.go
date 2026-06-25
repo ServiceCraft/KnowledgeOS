@@ -6,4 +6,5 @@ type Theme struct {
 	Description string `gorm:"type:text" json:"description"`
 }
 
+// TableName executes the domain.Theme.TableName operation.
 func (Theme) TableName() string { return "themes" }

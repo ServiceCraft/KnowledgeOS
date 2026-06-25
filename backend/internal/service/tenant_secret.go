@@ -18,6 +18,7 @@ type TenantSecretService struct {
 	cipher  *secretcrypto.Cipher
 }
 
+// NewTenantSecretService executes the service.NewTenantSecretService operation.
 func NewTenantSecretService(secrets domain.TenantSecretRepository, cipher *secretcrypto.Cipher) *TenantSecretService {
 	return &TenantSecretService{secrets: secrets, cipher: cipher}
 }
@@ -27,7 +28,9 @@ type SetTenantSecretRequest struct {
 	Metadata json.RawMessage `json:"metadata"`
 }
 
+// ListStatus executes the service.TenantSecretService.ListStatus operation.
 func (s *TenantSecretService) ListStatus(ctx context.Context, companyID uuid.UUID) ([]domain.TenantSecretStatus, error) {
+	applog.TraceCall(ctx, "service.TenantSecretService.ListStatus")
 	items, err := s.secrets.List(ctx, companyID)
 	if err != nil {
 		applog.From(ctx).Error().Err(err).Str("company_id", companyID.String()).Msg("tenant secret status list failed")
@@ -61,7 +64,9 @@ func (s *TenantSecretService) ListStatus(ctx context.Context, companyID uuid.UUI
 	return statuses, nil
 }
 
+// Set executes the service.TenantSecretService.Set operation.
 func (s *TenantSecretService) Set(ctx context.Context, companyID uuid.UUID, kind domain.SecretKind, req SetTenantSecretRequest) (*domain.TenantSecretStatus, error) {
+	applog.TraceCall(ctx, "service.TenantSecretService.Set")
 	if !domain.ValidSecretKind(kind) {
 		return nil, badRequest("invalid secret kind")
 	}
@@ -108,7 +113,9 @@ func (s *TenantSecretService) Set(ctx context.Context, companyID uuid.UUID, kind
 	return secretStatus(saved), nil
 }
 
+// Delete executes the service.TenantSecretService.Delete operation.
 func (s *TenantSecretService) Delete(ctx context.Context, companyID uuid.UUID, kind domain.SecretKind) error {
+	applog.TraceCall(ctx, "service.TenantSecretService.Delete")
 	if !domain.ValidSecretKind(kind) {
 		return badRequest("invalid secret kind")
 	}
@@ -126,7 +133,9 @@ func (s *TenantSecretService) Delete(ctx context.Context, companyID uuid.UUID, k
 	return nil
 }
 
+// GetPlaintext executes the service.TenantSecretService.GetPlaintext operation.
 func (s *TenantSecretService) GetPlaintext(ctx context.Context, companyID uuid.UUID, kind domain.SecretKind) (string, error) {
+	applog.TraceCall(ctx, "service.TenantSecretService.GetPlaintext")
 	if !domain.ValidSecretKind(kind) {
 		return "", badRequest("invalid secret kind")
 	}

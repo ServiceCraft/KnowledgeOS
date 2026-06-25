@@ -1,0 +1,390 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/knowledgeos/backend/internal/chat/tools"
+	"github.com/knowledgeos/backend/internal/domain"
+	"github.com/knowledgeos/backend/internal/llm"
+	"gorm.io/gorm"
+)
+
+func TestChatServiceSendMessagePersistsHistoryAndSources(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	sessionID := uuid.New()
+	entityID := uuid.New()
+	repo := newFakeChatRepo(companyID, sessionID)
+	provider := &fakeChatProvider{response: &llm.ChatResponse{
+		Message: llm.ToolMessage{Role: llm.RoleAssistant, Content: "Ответ из базы"},
+		Usage:   llm.Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15},
+	}}
+	svc := NewChatService(
+		repo,
+		&fakeChatSettings{settings: &domain.BotSettings{Enabled: true, PersonaName: "Администратор", PersonaTone: "friendly", MaxTokens: 256}},
+		&fakeChatRetriever{results: []domain.RAGCandidate{{
+			SourceID: "qa:" + entityID.String() + ":0", EntityType: domain.KBEntityQA, EntityID: entityID,
+			Title: "Источник", Content: "Контекст", Score: 0.8,
+		}}},
+		&fakeChatLLMFactory{provider: provider},
+		nil,
+	)
+
+	exchange, err := svc.SendMessage(ctx, companyID, sessionID, SendChatMessageRequest{Content: "вопрос"})
+	if err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+	if exchange.User.Content != "вопрос" || exchange.Message.Content != "Ответ из базы" {
+		t.Fatalf("unexpected exchange: %+v", exchange)
+	}
+	if len(exchange.Sources) != 1 || exchange.Sources[0].SourceID == "" {
+		t.Fatalf("sources not returned: %+v", exchange.Sources)
+	}
+	if got := len(repo.messages[sessionID]); got != 2 {
+		t.Fatalf("messages stored = %d, want 2", got)
+	}
+	var storedSources []domain.ChatSource
+	if err := json.Unmarshal(repo.messages[sessionID][1].Sources, &storedSources); err != nil {
+		t.Fatalf("unmarshal sources: %v", err)
+	}
+	if len(storedSources) != 1 || storedSources[0].Title != "Источник" {
+		t.Fatalf("stored sources = %+v", storedSources)
+	}
+	if provider.lastRequest.Messages[0].Role != llm.RoleSystem {
+		t.Fatalf("first LLM message role = %s, want system", provider.lastRequest.Messages[0].Role)
+	}
+}
+
+func TestChatServiceEmptyRAGFallbackDoesNotCallLLM(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	sessionID := uuid.New()
+	repo := newFakeChatRepo(companyID, sessionID)
+	factory := &fakeChatLLMFactory{provider: &fakeChatProvider{}}
+	svc := NewChatService(
+		repo,
+		&fakeChatSettings{settings: &domain.BotSettings{Enabled: true, PersonaName: "Администратор", PersonaTone: "friendly", MaxTokens: 256}},
+		&fakeChatRetriever{},
+		factory,
+		nil,
+	)
+
+	exchange, err := svc.SendMessage(ctx, companyID, sessionID, SendChatMessageRequest{Content: "вопрос вне базы"})
+	if err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+	if exchange.Message.Content == "" {
+		t.Fatalf("fallback content is empty")
+	}
+	if factory.called {
+		t.Fatalf("LLM factory was called for empty RAG context")
+	}
+	if len(exchange.Sources) != 0 {
+		t.Fatalf("sources = %+v, want empty", exchange.Sources)
+	}
+}
+
+func TestChatServiceStreamMessagePersistsFinalAssistantMessage(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	sessionID := uuid.New()
+	entityID := uuid.New()
+	repo := newFakeChatRepo(companyID, sessionID)
+	provider := &fakeChatProvider{
+		stream: []llm.StreamChunk{
+			{Delta: "Первая "},
+			{Delta: "часть", Usage: llm.Usage{PromptTokens: 7, CompletionTokens: 2, TotalTokens: 9}},
+		},
+	}
+	svc := NewChatService(
+		repo,
+		&fakeChatSettings{settings: &domain.BotSettings{Enabled: true, PersonaName: "Администратор", PersonaTone: "friendly", MaxTokens: 256}},
+		&fakeChatRetriever{results: []domain.RAGCandidate{{
+			SourceID: "article:" + entityID.String() + ":0", EntityType: domain.KBEntityArticle, EntityID: entityID,
+			Title: "Статья", Content: "Контекст", Score: 0.9,
+		}}},
+		&fakeChatLLMFactory{provider: provider},
+		nil,
+	)
+
+	var events []ChatStreamEvent
+	err := svc.StreamMessage(ctx, companyID, sessionID, SendChatMessageRequest{Content: "вопрос"}, func(event ChatStreamEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamMessage() error = %v", err)
+	}
+	if got := len(repo.messages[sessionID]); got != 2 {
+		t.Fatalf("messages stored = %d, want 2", got)
+	}
+	assistant := repo.messages[sessionID][1]
+	if assistant.Content != "Первая часть" {
+		t.Fatalf("assistant content = %q", assistant.Content)
+	}
+	if assistant.TokensPrompt != 7 || assistant.TokensCompletion != 2 {
+		t.Fatalf("usage not persisted: %+v", assistant)
+	}
+	if len(events) < 4 || events[len(events)-1].Type != "done" {
+		t.Fatalf("events = %+v", events)
+	}
+}
+
+func TestChatServiceToolLoopExecutesToolAndReturnsFinalAnswer(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	sessionID := uuid.New()
+	entityID := uuid.New()
+	repo := newFakeChatRepo(companyID, sessionID)
+
+	tool := &fakeTool{
+		name:   "search_knowledge",
+		schema: `{"type":"object","properties":{"query":{"type":"string","minLength":1}},"required":["query"]}`,
+		result: tools.Result{
+			Content: `{"results":[{"source_id":"qa"}]}`,
+			Sources: []domain.ChatSource{{
+				SourceID: "qa:" + entityID.String() + ":0", EntityType: domain.KBEntityQA, EntityID: entityID,
+				Title: "Найдено", Content: "Из инструмента",
+			}},
+		},
+	}
+	registry := tools.NewRegistry(tool)
+	provider := &scriptedChatProvider{responses: []*llm.ChatResponse{
+		{
+			Message: llm.ToolMessage{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{
+				ID: "call-1", Name: "search_knowledge", Arguments: json.RawMessage(`{"query":"цена услуги"}`),
+			}}},
+			Usage: llm.Usage{PromptTokens: 5, CompletionTokens: 1, TotalTokens: 6},
+		},
+		{
+			Message: llm.ToolMessage{Role: llm.RoleAssistant, Content: "Итоговый ответ"},
+			Usage:   llm.Usage{PromptTokens: 8, CompletionTokens: 4, TotalTokens: 12},
+		},
+	}}
+
+	svc := NewChatService(
+		repo,
+		&fakeChatSettings{settings: &domain.BotSettings{Enabled: true, PersonaName: "Админ", PersonaTone: "friendly", MaxTokens: 256}},
+		&fakeChatRetriever{},
+		&fakeChatLLMFactory{provider: provider},
+		registry,
+	)
+
+	exchange, err := svc.SendMessage(ctx, companyID, sessionID, SendChatMessageRequest{Content: "вопрос про цену"})
+	if err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+	if tool.called != 1 {
+		t.Fatalf("tool executed %d times, want 1", tool.called)
+	}
+	if exchange.Message.Content != "Итоговый ответ" {
+		t.Fatalf("final content = %q", exchange.Message.Content)
+	}
+	if len(exchange.Sources) != 1 || exchange.Sources[0].Title != "Найдено" {
+		t.Fatalf("tool sources not collected: %+v", exchange.Sources)
+	}
+	if exchange.Message.TokensPrompt != 13 || exchange.Message.TokensCompletion != 5 {
+		t.Fatalf("usage not accumulated: prompt=%d completion=%d", exchange.Message.TokensPrompt, exchange.Message.TokensCompletion)
+	}
+	// user + assistant tool-call + tool result + final assistant.
+	if got := len(repo.messages[sessionID]); got != 4 {
+		t.Fatalf("messages stored = %d, want 4", got)
+	}
+	if repo.messages[sessionID][2].Role != domain.ChatRoleTool || repo.messages[sessionID][2].ToolCallID != "call-1" {
+		t.Fatalf("tool message not persisted with tool_call_id: %+v", repo.messages[sessionID][2])
+	}
+	if len(provider.requests) != 2 {
+		t.Fatalf("LLM called %d times, want 2", len(provider.requests))
+	}
+	if len(provider.requests[0].Tools) == 0 {
+		t.Fatalf("first LLM request did not advertise tools")
+	}
+	foundToolMsg := false
+	for _, m := range provider.requests[1].Messages {
+		if m.Role == llm.RoleTool && m.ToolCallID == "call-1" {
+			foundToolMsg = true
+		}
+	}
+	if !foundToolMsg {
+		t.Fatalf("second LLM request missing tool message: %+v", provider.requests[1].Messages)
+	}
+}
+
+type fakeTool struct {
+	name     string
+	schema   string
+	result   tools.Result
+	err      error
+	called   int
+	lastArgs json.RawMessage
+}
+
+func (t *fakeTool) Name() string            { return t.name }
+func (t *fakeTool) Description() string     { return "fake tool" }
+func (t *fakeTool) Schema() json.RawMessage { return json.RawMessage(t.schema) }
+func (t *fakeTool) Execute(_ context.Context, _ uuid.UUID, args json.RawMessage) (tools.Result, error) {
+	t.called++
+	t.lastArgs = args
+	return t.result, t.err
+}
+
+type scriptedChatProvider struct {
+	responses []*llm.ChatResponse
+	calls     int
+	requests  []llm.ChatRequest
+}
+
+func (p *scriptedChatProvider) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	p.requests = append(p.requests, req)
+	idx := p.calls
+	if idx >= len(p.responses) {
+		idx = len(p.responses) - 1
+	}
+	p.calls++
+	return p.responses[idx], nil
+}
+
+func (p *scriptedChatProvider) ChatStream(_ context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
+	p.requests = append(p.requests, req)
+	ch := make(chan llm.StreamChunk, 1)
+	ch <- llm.StreamChunk{Done: true}
+	close(ch)
+	return ch, nil
+}
+
+type fakeChatRepo struct {
+	sessions map[uuid.UUID]*domain.ChatSession
+	messages map[uuid.UUID][]domain.ChatMessage
+}
+
+func newFakeChatRepo(companyID, sessionID uuid.UUID) *fakeChatRepo {
+	return &fakeChatRepo{
+		sessions: map[uuid.UUID]*domain.ChatSession{
+			sessionID: {BaseModel: domain.BaseModel{ID: sessionID}, CompanyID: companyID, Channel: domain.ChatChannelPlayground, State: domain.ChatStateBot},
+		},
+		messages: map[uuid.UUID][]domain.ChatMessage{},
+	}
+}
+
+func (r *fakeChatRepo) CreateSession(_ context.Context, companyID uuid.UUID, session *domain.ChatSession) error {
+	if session.ID == uuid.Nil {
+		session.ID = uuid.New()
+	}
+	session.CompanyID = companyID
+	session.CreatedAt = time.Now()
+	session.UpdatedAt = session.CreatedAt
+	copy := *session
+	r.sessions[session.ID] = &copy
+	return nil
+}
+
+func (r *fakeChatRepo) ListSessions(_ context.Context, companyID uuid.UUID, _ domain.ChatSessionFilter) ([]domain.ChatSession, int64, error) {
+	var out []domain.ChatSession
+	for _, session := range r.sessions {
+		if session.CompanyID == companyID {
+			out = append(out, *session)
+		}
+	}
+	return out, int64(len(out)), nil
+}
+
+func (r *fakeChatRepo) GetSession(_ context.Context, companyID uuid.UUID, id uuid.UUID) (*domain.ChatSession, error) {
+	session := r.sessions[id]
+	if session == nil || session.CompanyID != companyID {
+		return nil, gorm.ErrRecordNotFound
+	}
+	copy := *session
+	return &copy, nil
+}
+
+func (r *fakeChatRepo) UpdateSession(_ context.Context, companyID uuid.UUID, session *domain.ChatSession) error {
+	if _, err := r.GetSession(context.Background(), companyID, session.ID); err != nil {
+		return err
+	}
+	copy := *session
+	copy.CompanyID = companyID
+	r.sessions[session.ID] = &copy
+	return nil
+}
+
+func (r *fakeChatRepo) AppendMessage(_ context.Context, companyID uuid.UUID, message *domain.ChatMessage) error {
+	session, err := r.GetSession(context.Background(), companyID, message.SessionID)
+	if err != nil {
+		return err
+	}
+	if message.ID == uuid.Nil {
+		message.ID = uuid.New()
+	}
+	message.CompanyID = companyID
+	message.CreatedAt = time.Now()
+	message.UpdatedAt = message.CreatedAt
+	copy := *message
+	r.messages[message.SessionID] = append(r.messages[message.SessionID], copy)
+	now := time.Now()
+	session.LastMessageAt = &now
+	r.sessions[session.ID] = session
+	return nil
+}
+
+func (r *fakeChatRepo) ListMessages(_ context.Context, companyID uuid.UUID, sessionID uuid.UUID, _ int) ([]domain.ChatMessage, error) {
+	if _, err := r.GetSession(context.Background(), companyID, sessionID); err != nil {
+		return nil, err
+	}
+	items := r.messages[sessionID]
+	out := make([]domain.ChatMessage, len(items))
+	copy(out, items)
+	return out, nil
+}
+
+type fakeChatSettings struct {
+	settings *domain.BotSettings
+}
+
+func (s *fakeChatSettings) Get(_ context.Context, companyID uuid.UUID) (*domain.BotSettings, error) {
+	copy := *s.settings
+	copy.CompanyID = companyID
+	return &copy, nil
+}
+
+type fakeChatRetriever struct {
+	results []domain.RAGCandidate
+}
+
+func (r *fakeChatRetriever) Search(_ context.Context, _ uuid.UUID, req domain.RetrieveRequest) (*domain.RetrieveResult, error) {
+	return &domain.RetrieveResult{Query: req.Query, Results: r.results}, nil
+}
+
+type fakeChatLLMFactory struct {
+	provider llm.Provider
+	called   bool
+}
+
+func (f *fakeChatLLMFactory) ForCompany(context.Context, uuid.UUID) (llm.Provider, llm.Embedder, error) {
+	f.called = true
+	return f.provider, nil, nil
+}
+
+type fakeChatProvider struct {
+	response    *llm.ChatResponse
+	stream      []llm.StreamChunk
+	lastRequest llm.ChatRequest
+}
+
+func (p *fakeChatProvider) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	p.lastRequest = req
+	return p.response, nil
+}
+
+func (p *fakeChatProvider) ChatStream(_ context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
+	p.lastRequest = req
+	ch := make(chan llm.StreamChunk, len(p.stream))
+	for _, item := range p.stream {
+		ch <- item
+	}
+	close(ch)
+	return ch, nil
+}

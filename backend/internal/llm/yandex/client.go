@@ -40,6 +40,7 @@ type Client struct {
 	cfg        Config
 }
 
+// NewClient executes the yandex.NewClient operation.
 func NewClient(httpClient *http.Client, cfg Config) *Client {
 	if cfg.Endpoint == "" {
 		cfg.Endpoint = defaultEndpoint
@@ -60,7 +61,9 @@ func NewClient(httpClient *http.Client, cfg Config) *Client {
 	return &Client{httpClient: httpClient, cfg: cfg}
 }
 
+// Chat executes the yandex.Client.Chat operation.
 func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	applog.TraceCall(ctx, "yandex.Client.Chat")
 	if err := c.validateChatRequest(req); err != nil {
 		return nil, err
 	}
@@ -102,7 +105,9 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	}, nil
 }
 
+// ChatStream executes the yandex.Client.ChatStream operation.
 func (c *Client) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan llm.StreamChunk, error) {
+	applog.TraceCall(ctx, "yandex.Client.ChatStream")
 	if err := c.validateChatRequest(req); err != nil {
 		return nil, err
 	}
@@ -161,11 +166,15 @@ func (c *Client) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan ll
 	return ch, nil
 }
 
+// EmbedDocs executes the yandex.Client.EmbedDocs operation.
 func (c *Client) EmbedDocs(ctx context.Context, texts []string) ([][]float32, error) {
+	applog.TraceCall(ctx, "yandex.Client.EmbedDocs")
 	return c.embed(ctx, c.cfg.EmbeddingDocModel, texts)
 }
 
+// EmbedQuery executes the yandex.Client.EmbedQuery operation.
 func (c *Client) EmbedQuery(ctx context.Context, text string) ([]float32, error) {
+	applog.TraceCall(ctx, "yandex.Client.EmbedQuery")
 	vectors, err := c.embed(ctx, c.cfg.EmbeddingQueryModel, []string{text})
 	if err != nil {
 		return nil, err
@@ -177,6 +186,7 @@ func (c *Client) EmbedQuery(ctx context.Context, text string) ([]float32, error)
 }
 
 func (c *Client) embed(ctx context.Context, model string, texts []string) ([][]float32, error) {
+	applog.TraceCall(ctx, "yandex.Client.embed")
 	if model == "" {
 		return nil, errors.New("embedding model is required")
 	}
@@ -220,6 +230,7 @@ func (c *Client) embed(ctx context.Context, model string, texts []string) ([][]f
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body []byte, stream bool) (*http.Response, error) {
+	applog.TraceCall(ctx, "yandex.Client.do")
 	attempts := c.cfg.MaxRetries + 1
 	var lastErr error
 	for attempt := 0; attempt < attempts; attempt++ {
@@ -344,6 +355,7 @@ func retryableStatus(status int) bool {
 }
 
 func sleepBackoff(ctx context.Context, attempt int) error {
+	applog.TraceCall(ctx, "yandex.sleepBackoff")
 	delay := time.Duration(100*(1<<min(attempt-1, 5))) * time.Millisecond
 	delay += time.Duration(rand.Intn(100)) * time.Millisecond
 	timer := time.NewTimer(delay)

@@ -55,6 +55,7 @@ type Config struct {
 	RAGHybridTopK                int
 }
 
+// DSN executes the config.Config.DSN operation.
 func (c *Config) DSN() string {
 	return fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
@@ -62,6 +63,7 @@ func (c *Config) DSN() string {
 	)
 }
 
+// Load executes the config.Load operation.
 func Load() *Config {
 	port, _ := strconv.Atoi(getEnv("POSTGRES_PORT", "5432"))
 	syncInterval, _ := strconv.Atoi(getEnv("SYNC_INTERVAL_SECONDS", "60"))

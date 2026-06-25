@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,6 +19,7 @@ type SyncService struct {
 	links    domain.EntityLinkRepository
 }
 
+// NewSyncService executes the service.NewSyncService operation.
 func NewSyncService(syncRepo domain.SyncRepository, themes domain.ThemeRepository, qa domain.QAPairRepository, pricing domain.PricingNodeRepository, articles domain.ArticleRepository, comments domain.CommentRepository, links domain.EntityLinkRepository) *SyncService {
 	return &SyncService{
 		syncRepo: syncRepo,
@@ -45,11 +47,15 @@ type SyncPullRequest struct {
 	SinceSeq int64 `json:"since_seq"`
 }
 
+// Status executes the service.SyncService.Status operation.
 func (s *SyncService) Status(ctx context.Context, companyID uuid.UUID) (*domain.SyncStatus, error) {
+	applog.TraceCall(ctx, "service.SyncService.Status")
 	return s.syncRepo.GetStatus(ctx, companyID)
 }
 
+// GatherPush executes the service.SyncService.GatherPush operation.
 func (s *SyncService) GatherPush(ctx context.Context, companyID uuid.UUID) (*SyncPushPayload, error) {
+	applog.TraceCall(ctx, "service.SyncService.GatherPush")
 	wm, err := s.syncRepo.GetWatermark(ctx, companyID)
 	if err != nil {
 		return nil, err
@@ -108,7 +114,9 @@ func (s *SyncService) GatherPush(ctx context.Context, companyID uuid.UUID) (*Syn
 	}, nil
 }
 
+// ApplyPull executes the service.SyncService.ApplyPull operation.
 func (s *SyncService) ApplyPull(ctx context.Context, companyID uuid.UUID, payload *SyncPushPayload) error {
+	applog.TraceCall(ctx, "service.SyncService.ApplyPull")
 	for i := range payload.Themes {
 		_ = s.themes.ApplyRemote(ctx, companyID, &payload.Themes[i])
 	}
@@ -139,7 +147,9 @@ func (s *SyncService) ApplyPull(ctx context.Context, companyID uuid.UUID, payloa
 	return nil
 }
 
+// CompletePush executes the service.SyncService.CompletePush operation.
 func (s *SyncService) CompletePush(ctx context.Context, companyID uuid.UUID, maxSeq int64) error {
+	applog.TraceCall(ctx, "service.SyncService.CompletePush")
 	now := time.Now()
 	wm, _ := s.syncRepo.GetWatermark(ctx, companyID)
 	wm.LastLocalSeq = maxSeq

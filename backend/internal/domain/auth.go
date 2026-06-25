@@ -15,6 +15,7 @@ type RefreshToken struct {
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 }
 
+// TableName executes the domain.RefreshToken.TableName operation.
 func (RefreshToken) TableName() string { return "refresh_tokens" }
 
 type APIKey struct {
@@ -28,4 +29,5 @@ type APIKey struct {
 	CreatedAt  time.Time  `gorm:"not null;default:now()" json:"created_at"`
 }
 
+// TableName executes the domain.APIKey.TableName operation.
 func (APIKey) TableName() string { return "api_keys" }

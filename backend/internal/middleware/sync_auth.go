@@ -9,6 +9,7 @@ import (
 	"github.com/knowledgeos/backend/internal/respond"
 )
 
+// SyncAPIKeyAuth executes the middleware.SyncAPIKeyAuth operation.
 func SyncAPIKeyAuth(syncRepo domain.SyncRepository) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

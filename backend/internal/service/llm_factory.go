@@ -22,6 +22,7 @@ type LLMFactory struct {
 	client   *http.Client
 }
 
+// NewLLMFactory executes the service.NewLLMFactory operation.
 func NewLLMFactory(cfg *config.Config, settings *BotSettingsService, secrets *TenantSecretService) *LLMFactory {
 	timeout := time.Duration(cfg.YandexTimeoutSeconds) * time.Second
 	if timeout <= 0 {
@@ -35,7 +36,9 @@ func NewLLMFactory(cfg *config.Config, settings *BotSettingsService, secrets *Te
 	}
 }
 
+// ForCompany executes the service.LLMFactory.ForCompany operation.
 func (f *LLMFactory) ForCompany(ctx context.Context, companyID uuid.UUID) (llm.Provider, llm.Embedder, error) {
+	applog.TraceCall(ctx, "service.LLMFactory.ForCompany")
 	settings, err := f.settings.Get(ctx, companyID)
 	if err != nil {
 		applog.From(ctx).Error().Err(err).Str("company_id", companyID.String()).Msg("llm settings load failed")
@@ -73,6 +76,7 @@ func (f *LLMFactory) ForCompany(ctx context.Context, companyID uuid.UUID) (llm.P
 }
 
 func (f *LLMFactory) credentials(ctx context.Context, companyID uuid.UUID) (string, string, error) {
+	applog.TraceCall(ctx, "service.LLMFactory.credentials")
 	statuses, err := f.secrets.ListStatus(ctx, companyID)
 	if err == nil {
 		for _, status := range statuses {

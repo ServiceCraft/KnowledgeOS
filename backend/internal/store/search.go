@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"strings"
 
 	"github.com/google/uuid"
@@ -13,11 +14,14 @@ type SearchStore struct {
 	*Store
 }
 
+// NewSearchStore executes the store.NewSearchStore operation.
 func NewSearchStore(s *Store) *SearchStore {
 	return &SearchStore{Store: s}
 }
 
+// Search executes the store.SearchStore.Search operation.
 func (s *SearchStore) Search(ctx context.Context, companyID uuid.UUID, filter domain.SearchFilter) ([]domain.SearchResult, int64, error) {
+	applog.TraceCall(ctx, "store.SearchStore.Search")
 	if filter.Query == "" {
 		return nil, 0, nil
 	}

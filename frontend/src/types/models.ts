@@ -167,3 +167,57 @@ export interface CallMention {
   call_title: string;
   call_occurred_at?: string;
 }
+
+export type ChatRole = 'user' | 'assistant' | 'tool' | 'operator';
+export type ChatChannel = 'playground' | 'api' | 'telegram' | 'max' | 'vk';
+export type ChatState = 'bot' | 'closed';
+
+export interface ChatSession {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  company_id: string;
+  channel: ChatChannel;
+  external_chat_id?: string;
+  state: ChatState;
+  operator_id?: string;
+  title: string;
+  last_message_at?: string;
+}
+
+export interface ChatSource {
+  source_id: string;
+  entity_type: string;
+  entity_id: string;
+  chunk_idx: number;
+  title: string;
+  content: string;
+  snippet?: string;
+  score: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  company_id: string;
+  session_id: string;
+  role: ChatRole;
+  content: string;
+  tool_calls: unknown[];
+  sources: ChatSource[];
+  tokens_prompt: number;
+  tokens_completion: number;
+}
+
+export interface ChatSessionWithMessages {
+  session: ChatSession;
+  messages: ChatMessage[];
+}
+
+export interface ChatExchange {
+  session: ChatSession;
+  user: ChatMessage;
+  message: ChatMessage;
+  sources: ChatSource[];
+}

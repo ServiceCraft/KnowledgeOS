@@ -22,6 +22,7 @@ type RetrieverService struct {
 	hybridTopK int
 }
 
+// NewRetrieverService executes the service.NewRetrieverService operation.
 func NewRetrieverService(embeddings domain.KBEmbeddingRepository, search domain.SearchRepository, llmFactory *LLMFactory, vectorTopK, hybridTopK int) *RetrieverService {
 	if vectorTopK <= 0 {
 		vectorTopK = 20
@@ -32,7 +33,9 @@ func NewRetrieverService(embeddings domain.KBEmbeddingRepository, search domain.
 	return &RetrieverService{embeddings: embeddings, search: search, llmFactory: llmFactory, vectorTopK: vectorTopK, hybridTopK: hybridTopK}
 }
 
+// Search executes the service.RetrieverService.Search operation.
 func (s *RetrieverService) Search(ctx context.Context, companyID uuid.UUID, req domain.RetrieveRequest) (*domain.RetrieveResult, error) {
+	applog.TraceCall(ctx, "service.RetrieverService.Search")
 	req.Query = strings.TrimSpace(req.Query)
 	if req.Query == "" {
 		return nil, badRequest("query is required")
@@ -104,6 +107,7 @@ func (s *RetrieverService) Search(ctx context.Context, companyID uuid.UUID, req 
 }
 
 func (s *RetrieverService) rewriteQuery(ctx context.Context, provider llm.Provider, query string) string {
+	applog.TraceCall(ctx, "service.RetrieverService.rewriteQuery")
 	resp, err := provider.Chat(ctx, llm.ChatRequest{
 		Messages: []llm.Message{
 			{Role: llm.RoleSystem, Content: "Переформулируй реплику пользователя в короткий самостоятельный поисковый запрос для базы знаний. Верни только запрос без пояснений."},
@@ -122,6 +126,7 @@ func (s *RetrieverService) rewriteQuery(ctx context.Context, provider llm.Provid
 }
 
 func (s *RetrieverService) lexicalSearch(ctx context.Context, companyID uuid.UUID, query string, req domain.RetrieveRequest) ([]domain.RAGCandidate, error) {
+	applog.TraceCall(ctx, "service.RetrieverService.lexicalSearch")
 	types := make([]string, 0, len(req.Types))
 	for _, t := range req.Types {
 		types = append(types, string(t))

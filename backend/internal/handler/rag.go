@@ -1,6 +1,7 @@
 package handler
 
 import (
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 	"strings"
 
@@ -15,11 +16,14 @@ type RAGHandler struct {
 	retriever *service.RetrieverService
 }
 
+// NewRAGHandler executes the handler.NewRAGHandler operation.
 func NewRAGHandler(indexer *service.RAGIndexerService, retriever *service.RetrieverService) *RAGHandler {
 	return &RAGHandler{indexer: indexer, retriever: retriever}
 }
 
+// Reindex executes the handler.RAGHandler.Reindex operation.
 func (h *RAGHandler) Reindex(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.RAGHandler.Reindex")
 	companyID := middleware.GetCompanyID(r.Context())
 	if err := h.indexer.ReindexCompany(r.Context(), companyID); err != nil {
 		Error(w, service.HTTPStatus(err), err.Error())
@@ -28,7 +32,9 @@ func (h *RAGHandler) Reindex(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
 }
 
+// Status executes the handler.RAGHandler.Status operation.
 func (h *RAGHandler) Status(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.RAGHandler.Status")
 	companyID := middleware.GetCompanyID(r.Context())
 	status, err := h.indexer.IndexStatus(r.Context(), companyID)
 	if err != nil {
@@ -47,7 +53,9 @@ type ragSearchRequest struct {
 	Rewrite    *bool    `json:"rewrite,omitempty"`
 }
 
+// Search executes the handler.RAGHandler.Search operation.
 func (h *RAGHandler) Search(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.RAGHandler.Search")
 	var req ragSearchRequest
 	if err := Decode(r, &req); err != nil {
 		Error(w, http.StatusBadRequest, "invalid request body")

@@ -10,4 +10,5 @@ type PricingNode struct {
 	Price    *float64   `gorm:"type:numeric(12,2)" json:"price,omitempty"`
 }
 
+// TableName executes the domain.PricingNode.TableName operation.
 func (PricingNode) TableName() string { return "pricing_nodes" }

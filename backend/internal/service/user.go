@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 	"regexp"
 	"strings"
@@ -25,6 +26,7 @@ type UserError struct {
 	Msg    string
 }
 
+// Error executes the service.UserError.Error operation.
 func (e *UserError) Error() string { return e.Msg }
 
 func badRequest(msg string) error { return &UserError{Status: http.StatusBadRequest, Msg: msg} }
@@ -47,6 +49,7 @@ type UserService struct {
 	tokens domain.SyncRepository
 }
 
+// NewUserService executes the service.NewUserService operation.
 func NewUserService(users domain.UserRepository, tokens domain.SyncRepository) *UserService {
 	return &UserService{users: users, tokens: tokens}
 }
@@ -72,7 +75,9 @@ type UpdateUserRequest struct {
 	IsActive *bool        `json:"is_active"`
 }
 
+// List executes the service.UserService.List operation.
 func (s *UserService) List(ctx context.Context, companyID uuid.UUID, filter domain.UserFilter) ([]domain.User, int64, error) {
+	applog.TraceCall(ctx, "service.UserService.List")
 	return s.users.List(ctx, companyID, filter)
 }
 
@@ -89,7 +94,9 @@ func ValidateNewCredentials(email, password string) (string, error) {
 	return normalized, nil
 }
 
+// Create executes the service.UserService.Create operation.
 func (s *UserService) Create(ctx context.Context, actor Actor, req CreateUserRequest) (*domain.User, error) {
+	applog.TraceCall(ctx, "service.UserService.Create")
 	email, err := ValidateNewCredentials(req.Email, req.Password)
 	if err != nil {
 		return nil, err
@@ -135,7 +142,9 @@ func (s *UserService) Create(ctx context.Context, actor Actor, req CreateUserReq
 	return user, nil
 }
 
+// Update executes the service.UserService.Update operation.
 func (s *UserService) Update(ctx context.Context, actor Actor, id uuid.UUID, req UpdateUserRequest) (*domain.User, error) {
+	applog.TraceCall(ctx, "service.UserService.Update")
 	target, err := s.loadInCompany(ctx, actor.CompanyID, id)
 	if err != nil {
 		return nil, err
@@ -219,7 +228,9 @@ func (s *UserService) Update(ctx context.Context, actor Actor, id uuid.UUID, req
 	return target, nil
 }
 
+// Delete executes the service.UserService.Delete operation.
 func (s *UserService) Delete(ctx context.Context, actor Actor, id uuid.UUID) error {
+	applog.TraceCall(ctx, "service.UserService.Delete")
 	target, err := s.loadInCompany(ctx, actor.CompanyID, id)
 	if err != nil {
 		return err
@@ -243,6 +254,7 @@ func isPrivilegedRole(r domain.Role) bool {
 // loadInCompany fetches a user and enforces multi-tenant isolation: a user from
 // another company is reported as not found.
 func (s *UserService) loadInCompany(ctx context.Context, companyID, id uuid.UUID) (*domain.User, error) {
+	applog.TraceCall(ctx, "service.UserService.loadInCompany")
 	user, err := s.users.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

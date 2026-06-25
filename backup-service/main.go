@@ -51,6 +51,7 @@ func main() {
 // the schedule matches. A failing cycle is logged but never stops the loop
 // (TZ §5.8).
 func runScheduler(cfg Config, sched *cronSchedule, log *Logger) {
+	log.Tracef("function called: %s", "main.runScheduler")
 	for {
 		next := time.Now().UTC().Truncate(time.Minute).Add(time.Minute)
 		time.Sleep(time.Until(next))

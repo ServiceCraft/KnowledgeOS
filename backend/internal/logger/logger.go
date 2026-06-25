@@ -16,6 +16,7 @@ const (
 	defaultFormat = "json"
 )
 
+// Configure executes the logger.Configure operation.
 func Configure(level, format, service string) {
 	zerolog.TimeFieldFormat = time.RFC3339Nano
 	zerolog.SetGlobalLevel(parseLevel(level))
@@ -34,10 +35,17 @@ func Configure(level, format, service string) {
 	zerolog.DefaultContextLogger = &log.Logger
 }
 
+// From executes the logger.From operation.
 func From(ctx context.Context) *zerolog.Logger {
 	return zerolog.Ctx(ctx)
 }
 
+// TraceCall records a function entry on the logger carried by the context.
+func TraceCall(ctx context.Context, function string) {
+	From(ctx).Debug().Str("function", function).Msg("function called")
+}
+
+// With executes the logger.With operation.
 func With(ctx context.Context, logger zerolog.Logger) context.Context {
 	return logger.WithContext(ctx)
 }
@@ -67,10 +75,12 @@ func parseLevel(level string) zerolog.Level {
 	}
 }
 
+// DefaultLevel executes the logger.DefaultLevel operation.
 func DefaultLevel() string {
 	return defaultLevel
 }
 
+// DefaultFormat executes the logger.DefaultFormat operation.
 func DefaultFormat() string {
 	return defaultFormat
 }

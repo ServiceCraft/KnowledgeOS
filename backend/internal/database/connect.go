@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+// Connect executes the database.Connect operation.
 func Connect(cfg *config.Config) (*gorm.DB, error) {
 	db, err := gorm.Open(postgres.Open(cfg.DSN()), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Warn),

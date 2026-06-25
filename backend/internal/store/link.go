@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	applog "github.com/knowledgeos/backend/internal/logger"
 
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/domain"
@@ -12,11 +13,14 @@ type LinkStore struct {
 	*Store
 }
 
+// NewLinkStore executes the store.NewLinkStore operation.
 func NewLinkStore(s *Store) *LinkStore {
 	return &LinkStore{Store: s}
 }
 
+// List executes the store.LinkStore.List operation.
 func (s *LinkStore) List(ctx context.Context, companyID uuid.UUID, sourceType string, sourceID uuid.UUID, filter domain.EntityLinkFilter) ([]domain.EntityLink, int64, error) {
+	applog.TraceCall(ctx, "store.LinkStore.List")
 	var items []domain.EntityLink
 	var total int64
 
@@ -32,7 +36,9 @@ func (s *LinkStore) List(ctx context.Context, companyID uuid.UUID, sourceType st
 	return items, total, nil
 }
 
+// GetByID executes the store.LinkStore.GetByID operation.
 func (s *LinkStore) GetByID(ctx context.Context, companyID uuid.UUID, id uuid.UUID) (*domain.EntityLink, error) {
+	applog.TraceCall(ctx, "store.LinkStore.GetByID")
 	var item domain.EntityLink
 	if err := s.db.WithContext(ctx).Scopes(tenantScope(companyID)).Where("id = ?", id).First(&item).Error; err != nil {
 		return nil, err
@@ -40,7 +46,9 @@ func (s *LinkStore) GetByID(ctx context.Context, companyID uuid.UUID, id uuid.UU
 	return &item, nil
 }
 
+// Create executes the store.LinkStore.Create operation.
 func (s *LinkStore) Create(ctx context.Context, companyID uuid.UUID, link *domain.EntityLink) error {
+	applog.TraceCall(ctx, "store.LinkStore.Create")
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
@@ -53,7 +61,9 @@ func (s *LinkStore) Create(ctx context.Context, companyID uuid.UUID, link *domai
 	})
 }
 
+// Delete executes the store.LinkStore.Delete operation.
 func (s *LinkStore) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error {
+	applog.TraceCall(ctx, "store.LinkStore.Delete")
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
@@ -64,7 +74,9 @@ func (s *LinkStore) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUI
 	})
 }
 
+// ListSince executes the store.LinkStore.ListSince operation.
 func (s *LinkStore) ListSince(ctx context.Context, companyID uuid.UUID, sinceVersion int64) ([]domain.EntityLink, error) {
+	applog.TraceCall(ctx, "store.LinkStore.ListSince")
 	var items []domain.EntityLink
 	if err := s.db.WithContext(ctx).Unscoped().Scopes(tenantScope(companyID)).
 		Where("sync_version > ?", sinceVersion).
@@ -74,7 +86,9 @@ func (s *LinkStore) ListSince(ctx context.Context, companyID uuid.UUID, sinceVer
 	return items, nil
 }
 
+// ApplyRemote executes the store.LinkStore.ApplyRemote operation.
 func (s *LinkStore) ApplyRemote(ctx context.Context, companyID uuid.UUID, link *domain.EntityLink) error {
+	applog.TraceCall(ctx, "store.LinkStore.ApplyRemote")
 	link.SyncOrigin = "cloud"
 	link.CompanyID = companyID
 	return s.db.WithContext(ctx).Where("id = ? AND company_id = ?", link.ID, companyID).

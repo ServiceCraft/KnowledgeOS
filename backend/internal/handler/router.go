@@ -25,12 +25,14 @@ type Handlers struct {
 	Backup  *BackupHandler
 	Bot     *BotHandler
 	RAG     *RAGHandler
+	Chat    *ChatHandler
 }
 
 // writeRoles are allowed to mutate business entities. Viewer (Оператор) is
 // intentionally excluded — it is a read-only role.
 var writeRoles = []domain.Role{domain.RoleEditor, domain.RoleAdmin, domain.RoleSuperadmin}
 
+// NewRouter executes the handler.NewRouter operation.
 func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncRepository, backupKey func() string) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -137,6 +139,15 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 				r.Post("/admin/bot/rag/reindex", h.RAG.Reindex)
 				r.Get("/admin/bot/rag/index-status", h.RAG.Status)
 				r.Post("/admin/bot/rag/search", h.RAG.Search)
+			})
+
+			// Bot playground chat — authenticated users within the tenant.
+			r.Route("/admin/bot/chat", func(r chi.Router) {
+				r.Post("/sessions", h.Chat.CreateSession)
+				r.Get("/sessions", h.Chat.ListSessions)
+				r.Get("/sessions/{id}", h.Chat.GetSession)
+				r.Post("/sessions/{id}/messages", h.Chat.SendMessage)
+				r.Post("/sessions/{id}/messages/stream", h.Chat.StreamMessage)
 			})
 
 			// Import/Export of the knowledge base — superadmin only.

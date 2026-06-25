@@ -21,10 +21,12 @@ var whitespace = regexp.MustCompile(`\s+`)
 
 type Chunker struct{}
 
+// NewChunker executes the indexer.NewChunker operation.
 func NewChunker() *Chunker {
 	return &Chunker{}
 }
 
+// ChunksForArticle executes the indexer.Chunker.ChunksForArticle operation.
 func (c *Chunker) ChunksForArticle(companyID uuid.UUID, article *domain.Article) []domain.RAGChunk {
 	title := strings.TrimSpace(article.Title)
 	paragraphs := splitParagraphs(article.Body)
@@ -63,6 +65,7 @@ func (c *Chunker) ChunksForArticle(companyID uuid.UUID, article *domain.Article)
 	return chunks
 }
 
+// ChunksForQA executes the indexer.Chunker.ChunksForQA operation.
 func (c *Chunker) ChunksForQA(companyID uuid.UUID, qa *domain.QAPair) []domain.RAGChunk {
 	question := strings.TrimSpace(qa.Question)
 	answer := strings.TrimSpace(qa.Answer)
@@ -79,6 +82,7 @@ func (c *Chunker) ChunksForQA(companyID uuid.UUID, qa *domain.QAPair) []domain.R
 	}
 }
 
+// ChunksForPricing executes the indexer.Chunker.ChunksForPricing operation.
 func (c *Chunker) ChunksForPricing(companyID uuid.UUID, node *domain.PricingNode, parentPath []string) []domain.RAGChunk {
 	name := strings.TrimSpace(node.Name)
 	if name == "" {

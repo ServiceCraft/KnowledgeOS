@@ -10,4 +10,5 @@ type Comment struct {
 	AuthorID   *uuid.UUID `gorm:"type:uuid" json:"author_id,omitempty"`
 }
 
+// TableName executes the domain.Comment.TableName operation.
 func (Comment) TableName() string { return "comments" }

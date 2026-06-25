@@ -45,6 +45,7 @@ type KBEmbedding struct {
 	Dim         int          `gorm:"not null;default:256" json:"dim"`
 }
 
+// TableName executes the domain.KBEmbedding.TableName operation.
 func (KBEmbedding) TableName() string { return "kb_embeddings" }
 
 type KBIndexJob struct {
@@ -59,6 +60,7 @@ type KBIndexJob struct {
 	AvailableAt time.Time        `json:"available_at"`
 }
 
+// TableName executes the domain.KBIndexJob.TableName operation.
 func (KBIndexJob) TableName() string { return "kb_index_jobs" }
 
 type RAGChunk struct {

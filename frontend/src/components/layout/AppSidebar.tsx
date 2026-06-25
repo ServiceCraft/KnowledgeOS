@@ -20,6 +20,7 @@ import {
   Users,
   Download,
   MessageSquareQuote,
+  Bot,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { hasMinRole } from '@/lib/roles';
@@ -33,6 +34,10 @@ const kbLinks = [
 
 const toolLinks = [
   { to: '/kb/search', label: 'Поиск', icon: Search },
+];
+
+const botLinks = [
+  { to: '/bot/playground', label: 'Плейграунд', icon: Bot },
 ];
 
 const settingsLinks = [
@@ -77,6 +82,22 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {toolLinks.map((link) => (
+                <SidebarMenuItem key={link.to}>
+                  <SidebarMenuButton render={<Link to={link.to} />} isActive={isActive(link.to)}>
+                    <link.icon className="h-4 w-4" />
+                    <span>{link.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Бот</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {botLinks.map((link) => (
                 <SidebarMenuItem key={link.to}>
                   <SidebarMenuButton render={<Link to={link.to} />} isActive={isActive(link.to)}>
                     <link.icon className="h-4 w-4" />

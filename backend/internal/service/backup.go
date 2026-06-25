@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"io"
 	"os"
 	"os/exec"
@@ -103,6 +104,7 @@ type SnapshotService struct {
 	mu        sync.Mutex
 }
 
+// NewSnapshotService executes the service.NewSnapshotService operation.
 func NewSnapshotService(cfg SnapshotConfig, db *gorm.DB, exporter *ExportService, companies domain.CompanyRepository) *SnapshotService {
 	return &SnapshotService{cfg: cfg, db: db, exporter: exporter, companies: companies}
 }
@@ -125,6 +127,7 @@ type snapshotMetadata struct {
 // caller must invoke once the archive has been streamed to the client. The
 // pg_dump mutex is released as soon as the archive is built (before streaming).
 func (s *SnapshotService) Build(ctx context.Context) (archivePath string, cleanup func(), err error) {
+	applog.TraceCall(ctx, "service.SnapshotService.Build")
 	if !s.mu.TryLock() {
 		return "", nil, ErrSnapshotInProgress
 	}
@@ -196,6 +199,7 @@ func (s *SnapshotService) Build(ctx context.Context) (archivePath string, cleanu
 }
 
 func (s *SnapshotService) pgDump(ctx context.Context, outPath string) error {
+	applog.TraceCall(ctx, "service.SnapshotService.pgDump")
 	args := []string{
 		"--serializable-deferrable",
 		"--no-owner",
@@ -234,6 +238,7 @@ type exportBundle struct {
 // returns its size and sha256. When the exporter is not wired it writes an
 // empty bundle so the component is always present and verifiable.
 func (s *SnapshotService) writeExport(ctx context.Context, outPath string) (int64, string, error) {
+	applog.TraceCall(ctx, "service.SnapshotService.writeExport")
 	bundle := exportBundle{ExportedAt: time.Now().UTC(), Companies: []companyExport{}}
 	if s.exporter != nil && s.companies != nil {
 		companies, _, err := s.companies.List(ctx, domain.CompanyFilter{Page: 1, Limit: 10000})
@@ -273,6 +278,7 @@ func (s *SnapshotService) resolveCommit() string {
 }
 
 func (s *SnapshotService) schemaVersion(ctx context.Context) string {
+	applog.TraceCall(ctx, "service.SnapshotService.schemaVersion")
 	var filename string
 	err := s.db.WithContext(ctx).
 		Raw("SELECT filename FROM schema_migrations ORDER BY filename DESC LIMIT 1").

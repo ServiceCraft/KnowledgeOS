@@ -16,6 +16,7 @@ type Puller struct {
 	syncSvc  *service.SyncService
 }
 
+// NewPuller executes the sync.NewPuller operation.
 func NewPuller(cloudURL, apiKey string, syncSvc *service.SyncService) *Puller {
 	return &Puller{cloudURL: cloudURL, apiKey: apiKey, syncSvc: syncSvc}
 }
@@ -24,6 +25,7 @@ type pullResponse struct {
 	Data *service.SyncPushPayload `json:"data"`
 }
 
+// Pull executes the sync.Puller.Pull operation.
 func (p *Puller) Pull(companyID uuid.UUID) error {
 	ctx := context.Background()
 

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 	"strconv"
 
@@ -15,11 +16,14 @@ type QAHandler struct {
 	svc *service.QAService
 }
 
+// NewQAHandler executes the handler.NewQAHandler operation.
 func NewQAHandler(svc *service.QAService) *QAHandler {
 	return &QAHandler{svc: svc}
 }
 
+// List executes the handler.QAHandler.List operation.
 func (h *QAHandler) List(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.QAHandler.List")
 	companyID := middleware.GetCompanyID(r.Context())
 	filter := domain.QAPairFilter{
 		Page:  intQuery(r, "page", 1),
@@ -49,7 +53,9 @@ func (h *QAHandler) List(w http.ResponseWriter, r *http.Request) {
 	JSONList(w, http.StatusOK, items, total)
 }
 
+// Get executes the handler.QAHandler.Get operation.
 func (h *QAHandler) Get(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.QAHandler.Get")
 	companyID := middleware.GetCompanyID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -65,7 +71,9 @@ func (h *QAHandler) Get(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, item)
 }
 
+// Create executes the handler.QAHandler.Create operation.
 func (h *QAHandler) Create(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.QAHandler.Create")
 	companyID := middleware.GetCompanyID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 
@@ -84,7 +92,9 @@ func (h *QAHandler) Create(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusCreated, qa)
 }
 
+// Update executes the handler.QAHandler.Update operation.
 func (h *QAHandler) Update(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.QAHandler.Update")
 	companyID := middleware.GetCompanyID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
@@ -144,7 +154,9 @@ func (h *QAHandler) Update(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, existing)
 }
 
+// Delete executes the handler.QAHandler.Delete operation.
 func (h *QAHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.QAHandler.Delete")
 	companyID := middleware.GetCompanyID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -159,7 +171,9 @@ func (h *QAHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Review executes the handler.QAHandler.Review operation.
 func (h *QAHandler) Review(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.QAHandler.Review")
 	companyID := middleware.GetCompanyID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
@@ -186,6 +200,7 @@ func (h *QAHandler) Review(w http.ResponseWriter, r *http.Request) {
 }
 
 func intQuery(r *http.Request, key string, def int) int {
+	applog.TraceCall(r.Context(), "handler.intQuery")
 	v := r.URL.Query().Get(key)
 	if v == "" {
 		return def

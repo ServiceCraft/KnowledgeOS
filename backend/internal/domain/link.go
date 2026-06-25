@@ -12,4 +12,5 @@ type EntityLink struct {
 	Label      *string    `gorm:"type:text" json:"label,omitempty"`
 }
 
+// TableName executes the domain.EntityLink.TableName operation.
 func (EntityLink) TableName() string { return "entity_links" }

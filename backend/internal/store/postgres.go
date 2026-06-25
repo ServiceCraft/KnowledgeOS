@@ -10,10 +10,12 @@ type Store struct {
 	origin string
 }
 
+// New executes the store.New operation.
 func New(db *gorm.DB, origin string) *Store {
 	return &Store{db: db, origin: origin}
 }
 
+// DB executes the store.Store.DB operation.
 func (s *Store) DB() *gorm.DB {
 	return s.db
 }

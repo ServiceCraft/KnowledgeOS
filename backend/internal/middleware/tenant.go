@@ -8,6 +8,7 @@ import (
 	"github.com/knowledgeos/backend/internal/respond"
 )
 
+// Tenant executes the middleware.Tenant operation.
 func Tenant(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims := GetClaims(r.Context())

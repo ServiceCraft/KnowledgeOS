@@ -34,4 +34,5 @@ type User struct {
 	IsActive bool `gorm:"not null" json:"is_active"`
 }
 
+// TableName executes the domain.User.TableName operation.
 func (User) TableName() string { return "users" }

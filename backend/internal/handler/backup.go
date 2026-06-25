@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"fmt"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 	"os"
 	"time"
@@ -14,6 +15,7 @@ type BackupHandler struct {
 	svc *service.SnapshotService
 }
 
+// NewBackupHandler executes the handler.NewBackupHandler operation.
 func NewBackupHandler(svc *service.SnapshotService) *BackupHandler {
 	return &BackupHandler{svc: svc}
 }
@@ -21,6 +23,7 @@ func NewBackupHandler(svc *service.SnapshotService) *BackupHandler {
 // Snapshot builds a fresh tar.gz (dump.sql + code.tar.gz + metadata.json) and
 // streams it to the caller. The intermediate files are removed afterwards.
 func (h *BackupHandler) Snapshot(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.BackupHandler.Snapshot")
 	archivePath, cleanup, err := h.svc.Build(r.Context())
 	if err != nil {
 		if errors.Is(err, service.ErrSnapshotInProgress) {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ type QAService struct {
 	indexer domain.KnowledgeIndexScheduler
 }
 
+// NewQAService executes the service.NewQAService operation.
 func NewQAService(qa domain.QAPairRepository, themes domain.ThemeRepository, schedulers ...domain.KnowledgeIndexScheduler) *QAService {
 	var indexer domain.KnowledgeIndexScheduler
 	if len(schedulers) > 0 {
@@ -23,15 +25,21 @@ func NewQAService(qa domain.QAPairRepository, themes domain.ThemeRepository, sch
 	return &QAService{qa: qa, themes: themes, indexer: indexer}
 }
 
+// List executes the service.QAService.List operation.
 func (s *QAService) List(ctx context.Context, companyID uuid.UUID, filter domain.QAPairFilter) ([]domain.QAPair, int64, error) {
+	applog.TraceCall(ctx, "service.QAService.List")
 	return s.qa.List(ctx, companyID, filter)
 }
 
+// GetByID executes the service.QAService.GetByID operation.
 func (s *QAService) GetByID(ctx context.Context, companyID uuid.UUID, id uuid.UUID) (*domain.QAPair, error) {
+	applog.TraceCall(ctx, "service.QAService.GetByID")
 	return s.qa.GetByID(ctx, companyID, id)
 }
 
+// Create executes the service.QAService.Create operation.
 func (s *QAService) Create(ctx context.Context, companyID uuid.UUID, qa *domain.QAPair) error {
+	applog.TraceCall(ctx, "service.QAService.Create")
 	if qa.Question == "" {
 		return errors.New("question is required")
 	}
@@ -47,7 +55,9 @@ func (s *QAService) Create(ctx context.Context, companyID uuid.UUID, qa *domain.
 	return nil
 }
 
+// Update executes the service.QAService.Update operation.
 func (s *QAService) Update(ctx context.Context, companyID uuid.UUID, qa *domain.QAPair) error {
+	applog.TraceCall(ctx, "service.QAService.Update")
 	if _, err := s.qa.GetByID(ctx, companyID, qa.ID); err != nil {
 		return errors.New("qa pair not found")
 	}
@@ -58,7 +68,9 @@ func (s *QAService) Update(ctx context.Context, companyID uuid.UUID, qa *domain.
 	return nil
 }
 
+// Delete executes the service.QAService.Delete operation.
 func (s *QAService) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error {
+	applog.TraceCall(ctx, "service.QAService.Delete")
 	if _, err := s.qa.GetByID(ctx, companyID, id); err != nil {
 		return errors.New("qa pair not found")
 	}
@@ -69,7 +81,9 @@ func (s *QAService) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUI
 	return nil
 }
 
+// ReviewAIAnswer executes the service.QAService.ReviewAIAnswer operation.
 func (s *QAService) ReviewAIAnswer(ctx context.Context, companyID uuid.UUID, qaID uuid.UUID, userID uuid.UUID, action string, editedAnswer string) (*domain.QAPair, error) {
+	applog.TraceCall(ctx, "service.QAService.ReviewAIAnswer")
 	qa, err := s.qa.GetByID(ctx, companyID, qaID)
 	if err != nil {
 		return nil, errors.New("qa pair not found")
@@ -113,12 +127,14 @@ func (s *QAService) ReviewAIAnswer(ctx context.Context, companyID uuid.UUID, qaI
 }
 
 func (s *QAService) scheduleUpsert(ctx context.Context, companyID, id uuid.UUID) {
+	applog.TraceCall(ctx, "service.QAService.scheduleUpsert")
 	if s.indexer != nil {
 		_ = s.indexer.ScheduleUpsert(ctx, companyID, domain.KBEntityQA, id)
 	}
 }
 
 func (s *QAService) scheduleDelete(ctx context.Context, companyID, id uuid.UUID) {
+	applog.TraceCall(ctx, "service.QAService.scheduleDelete")
 	if s.indexer != nil {
 		_ = s.indexer.ScheduleDelete(ctx, companyID, domain.KBEntityQA, id)
 	}

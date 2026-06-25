@@ -31,6 +31,7 @@ type RAGIndexerService struct {
 	cfg        RAGIndexerConfig
 }
 
+// NewRAGIndexerService executes the service.NewRAGIndexerService operation.
 func NewRAGIndexerService(
 	jobs domain.KBIndexJobRepository,
 	embeddings domain.KBEmbeddingRepository,
@@ -61,7 +62,9 @@ func NewRAGIndexerService(
 	}
 }
 
+// ScheduleUpsert executes the service.RAGIndexerService.ScheduleUpsert operation.
 func (s *RAGIndexerService) ScheduleUpsert(ctx context.Context, companyID uuid.UUID, entityType domain.KBEntityType, entityID uuid.UUID) error {
+	applog.TraceCall(ctx, "service.RAGIndexerService.ScheduleUpsert")
 	if s == nil || s.jobs == nil {
 		return nil
 	}
@@ -73,7 +76,9 @@ func (s *RAGIndexerService) ScheduleUpsert(ctx context.Context, companyID uuid.U
 	return s.jobs.Enqueue(ctx, companyID, entityType, entityID, domain.KBIndexOperationUpsert)
 }
 
+// ScheduleDelete executes the service.RAGIndexerService.ScheduleDelete operation.
 func (s *RAGIndexerService) ScheduleDelete(ctx context.Context, companyID uuid.UUID, entityType domain.KBEntityType, entityID uuid.UUID) error {
+	applog.TraceCall(ctx, "service.RAGIndexerService.ScheduleDelete")
 	if s == nil || s.jobs == nil {
 		return nil
 	}
@@ -85,7 +90,9 @@ func (s *RAGIndexerService) ScheduleDelete(ctx context.Context, companyID uuid.U
 	return s.jobs.Enqueue(ctx, companyID, entityType, entityID, domain.KBIndexOperationDelete)
 }
 
+// StartWorker executes the service.RAGIndexerService.StartWorker operation.
 func (s *RAGIndexerService) StartWorker(ctx context.Context) {
+	applog.TraceCall(ctx, "service.RAGIndexerService.StartWorker")
 	if s == nil || !s.cfg.WorkerEnabled {
 		return
 	}
@@ -98,6 +105,7 @@ func (s *RAGIndexerService) StartWorker(ctx context.Context) {
 }
 
 func (s *RAGIndexerService) worker(ctx context.Context) {
+	applog.TraceCall(ctx, "service.RAGIndexerService.worker")
 	ticker := time.NewTicker(s.cfg.WorkerPollInterval)
 	defer ticker.Stop()
 	for {
@@ -111,6 +119,7 @@ func (s *RAGIndexerService) worker(ctx context.Context) {
 }
 
 func (s *RAGIndexerService) processPending(ctx context.Context) {
+	applog.TraceCall(ctx, "service.RAGIndexerService.processPending")
 	jobs, err := s.jobs.ClaimPending(ctx, s.cfg.WorkerBatchSize)
 	if err != nil {
 		applog.From(ctx).Error().Err(err).Msg("rag indexer claim failed")
@@ -130,7 +139,9 @@ func (s *RAGIndexerService) processPending(ctx context.Context) {
 	}
 }
 
+// ProcessJob executes the service.RAGIndexerService.ProcessJob operation.
 func (s *RAGIndexerService) ProcessJob(ctx context.Context, job domain.KBIndexJob) error {
+	applog.TraceCall(ctx, "service.RAGIndexerService.ProcessJob")
 	log := applog.From(ctx).With().
 		Str("job_id", job.ID.String()).
 		Str("company_id", job.CompanyID.String()).
@@ -166,7 +177,9 @@ func (s *RAGIndexerService) ProcessJob(ctx context.Context, job domain.KBIndexJo
 	return nil
 }
 
+// ReindexCompany executes the service.RAGIndexerService.ReindexCompany operation.
 func (s *RAGIndexerService) ReindexCompany(ctx context.Context, companyID uuid.UUID) error {
+	applog.TraceCall(ctx, "service.RAGIndexerService.ReindexCompany")
 	applog.From(ctx).Info().Str("company_id", companyID.String()).Msg("rag company reindex requested")
 	if err := s.embeddings.DeleteCompany(ctx, companyID); err != nil {
 		return err
@@ -201,7 +214,9 @@ func (s *RAGIndexerService) ReindexCompany(ctx context.Context, companyID uuid.U
 	return nil
 }
 
+// IndexStatus executes the service.RAGIndexerService.IndexStatus operation.
 func (s *RAGIndexerService) IndexStatus(ctx context.Context, companyID uuid.UUID) (map[string]interface{}, error) {
+	applog.TraceCall(ctx, "service.RAGIndexerService.IndexStatus")
 	total, err := s.embeddings.CountByCompany(ctx, companyID)
 	if err != nil {
 		return nil, err
@@ -219,6 +234,7 @@ func (s *RAGIndexerService) IndexStatus(ctx context.Context, companyID uuid.UUID
 var errIndexEntityNotFound = errors.New("index entity not found")
 
 func (s *RAGIndexerService) buildChunks(ctx context.Context, companyID uuid.UUID, entityType domain.KBEntityType, entityID uuid.UUID) ([]domain.RAGChunk, error) {
+	applog.TraceCall(ctx, "service.RAGIndexerService.buildChunks")
 	switch entityType {
 	case domain.KBEntityArticle:
 		article, err := s.articles.GetByID(ctx, companyID, entityID)
@@ -244,6 +260,7 @@ func (s *RAGIndexerService) buildChunks(ctx context.Context, companyID uuid.UUID
 }
 
 func (s *RAGIndexerService) pricingPath(ctx context.Context, companyID uuid.UUID, node *domain.PricingNode) []string {
+	applog.TraceCall(ctx, "service.RAGIndexerService.pricingPath")
 	var path []string
 	parentID := node.ParentID
 	for i := 0; parentID != nil && i < 16; i++ {
@@ -258,6 +275,7 @@ func (s *RAGIndexerService) pricingPath(ctx context.Context, companyID uuid.UUID
 }
 
 func (s *RAGIndexerService) embedAndUpsert(ctx context.Context, companyID uuid.UUID, entityType domain.KBEntityType, entityID uuid.UUID, chunks []domain.RAGChunk) error {
+	applog.TraceCall(ctx, "service.RAGIndexerService.embedAndUpsert")
 	if len(chunks) == 0 {
 		applog.From(ctx).Debug().
 			Str("company_id", companyID.String()).

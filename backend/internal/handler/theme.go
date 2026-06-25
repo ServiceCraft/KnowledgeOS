@@ -1,6 +1,7 @@
 package handler
 
 import (
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -14,11 +15,14 @@ type ThemeHandler struct {
 	svc *service.ThemeService
 }
 
+// NewThemeHandler executes the handler.NewThemeHandler operation.
 func NewThemeHandler(svc *service.ThemeService) *ThemeHandler {
 	return &ThemeHandler{svc: svc}
 }
 
+// List executes the handler.ThemeHandler.List operation.
 func (h *ThemeHandler) List(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.ThemeHandler.List")
 	companyID := middleware.GetCompanyID(r.Context())
 	filter := domain.ThemeFilter{
 		Page:  intQuery(r, "page", 1),
@@ -34,7 +38,9 @@ func (h *ThemeHandler) List(w http.ResponseWriter, r *http.Request) {
 	JSONList(w, http.StatusOK, items, total)
 }
 
+// Get executes the handler.ThemeHandler.Get operation.
 func (h *ThemeHandler) Get(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.ThemeHandler.Get")
 	companyID := middleware.GetCompanyID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -50,7 +56,9 @@ func (h *ThemeHandler) Get(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, item)
 }
 
+// Create executes the handler.ThemeHandler.Create operation.
 func (h *ThemeHandler) Create(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.ThemeHandler.Create")
 	companyID := middleware.GetCompanyID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 
@@ -69,7 +77,9 @@ func (h *ThemeHandler) Create(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusCreated, theme)
 }
 
+// Update executes the handler.ThemeHandler.Update operation.
 func (h *ThemeHandler) Update(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.ThemeHandler.Update")
 	companyID := middleware.GetCompanyID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
@@ -93,7 +103,9 @@ func (h *ThemeHandler) Update(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, theme)
 }
 
+// Delete executes the handler.ThemeHandler.Delete operation.
 func (h *ThemeHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.ThemeHandler.Delete")
 	companyID := middleware.GetCompanyID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -108,7 +120,9 @@ func (h *ThemeHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ListQA executes the handler.ThemeHandler.ListQA operation.
 func (h *ThemeHandler) ListQA(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.ThemeHandler.ListQA")
 	companyID := middleware.GetCompanyID(r.Context())
 	themeID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {

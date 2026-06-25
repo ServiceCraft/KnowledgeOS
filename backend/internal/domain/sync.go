@@ -11,6 +11,7 @@ type SyncSequence struct {
 	CurrentSeq int64     `gorm:"not null;default:0" json:"current_seq"`
 }
 
+// TableName executes the domain.SyncSequence.TableName operation.
 func (SyncSequence) TableName() string { return "sync_sequence" }
 
 type SyncWatermark struct {
@@ -20,6 +21,7 @@ type SyncWatermark struct {
 	LastSyncAt   *time.Time `json:"last_sync_at,omitempty"`
 }
 
+// TableName executes the domain.SyncWatermark.TableName operation.
 func (SyncWatermark) TableName() string { return "sync_watermarks" }
 
 type SyncStatus struct {
@@ -30,6 +32,7 @@ type SyncStatus struct {
 	SubscriptionActive bool       `gorm:"not null;default:false" json:"subscription_active"`
 }
 
+// TableName executes the domain.SyncStatus.TableName operation.
 func (SyncStatus) TableName() string { return "sync_status" }
 
 type SyncLog struct {
@@ -44,4 +47,5 @@ type SyncLog struct {
 	SyncedAt     time.Time `gorm:"not null;default:now()" json:"synced_at"`
 }
 
+// TableName executes the domain.SyncLog.TableName operation.
 func (SyncLog) TableName() string { return "sync_log" }

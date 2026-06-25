@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/knowledgeos/backend/internal/auth"
+	"github.com/knowledgeos/backend/internal/chat/tools"
 	"github.com/knowledgeos/backend/internal/config"
 	secretcrypto "github.com/knowledgeos/backend/internal/crypto"
 	"github.com/knowledgeos/backend/internal/database"
@@ -52,6 +53,7 @@ func main() {
 	tenantSecretStore := store.NewTenantSecretStore(s)
 	kbEmbeddingStore := store.NewKBEmbeddingStore(s)
 	kbIndexJobStore := store.NewKBIndexJobStore(s)
+	chatStore := store.NewChatStore(s)
 
 	// Services
 	secretCipher, err := secretcrypto.NewCipher(cfg.SecretsEncryptionKey)
@@ -84,6 +86,12 @@ func main() {
 	linkSvc := service.NewLinkService(linkStore, qaStore, articleStore, pricingStore)
 	searchSvc := service.NewSearchService(searchStore)
 	retrieverSvc := service.NewRetrieverService(kbEmbeddingStore, searchStore, llmFactory, cfg.RAGVectorTopK, cfg.RAGHybridTopK)
+	chatTools := tools.NewRegistry(
+		tools.NewSearchKnowledgeTool(retrieverSvc, cfg.RAGHybridTopK),
+		tools.NewGetPricingTool(pricingSvc),
+		tools.NewGetServiceInfoTool(articleSvc, qaSvc, pricingSvc),
+	)
+	chatSvc := service.NewChatService(chatStore, botSettingsSvc, retrieverSvc, llmFactory, chatTools)
 	exportSvc := service.NewExportService(db, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore, callStore, mentionStore)
 	syncSvc := service.NewSyncService(syncStore, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore)
 	callSvc := service.NewCallService(callStore, mentionStore, qaStore)
@@ -121,6 +129,7 @@ func main() {
 		Backup:  handler.NewBackupHandler(snapshotSvc),
 		Bot:     handler.NewBotHandler(botSettingsSvc, tenantSecretSvc),
 		RAG:     handler.NewRAGHandler(ragIndexerSvc, retrieverSvc),
+		Chat:    handler.NewChatHandler(chatSvc),
 	}
 
 	var syncRepo domain.SyncRepository = syncStore

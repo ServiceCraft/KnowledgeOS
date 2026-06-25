@@ -20,6 +20,7 @@ import { UsersPage } from '@/pages/settings/UsersPage';
 import { SyncPage } from '@/pages/settings/SyncPage';
 import { ExportPage } from '@/pages/settings/ExportPage';
 import { CompaniesPage } from '@/pages/admin/CompaniesPage';
+import { BotPlaygroundPage } from '@/pages/bot/BotPlaygroundPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -62,6 +63,7 @@ export default function App() {
                 <Route path="/kb/articles/:id" element={<ArticleDetailPage />} />
                 <Route path="/kb/faq" element={<FAQPage />} />
                 <Route path="/kb/search" element={<SearchPage />} />
+                <Route path="/bot/playground" element={<BotPlaygroundPage />} />
                 <Route element={<ProtectedRoute minimumRole="admin" />}>
                   <Route path="/settings/users" element={<UsersPage />} />
                   <Route path="/settings/sync" element={<SyncPage />} />

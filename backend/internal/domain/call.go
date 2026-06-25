@@ -16,6 +16,7 @@ type Call struct {
 	Transcript  string     `gorm:"type:text;not null;default:''" json:"transcript"`
 }
 
+// TableName executes the domain.Call.TableName operation.
 func (Call) TableName() string { return "calls" }
 
 type QAPairCallMention struct {
@@ -30,6 +31,7 @@ type QAPairCallMention struct {
 	Confidence  *float64  `gorm:"type:numeric(4,3)" json:"confidence,omitempty"`
 }
 
+// TableName executes the domain.QAPairCallMention.TableName operation.
 func (QAPairCallMention) TableName() string { return "qa_pair_call_mentions" }
 
 // QAPairCallMentionView is the row returned by GET /qa/{id}/mentions —

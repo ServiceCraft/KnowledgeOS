@@ -1,0 +1,2538 @@
+openapi: 3.1.0
+info:
+  title: KnowledgeOS API
+  version: 1.0.0
+  summary: Полный REST API KnowledgeOS
+  description: |
+    Единая OpenAPI-спецификация для backend API KnowledgeOS.
+
+    Файл описывает все маршруты, объявленные в `backend/internal/handler/router.go`:
+    авторизацию, базу знаний, комментарии, ссылки, поиск, пользователей,
+    компании, настройки бота, RAG, чат, синхронизацию, импорт/экспорт и backup.
+
+    Все JSON-ответы backend, кроме backup snapshot, возвращаются в стандартной
+    обёртке:
+
+    - успешный одиночный ответ: `{ "data": ... }`;
+    - список: `{ "data": [...], "total": 123 }`;
+    - ошибка: `{ "error": "message" }`.
+
+    Protected JWT-методы работают в tenant-контексте. Для обычного пользователя
+    компания берётся из JWT. Пользователь с ролью `superadmin` может передать
+    заголовок `X-Company-ID`, чтобы выполнить tenant-scoped метод от имени
+    конкретной компании.
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Локальный backend
+  - url: /api/v1
+    description: Относительный путь для frontend/proxy
+tags:
+  - name: Auth
+    description: Вход, обновление и отзыв refresh token.
+  - name: QA
+    description: Q&A-пары базы знаний.
+  - name: Themes
+    description: Темы, группирующие Q&A.
+  - name: Pricing
+    description: Узлы дерева прайса.
+  - name: Articles
+    description: Статьи базы знаний.
+  - name: Comments
+    description: Комментарии к Q&A, статьям и прайсу.
+  - name: Links
+    description: Связи или внешние ссылки для сущностей базы знаний.
+  - name: Search
+    description: Полнотекстовый поиск по базе знаний.
+  - name: Calls
+    description: Звонки и упоминания Q&A в звонках.
+  - name: Sync
+    description: Статус и API-key синхронизация локального/cloud контура.
+  - name: Users
+    description: Администрирование пользователей внутри компании.
+  - name: Companies
+    description: Системное управление компаниями.
+  - name: Bot
+    description: Настройки бота и tenant secrets.
+  - name: RAG
+    description: Индексация и hybrid retrieval базы знаний.
+  - name: Bot Chat
+    description: Playground/API чат с ботом.
+  - name: Import Export
+    description: Импорт и экспорт базы знаний.
+  - name: Backup
+    description: Полный snapshot базы и кода.
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Войти по email и паролю
+      description: |
+        Проверяет учётные данные, активность пользователя и выдаёт пару JWT:
+        короткоживущий `access_token` и долгоживущий `refresh_token`.
+
+        Используйте метод в форме логина. Полученный `access_token` передавайте
+        в `Authorization: Bearer <token>` для protected endpoints.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: admin@example.com
+              password: changeme123
+      responses:
+        '200':
+          description: Токены и профиль пользователя.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponseEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Неверные credentials или деактивированный аккаунт.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshToken
+      summary: Обновить пару токенов
+      description: |
+        Принимает refresh token, отзывает его и выдаёт новую пару токенов.
+        Метод нужен frontend-клиенту для бесшовного продления сессии.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Новые токены.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponseEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Выйти и отозвать refresh token
+      description: |
+        Отзывает переданный refresh token. Access token продолжает жить до
+        истечения срока, поэтому клиенту нужно локально удалить оба токена.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/StatusOK'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /qa:
+    get:
+      tags: [QA]
+      operationId: listQA
+      summary: Получить список Q&A
+      description: |
+        Возвращает Q&A-пары текущей компании с пагинацией, поиском, фильтрами
+        по теме, FAQ-флагу и AI review status. Используйте для таблицы базы
+        знаний и выбора ответов оператором.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit50'
+        - name: query
+          in: query
+          schema: { type: string }
+          description: Поиск по вопросу/ответу.
+        - name: theme_id
+          in: query
+          schema: { type: string, format: uuid }
+          description: Фильтр по теме.
+        - name: is_faq
+          in: query
+          schema: { type: boolean }
+          description: Фильтр FAQ-записей.
+        - name: ai_status
+          in: query
+          schema: { $ref: '#/components/schemas/AIStatus' }
+          description: Фильтр статуса AI-предложенного ответа.
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [frequency, -frequency, created_at, -created_at]
+          description: Сортировка.
+      responses:
+        '200':
+          description: Список Q&A-пар.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QAPairListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [QA]
+      operationId: createQA
+      summary: Создать Q&A-пару
+      description: |
+        Создаёт новую запись базы знаний. Backend проставляет компанию,
+        автора, sync-поля и ставит задачу переиндексации RAG.
+
+        Требует роль `editor`, `admin` или `superadmin`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QAPairInput'
+      responses:
+        '201':
+          description: Созданная Q&A-пара.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QAPairEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /qa/{id}:
+    get:
+      tags: [QA]
+      operationId: getQA
+      summary: Получить Q&A-пару
+      description: Возвращает одну Q&A-пару текущей компании по UUID.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Q&A-пара.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QAPairEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidID'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [QA]
+      operationId: updateQA
+      summary: Обновить Q&A-пару
+      description: |
+        Частично обновляет поля Q&A: `question`, `answer`, `theme_id`,
+        `is_faq`, `is_locked`, `frequency`, `ai_answer`, `ai_status`.
+        Используйте для редактирования записи без пересоздания UUID.
+
+        Требует роль `editor`, `admin` или `superadmin`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QAPairPatch'
+      responses:
+        '200':
+          description: Обновлённая Q&A-пара.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QAPairEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [QA]
+      operationId: deleteQA
+      summary: Удалить Q&A-пару
+      description: |
+        Удаляет Q&A-пару текущей компании и планирует удаление из RAG-индекса.
+        Требует роль `editor`, `admin` или `superadmin`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204':
+          description: Удалено, тело ответа отсутствует.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /qa/{id}/review:
+    post:
+      tags: [QA]
+      operationId: reviewQAAnswer
+      summary: Принять, отклонить или отредактировать AI-ответ
+      description: |
+        Фиксирует результат ревью AI-предложенного ответа для Q&A-пары.
+        Метод используется в рабочем процессе, где AI предлагает ответ, а
+        редактор подтверждает его, отклоняет или сохраняет отредактированный
+        вариант.
+
+        Требует роль `editor`, `admin` или `superadmin`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QAReviewRequest'
+            examples:
+              accept:
+                value: { action: accept }
+              edit:
+                value:
+                  action: edit
+                  edited_answer: Обновлённый ответ для операторов.
+      responses:
+        '200':
+          description: Q&A после ревью.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QAPairEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /qa/{id}/mentions:
+    get:
+      tags: [Calls, QA]
+      operationId: listQAMentions
+      summary: Получить упоминания Q&A в звонках
+      description: |
+        Возвращает найденные в звонках упоминания конкретной Q&A-пары с
+        метаданными звонка. Используйте для контроля, где правило/ответ уже
+        встречался в реальных разговорах.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit100'
+      responses:
+        '200':
+          description: Список упоминаний.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QACallMentionListEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidID'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /calls/{id}:
+    get:
+      tags: [Calls]
+      operationId: getCall
+      summary: Получить звонок
+      description: |
+        Возвращает карточку звонка с транскриптом, внешним ID, длительностью и
+        ссылкой на аудио. Метод read-only и доступен любому authenticated
+        пользователю tenant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Звонок.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidID'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /themes:
+    get:
+      tags: [Themes]
+      operationId: listThemes
+      summary: Получить список тем
+      description: Возвращает темы текущей компании с пагинацией и поиском по названию/описанию.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit50'
+        - name: query
+          in: query
+          schema: { type: string }
+          description: Поисковая строка.
+      responses:
+        '200':
+          description: Список тем.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeListEnvelope'
+    post:
+      tags: [Themes]
+      operationId: createTheme
+      summary: Создать тему
+      description: |
+        Создаёт тему для группировки Q&A. Требует роль `editor`, `admin` или
+        `superadmin`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThemeInput'
+      responses:
+        '201':
+          description: Созданная тема.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /themes/{id}:
+    get:
+      tags: [Themes]
+      operationId: getTheme
+      summary: Получить тему
+      description: Возвращает тему текущей компании по UUID.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Тема.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeEnvelope'
+        '400':
+          $ref: '#/components/responses/InvalidID'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Themes]
+      operationId: updateTheme
+      summary: Обновить тему
+      description: Обновляет название и описание темы. Требует роль `editor`, `admin` или `superadmin`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThemeInput'
+      responses:
+        '200':
+          description: Обновлённая тема.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags: [Themes]
+      operationId: deleteTheme
+      summary: Удалить тему
+      description: Удаляет тему. Требует роль `editor`, `admin` или `superadmin`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204':
+          description: Удалено.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /themes/{id}/qa:
+    get:
+      tags: [Themes, QA]
+      operationId: listThemeQA
+      summary: Получить Q&A внутри темы
+      description: Возвращает Q&A-пары выбранной темы с пагинацией.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit50'
+      responses:
+        '200':
+          description: Список Q&A темы.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QAPairListEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /pricing:
+    get:
+      tags: [Pricing]
+      operationId: listPricing
+      summary: Получить узлы прайса
+      description: |
+        Возвращает дерево/список pricing nodes текущей компании. Можно получить
+        только узлы конкретного типа или дочерние узлы конкретного parent.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit50'
+        - name: node_type
+          in: query
+          schema: { type: string }
+          description: Тип узла прайса.
+        - name: parent_id
+          in: query
+          schema: { type: string, format: uuid }
+          description: Вернуть дочерние узлы указанного parent.
+      responses:
+        '200':
+          description: Список узлов прайса.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingNodeListEnvelope'
+    post:
+      tags: [Pricing]
+      operationId: createPricingNode
+      summary: Создать узел прайса
+      description: Создаёт узел прайса и планирует RAG-переиндексацию. Требует write-role.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PricingNodeInput'
+      responses:
+        '201':
+          description: Созданный узел.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingNodeEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /pricing/{id}:
+    get:
+      tags: [Pricing]
+      operationId: getPricingNode
+      summary: Получить узел прайса
+      description: Возвращает один pricing node по UUID.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Узел прайса.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingNodeEnvelope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Pricing]
+      operationId: updatePricingNode
+      summary: Обновить узел прайса
+      description: Обновляет узел прайса. Требует роль `editor`, `admin` или `superadmin`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PricingNodeInput'
+      responses:
+        '200':
+          description: Обновлённый узел.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingNodeEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags: [Pricing]
+      operationId: deletePricingNode
+      summary: Удалить узел прайса
+      description: Удаляет узел прайса. Требует write-role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204':
+          description: Удалено.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /pricing/{id}/move:
+    post:
+      tags: [Pricing]
+      operationId: movePricingNode
+      summary: Переместить узел прайса
+      description: |
+        Меняет `parent_id` узла прайса. Передайте `null`, чтобы сделать узел
+        корневым. Используйте для drag-and-drop дерева прайса.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PricingMoveRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/StatusOK'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /articles:
+    get:
+      tags: [Articles]
+      operationId: listArticles
+      summary: Получить статьи
+      description: Возвращает статьи текущей компании с пагинацией и поиском.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit50'
+        - name: query
+          in: query
+          schema: { type: string }
+          description: Поиск по заголовку/тексту.
+      responses:
+        '200':
+          description: Список статей.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleListEnvelope'
+    post:
+      tags: [Articles]
+      operationId: createArticle
+      summary: Создать статью
+      description: Создаёт статью базы знаний и планирует RAG-индексацию. Требует write-role.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArticleInput'
+      responses:
+        '201':
+          description: Созданная статья.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /articles/{id}:
+    get:
+      tags: [Articles]
+      operationId: getArticle
+      summary: Получить статью
+      description: Возвращает статью текущей компании по UUID.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Статья.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleEnvelope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Articles]
+      operationId: updateArticle
+      summary: Обновить статью
+      description: Обновляет статью и планирует переиндексацию. Требует write-role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArticleInput'
+      responses:
+        '200':
+          description: Обновлённая статья.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    delete:
+      tags: [Articles]
+      operationId: deleteArticle
+      summary: Удалить статью
+      description: Удаляет статью и планирует удаление из RAG-индекса. Требует write-role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204':
+          description: Удалено.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /{entityType}/{entityID}/comments/:
+    get:
+      tags: [Comments]
+      operationId: listComments
+      summary: Получить комментарии сущности
+      description: |
+        Возвращает комментарии к Q&A, статье или узлу прайса. Параметр
+        `entityType` ограничен значениями `qa`, `article`, `pricing`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EntityType'
+        - $ref: '#/components/parameters/EntityID'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit50'
+      responses:
+        '200':
+          description: Список комментариев.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentListEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    post:
+      tags: [Comments]
+      operationId: createComment
+      summary: Создать комментарий
+      description: |
+        Создаёт комментарий к сущности базы знаний. Backend берёт `entity_type`,
+        `entity_id` и `author_id` из path/JWT, поэтому в body достаточно `body`.
+        Требует write-role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EntityType'
+        - $ref: '#/components/parameters/EntityID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentInput'
+      responses:
+        '201':
+          description: Созданный комментарий.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /{entityType}/{entityID}/comments/{id}:
+    patch:
+      tags: [Comments]
+      operationId: updateComment
+      summary: Обновить комментарий
+      description: Обновляет текст комментария. Требует write-role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EntityType'
+        - $ref: '#/components/parameters/EntityID'
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentInput'
+      responses:
+        '200':
+          description: Обновлённый комментарий.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    delete:
+      tags: [Comments]
+      operationId: deleteComment
+      summary: Удалить комментарий
+      description: Удаляет комментарий. Требует write-role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EntityType'
+        - $ref: '#/components/parameters/EntityID'
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204':
+          description: Удалено.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /{entityType}/{entityID}/links/:
+    get:
+      tags: [Links]
+      operationId: listLinks
+      summary: Получить ссылки сущности
+      description: |
+        Возвращает связи или внешние ссылки, привязанные к Q&A, статье или
+        pricing node. Используйте для отображения связанных материалов.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EntityType'
+        - $ref: '#/components/parameters/EntityID'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit50'
+      responses:
+        '200':
+          description: Список ссылок.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityLinkListEnvelope'
+    post:
+      tags: [Links]
+      operationId: createLink
+      summary: Создать ссылку
+      description: |
+        Создаёт связь с другой сущностью или внешним URL. Backend проставляет
+        source из path. В body нужно передать либо `target_type` + `target_id`,
+        либо `url`. Требует write-role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EntityType'
+        - $ref: '#/components/parameters/EntityID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntityLinkInput'
+      responses:
+        '201':
+          description: Созданная ссылка.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityLinkEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /{entityType}/{entityID}/links/{id}:
+    delete:
+      tags: [Links]
+      operationId: deleteLink
+      summary: Удалить ссылку
+      description: Удаляет связь/ссылку сущности. Требует write-role.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EntityType'
+        - $ref: '#/components/parameters/EntityID'
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204':
+          description: Удалено.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /search:
+    get:
+      tags: [Search]
+      operationId: search
+      summary: Выполнить поиск по базе знаний
+      description: |
+        Полнотекстовый поиск по Q&A, статьям и прайсу текущей компании.
+        Используйте для глобального поиска в UI и быстрого перехода к
+        найденной сущности.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema: { type: string }
+          description: Поисковый запрос.
+        - name: types
+          in: query
+          schema: { type: string }
+          description: CSV-список типов, например `qa,article,pricing`.
+        - name: theme_id
+          in: query
+          schema: { type: string, format: uuid }
+          description: Ограничить поиск Q&A по теме.
+        - $ref: '#/components/parameters/Page'
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+          description: Количество результатов.
+      responses:
+        '200':
+          description: Результаты поиска.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResultListEnvelope'
+  /sync/status:
+    get:
+      tags: [Sync]
+      operationId: syncStatus
+      summary: Получить статус синхронизации
+      description: Возвращает состояние подписки и последний результат синхронизации текущей компании.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Статус sync.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatusEnvelope'
+  /sync/push:
+    post:
+      tags: [Sync]
+      operationId: syncPush
+      summary: Отправить изменения из внешнего контура
+      description: |
+        API-key endpoint для применения payload синхронизации к компании,
+        которой принадлежит API key. Используется cloud/local sync worker.
+      security:
+        - syncApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncPayload'
+      responses:
+        '200':
+          $ref: '#/components/responses/StatusOK'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /sync/pull:
+    get:
+      tags: [Sync]
+      operationId: syncPull
+      summary: Забрать изменения для внешнего контура
+      description: |
+        API-key endpoint, который собирает изменения текущей компании с момента
+        последнего локального watermark. Используется sync worker.
+      security:
+        - syncApiKey: []
+      responses:
+        '200':
+          description: Payload изменений.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPayloadEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /admin/users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: Получить пользователей компании
+      description: |
+        Возвращает пользователей текущей компании. Доступно ролям `admin` и
+        `superadmin`. Используйте в разделе администрирования пользователей.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: q
+          in: query
+          schema: { type: string }
+          description: Поиск по email.
+        - name: role
+          in: query
+          schema: { $ref: '#/components/schemas/Role' }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created_at, -created_at]
+      responses:
+        '200':
+          description: Список пользователей.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListEnvelope'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Users]
+      operationId: createUser
+      summary: Создать пользователя
+      description: |
+        Создаёт пользователя в текущей компании. Email нормализуется, пароль
+        должен быть не короче 8 символов. Назначить `superadmin` может только
+        текущий `superadmin`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: Созданный пользователь.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /admin/users/{id}:
+    patch:
+      tags: [Users]
+      operationId: updateUser
+      summary: Обновить пользователя
+      description: |
+        Частично обновляет email, пароль, роль и активность. Sensitive changes
+        отзывают refresh tokens пользователя. Администратор не может управлять
+        другими администраторами, а пользователь не может удалить/понизить себя.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: Обновлённый пользователь.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [Users]
+      operationId: deleteUser
+      summary: Удалить пользователя
+      description: Удаляет пользователя текущей компании с учётом role safety rules.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204':
+          description: Удалено.
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/bot/settings:
+    get:
+      tags: [Bot]
+      operationId: getBotSettings
+      summary: Получить настройки бота
+      description: |
+        Возвращает настройки LLM-провайдера, модельного tier, температуру,
+        лимиты токенов, persona и enabled modules для текущей компании.
+        Если настроек ещё нет, backend создаёт default settings.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Настройки бота.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotSettingsEnvelope'
+    put:
+      tags: [Bot]
+      operationId: updateBotSettings
+      summary: Обновить настройки бота
+      description: |
+        Частично обновляет настройки бота. Используйте для включения бота,
+        выбора tier/model, настройки persona и параметров генерации.
+        Доступно `admin` и `superadmin`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBotSettingsRequest'
+      responses:
+        '200':
+          description: Обновлённые настройки.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotSettingsEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /admin/bot/secrets:
+    get:
+      tags: [Bot]
+      operationId: listBotSecrets
+      summary: Получить статусы secrets
+      description: |
+        Возвращает только статусы tenant secrets: kind, is_set, metadata и
+        updated_at. Секретные значения никогда не возвращаются.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Статусы секретов.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantSecretStatusArrayEnvelope'
+  /admin/bot/secrets/{kind}:
+    put:
+      tags: [Bot]
+      operationId: setBotSecret
+      summary: Установить tenant secret
+      description: |
+        Шифрует и сохраняет секрет для LLM или внешнего канала. Требует
+        настроенный `SECRETS_ENCRYPTION_KEY`. В ответе возвращается только
+        status, не plaintext.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SecretKind'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetTenantSecretRequest'
+      responses:
+        '200':
+          description: Статус сохранённого секрета.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantSecretStatusEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    delete:
+      tags: [Bot]
+      operationId: deleteBotSecret
+      summary: Удалить tenant secret
+      description: Удаляет секрет выбранного kind для текущей компании.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SecretKind'
+      responses:
+        '204':
+          description: Удалено.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /admin/bot/rag/reindex:
+    post:
+      tags: [RAG]
+      operationId: reindexRAG
+      summary: Запустить переиндексацию RAG
+      description: |
+        Очищает embeddings текущей компании и ставит jobs на upsert всех статей,
+        Q&A и pricing nodes. Используйте после массового импорта или смены
+        embedding-настроек.
+      security:
+        - bearerAuth: []
+      responses:
+        '202':
+          description: Переиндексация поставлена в очередь.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusEnvelope'
+              example:
+                data: { status: queued }
+  /admin/bot/rag/index-status:
+    get:
+      tags: [RAG]
+      operationId: ragIndexStatus
+      summary: Получить статус RAG-индекса
+      description: Возвращает количество embeddings и статистику jobs по статусам.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Статус индекса.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RAGIndexStatusEnvelope'
+  /admin/bot/rag/search:
+    post:
+      tags: [RAG]
+      operationId: ragSearch
+      summary: Выполнить RAG retrieval
+      description: |
+        Выполняет hybrid retrieval: lexical search + vector search + RRF merge.
+        Используйте для отладки того, какие фрагменты базы знаний попадут в
+        контекст бота.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RAGSearchRequest'
+      responses:
+        '200':
+          description: Результат retrieval.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrieveResultEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /admin/bot/chat/sessions:
+    post:
+      tags: [Bot Chat]
+      operationId: createBotChatSession
+      summary: Создать сессию чата
+      description: |
+        Создаёт новую диалоговую сессию с ботом в tenant-контексте. Сначала
+        вызовите этот метод, затем отправляйте сообщения в `/messages` или
+        `/messages/stream`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChatSessionRequest'
+      responses:
+        '201':
+          description: Созданная сессия.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    get:
+      tags: [Bot Chat]
+      operationId: listBotChatSessions
+      summary: Получить список сессий чата
+      description: Возвращает последние активные chat sessions текущей компании.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - name: limit
+          in: query
+          schema: { type: integer, default: 30 }
+      responses:
+        '200':
+          description: Список сессий.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionListEnvelope'
+  /admin/bot/chat/sessions/{id}:
+    get:
+      tags: [Bot Chat]
+      operationId: getBotChatSession
+      summary: Получить сессию с историей
+      description: Возвращает метаданные сессии и до 200 последних сообщений.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Сессия и сообщения.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionWithMessagesEnvelope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/bot/chat/sessions/{id}/messages:
+    post:
+      tags: [Bot Chat]
+      operationId: sendBotChatMessage
+      summary: Отправить сообщение боту
+      description: |
+        Сохраняет user message, выполняет RAG retrieval, вызывает LLM, сохраняет
+        assistant message и возвращает готовый ответ одним JSON. Подходит для
+        интеграций без streaming UX.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendChatMessageRequest'
+      responses:
+        '200':
+          description: Полный обмен сообщениями.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatExchangeEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /admin/bot/chat/sessions/{id}/messages/stream:
+    post:
+      tags: [Bot Chat]
+      operationId: streamBotChatMessage
+      summary: Отправить сообщение и получить SSE stream
+      description: |
+        Возвращает Server-Sent Events. Используйте для UI, где ответ бота
+        должен появляться по мере генерации.
+
+        События:
+        - `sources` — найденные источники;
+        - `delta` — фрагмент текста;
+        - `usage` — токены, если провайдер вернул usage;
+        - `message` — финально сохранённое сообщение ассистента;
+        - `error` — ошибка внутри открытого stream;
+        - `done` — завершение.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendChatMessageRequest'
+      responses:
+        '200':
+          description: SSE поток.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Каждое `data:` содержит JSON `ChatStreamEvent`.
+              example: |
+                event: delta
+                data: {"type":"delta","delta":"Ответ начинается..."}
+
+                event: done
+                data: {"type":"done"}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /export:
+    get:
+      tags: [Import Export]
+      operationId: exportKnowledgeBase
+      summary: Экспортировать базу знаний
+      description: |
+        Возвращает переносимый JSON export текущей компании: themes, Q&A,
+        pricing, articles, calls и mentions. Доступно только `superadmin`.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Export payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportDataEnvelope'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /import:
+    post:
+      tags: [Import Export]
+      operationId: importKnowledgeBase
+      summary: Импортировать базу знаний
+      description: |
+        Импортирует переносимый JSON export в компанию текущего superadmin.
+        Backend переназначает `company_id`, очищает created/updated by и
+        дедуплицирует часть сущностей.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportData'
+      responses:
+        '200':
+          description: Результат импорта.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportResultEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /admin/companies:
+    get:
+      tags: [Companies]
+      operationId: listCompanies
+      summary: Получить компании
+      description: Список компаний платформы. Доступно только `superadmin`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit50'
+      responses:
+        '200':
+          description: Список компаний.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyListEnvelope'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Companies]
+      operationId: createCompany
+      summary: Создать компанию
+      description: Создаёт компанию и sync sequence. Доступно только `superadmin`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanyInput'
+      responses:
+        '201':
+          description: Созданная компания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /admin/companies/{id}:
+    get:
+      tags: [Companies]
+      operationId: getCompany
+      summary: Получить компанию
+      description: Возвращает компанию по UUID. Доступно только `superadmin`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Компания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyEnvelope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Companies]
+      operationId: updateCompany
+      summary: Обновить компанию
+      description: Обновляет компанию. Доступно только `superadmin`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanyInput'
+      responses:
+        '200':
+          description: Обновлённая компания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    delete:
+      tags: [Companies]
+      operationId: deleteCompany
+      summary: Удалить компанию
+      description: Удаляет компанию. Доступно только `superadmin`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204':
+          description: Удалено.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /admin/companies/{id}/admin:
+    post:
+      tags: [Companies, Users]
+      operationId: createCompanyAdmin
+      summary: Создать администратора компании
+      description: |
+        Создаёт пользователя с ролью `admin` в выбранной компании. Используйте
+        после создания компании, чтобы выдать ей первого администратора.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCompanyAdminRequest'
+      responses:
+        '201':
+          description: Созданный admin user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /backup/snapshot:
+    get:
+      tags: [Backup]
+      operationId: backupSnapshot
+      summary: Скачать полный snapshot
+      description: |
+        Создаёт и стримит `snapshot-YYYYMMDD-HHMMSS.tar.gz`.
+        Архив содержит `metadata.json`, `dump.sql`, `code.tar.gz` и
+        `export.json`. Endpoint защищён отдельным backup API key, а не JWT.
+      security:
+        - backupApiKey: []
+      responses:
+        '200':
+          description: Gzip-compressed tar archive.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              description: Attachment filename.
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          description: Backup endpoint disabled because key is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token из `/auth/login` или `/auth/refresh`.
+    syncApiKey:
+      type: http
+      scheme: bearer
+      description: API key из таблицы `api_keys`, используется только `/sync/push` и `/sync/pull`.
+    backupApiKey:
+      type: http
+      scheme: bearer
+      description: Значение `BACKUP_API_KEY`, используется только `/backup/snapshot`.
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: UUID сущности.
+    EntityID:
+      name: entityID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: UUID сущности-владельца.
+    EntityType:
+      name: entityType
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [qa, article, pricing]
+      description: Тип сущности для polymorphic comments/links.
+    SecretKind:
+      name: kind
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/SecretKind'
+      description: Тип tenant secret.
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+      description: Номер страницы, начиная с 1.
+    Limit50:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, default: 50 }
+      description: Размер страницы.
+    Limit100:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, default: 100 }
+      description: Размер страницы.
+  responses:
+    StatusOK:
+      description: Операция выполнена.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/StatusEnvelope'
+          example:
+            data: { status: ok }
+    BadRequest:
+      description: Некорректный запрос.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error: invalid request body
+    InvalidID:
+      description: Некорректный UUID в path.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error: invalid id
+    Unauthorized:
+      description: Не передан или невалиден token/API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error: invalid token
+    Forbidden:
+      description: Недостаточно прав.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error: insufficient permissions
+    NotFound:
+      description: Сущность не найдена или недоступна в текущем tenant.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error: not found
+    Conflict:
+      description: Конфликт состояния или уникальности.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error: conflict
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    StatusEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [status]
+          properties:
+            status:
+              type: string
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+    LoginResponseEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/LoginResponse'
+    LoginResponse:
+      type: object
+      required: [access_token, refresh_token, expires_at, user]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        expires_at:
+          type: integer
+          format: int64
+          description: Unix timestamp expiration для access token.
+        user:
+          $ref: '#/components/schemas/LoginUser'
+    LoginUser:
+      type: object
+      required: [id, email, role]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/Role' }
+        company_id: { type: string, format: uuid }
+    Role:
+      type: string
+      enum: [superadmin, admin, editor, viewer]
+    AIStatus:
+      type: string
+      enum: [pending, accepted, rejected, edited]
+    BaseModel:
+      type: object
+      required: [id, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    SyncableFields:
+      type: object
+      required: [company_id, sync_version, sync_origin]
+      properties:
+        company_id: { type: string, format: uuid }
+        sync_version: { type: integer, format: int64 }
+        sync_origin: { type: string }
+        created_by: { type: string, format: uuid }
+        updated_by: { type: string, format: uuid }
+        deleted_at: { type: string, format: date-time }
+    Company:
+      allOf:
+        - $ref: '#/components/schemas/BaseModel'
+        - type: object
+          required: [name, tier]
+          properties:
+            name: { type: string }
+            tier: { type: string, default: local }
+    CompanyInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        tier: { type: string, default: local }
+    User:
+      allOf:
+        - $ref: '#/components/schemas/BaseModel'
+        - type: object
+          required: [email, role, is_active]
+          properties:
+            company_id: { type: string, format: uuid }
+            email: { type: string, format: email }
+            role: { $ref: '#/components/schemas/Role' }
+            is_active: { type: boolean }
+    CreateUserRequest:
+      type: object
+      required: [email, password, role]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        role: { $ref: '#/components/schemas/Role' }
+        is_active: { type: boolean, default: true }
+    UpdateUserRequest:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        role: { $ref: '#/components/schemas/Role' }
+        is_active: { type: boolean }
+    CreateCompanyAdminRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+    Theme:
+      allOf:
+        - $ref: '#/components/schemas/BaseModel'
+        - $ref: '#/components/schemas/SyncableFields'
+        - type: object
+          required: [name, description]
+          properties:
+            name: { type: string }
+            description: { type: string }
+    ThemeInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+    QAPair:
+      allOf:
+        - $ref: '#/components/schemas/BaseModel'
+        - $ref: '#/components/schemas/SyncableFields'
+        - type: object
+          required: [question, answer, is_faq, is_locked, frequency]
+          properties:
+            theme_id: { type: string, format: uuid }
+            question: { type: string }
+            answer: { type: string }
+            is_faq: { type: boolean }
+            is_locked: { type: boolean }
+            frequency: { type: integer }
+            ai_answer: { type: string }
+            ai_status: { $ref: '#/components/schemas/AIStatus' }
+            ai_reviewed_by: { type: string, format: uuid }
+            ai_reviewed_at: { type: string, format: date-time }
+    QAPairInput:
+      type: object
+      required: [question, answer]
+      properties:
+        theme_id: { type: string, format: uuid }
+        question: { type: string }
+        answer: { type: string }
+        is_faq: { type: boolean, default: false }
+        is_locked: { type: boolean, default: false }
+        frequency: { type: integer, default: 0 }
+        ai_answer: { type: string }
+        ai_status: { $ref: '#/components/schemas/AIStatus' }
+    QAPairPatch:
+      type: object
+      properties:
+        theme_id:
+          oneOf:
+            - type: string
+              format: uuid
+            - type: 'null'
+        question: { type: string }
+        answer: { type: string }
+        is_faq: { type: boolean }
+        is_locked: { type: boolean }
+        frequency: { type: integer }
+        ai_answer: { type: string }
+        ai_status: { $ref: '#/components/schemas/AIStatus' }
+    QAReviewRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [accept, reject, edit]
+        edited_answer:
+          type: string
+    PricingNode:
+      allOf:
+        - $ref: '#/components/schemas/BaseModel'
+        - $ref: '#/components/schemas/SyncableFields'
+        - type: object
+          required: [node_type, name]
+          properties:
+            parent_id: { type: string, format: uuid }
+            node_type: { type: string }
+            name: { type: string }
+            price: { type: number, format: double }
+    PricingNodeInput:
+      type: object
+      required: [node_type, name]
+      properties:
+        parent_id: { type: string, format: uuid }
+        node_type: { type: string }
+        name: { type: string }
+        price: { type: number, format: double }
+    PricingMoveRequest:
+      type: object
+      required: [parent_id]
+      properties:
+        parent_id:
+          oneOf:
+            - type: string
+              format: uuid
+            - type: 'null'
+    Article:
+      allOf:
+        - $ref: '#/components/schemas/BaseModel'
+        - $ref: '#/components/schemas/SyncableFields'
+        - type: object
+          required: [title, body]
+          properties:
+            title: { type: string }
+            body: { type: string }
+    ArticleInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        body: { type: string }
+    Comment:
+      allOf:
+        - $ref: '#/components/schemas/BaseModel'
+        - $ref: '#/components/schemas/SyncableFields'
+        - type: object
+          required: [entity_type, entity_id, body]
+          properties:
+            entity_type: { type: string }
+            entity_id: { type: string, format: uuid }
+            body: { type: string }
+            author_id: { type: string, format: uuid }
+    CommentInput:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string }
+    EntityLink:
+      allOf:
+        - $ref: '#/components/schemas/BaseModel'
+        - $ref: '#/components/schemas/SyncableFields'
+        - type: object
+          required: [source_type, source_id]
+          properties:
+            source_type: { type: string }
+            source_id: { type: string, format: uuid }
+            target_type: { type: string }
+            target_id: { type: string, format: uuid }
+            url: { type: string, format: uri }
+            label: { type: string }
+    EntityLinkInput:
+      type: object
+      properties:
+        target_type: { type: string }
+        target_id: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        label: { type: string }
+    Call:
+      allOf:
+        - $ref: '#/components/schemas/BaseModel'
+        - $ref: '#/components/schemas/SyncableFields'
+        - type: object
+          required: [title, transcript]
+          properties:
+            external_id: { type: string }
+            title: { type: string }
+            occurred_at: { type: string, format: date-time }
+            duration_sec: { type: integer }
+            audio_url: { type: string, format: uri }
+            transcript: { type: string }
+    QACallMention:
+      allOf:
+        - $ref: '#/components/schemas/BaseModel'
+        - $ref: '#/components/schemas/SyncableFields'
+        - type: object
+          required: [qa_pair_id, call_id, snippet]
+          properties:
+            qa_pair_id: { type: string, format: uuid }
+            call_id: { type: string, format: uuid }
+            snippet: { type: string }
+            start_offset: { type: integer }
+            end_offset: { type: integer }
+            start_sec: { type: number, format: double }
+            end_sec: { type: number, format: double }
+            confidence: { type: number, format: double }
+    QACallMentionView:
+      allOf:
+        - $ref: '#/components/schemas/QACallMention'
+        - type: object
+          required: [call_title]
+          properties:
+            call_title: { type: string }
+            call_occurred_at: { type: string, format: date-time }
+    SearchResult:
+      type: object
+      required: [entity_type, entity_id, title, snippet, rank]
+      properties:
+        entity_type: { type: string }
+        entity_id: { type: string, format: uuid }
+        title: { type: string }
+        snippet: { type: string }
+        rank: { type: number, format: double }
+    SyncStatus:
+      type: object
+      required: [company_id, subscription_active]
+      properties:
+        company_id: { type: string, format: uuid }
+        last_sync_at: { type: string, format: date-time }
+        last_sync_result: { type: string }
+        last_error: { type: string }
+        subscription_active: { type: boolean }
+    SyncPayload:
+      type: object
+      required: [company_id, themes, qa_pairs, pricing_nodes, articles, comments, links, max_seq]
+      properties:
+        company_id: { type: string, format: uuid }
+        themes:
+          type: array
+          items: { $ref: '#/components/schemas/Theme' }
+        qa_pairs:
+          type: array
+          items: { $ref: '#/components/schemas/QAPair' }
+        pricing_nodes:
+          type: array
+          items: { $ref: '#/components/schemas/PricingNode' }
+        articles:
+          type: array
+          items: { $ref: '#/components/schemas/Article' }
+        comments:
+          type: array
+          items: { $ref: '#/components/schemas/Comment' }
+        links:
+          type: array
+          items: { $ref: '#/components/schemas/EntityLink' }
+        max_seq: { type: integer, format: int64 }
+    BotProvider:
+      type: string
+      enum: [yandex]
+    BotModelTier:
+      type: string
+      enum: [lite, pro]
+    BotSettings:
+      type: object
+      required: [company_id, enabled, provider, model_tier, temperature, max_tokens, persona_name, persona_tone, persona_rules, enabled_modules, created_at, updated_at]
+      properties:
+        company_id: { type: string, format: uuid }
+        enabled: { type: boolean }
+        provider: { $ref: '#/components/schemas/BotProvider' }
+        model_tier: { $ref: '#/components/schemas/BotModelTier' }
+        model: { type: string }
+        temperature: { type: number, format: double, minimum: 0, maximum: 2 }
+        max_tokens: { type: integer, minimum: 1, maximum: 8192 }
+        persona_name: { type: string }
+        persona_tone: { type: string }
+        persona_rules: { type: string }
+        enabled_modules:
+          type: object
+          additionalProperties: true
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    UpdateBotSettingsRequest:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        provider: { $ref: '#/components/schemas/BotProvider' }
+        model_tier: { $ref: '#/components/schemas/BotModelTier' }
+        model: { type: string }
+        temperature: { type: number, format: double, minimum: 0, maximum: 2 }
+        max_tokens: { type: integer, minimum: 1, maximum: 8192 }
+        persona_name: { type: string }
+        persona_tone: { type: string }
+        persona_rules: { type: string }
+        enabled_modules:
+          type: object
+          additionalProperties: true
+    SecretKind:
+      type: string
+      enum: [llm, telegram, max, vk, bitrix24]
+    SetTenantSecretRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          type: string
+          description: Plaintext secret; сохраняется только в зашифрованном виде.
+        metadata:
+          type: object
+          additionalProperties: true
+    TenantSecretStatus:
+      type: object
+      required: [kind, is_set, metadata]
+      properties:
+        kind: { $ref: '#/components/schemas/SecretKind' }
+        is_set: { type: boolean }
+        metadata:
+          type: object
+          additionalProperties: true
+        updated_at: { type: string, format: date-time }
+    KBEntityType:
+      type: string
+      enum: [article, qa, pricing]
+    RAGSearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string }
+        types:
+          type: array
+          items: { $ref: '#/components/schemas/KBEntityType' }
+        theme_id: { type: string, format: uuid }
+        vector_top_k: { type: integer }
+        hybrid_top_k: { type: integer }
+        rewrite: { type: boolean, default: true }
+    RAGCandidate:
+      type: object
+      required: [source_id, entity_type, entity_id, chunk_idx, title, content, score]
+      properties:
+        source_id: { type: string }
+        entity_type: { $ref: '#/components/schemas/KBEntityType' }
+        entity_id: { type: string, format: uuid }
+        chunk_idx: { type: integer }
+        theme_id: { type: string, format: uuid }
+        title: { type: string }
+        content: { type: string }
+        snippet: { type: string }
+        score: { type: number, format: double }
+        vector_rank: { type: integer }
+        lexical_rank: { type: integer }
+    RetrieveResult:
+      type: object
+      required: [query, results]
+      properties:
+        query: { type: string }
+        rewritten_query: { type: string }
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/RAGCandidate' }
+    RAGIndexStatus:
+      type: object
+      required: [embeddings, jobs]
+      properties:
+        embeddings: { type: integer, format: int64 }
+        jobs:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+    ChatChannel:
+      type: string
+      enum: [playground, api, telegram, max, vk]
+    ChatState:
+      type: string
+      enum: [bot, closed]
+    ChatRole:
+      type: string
+      enum: [user, assistant, tool, operator]
+    CreateChatSessionRequest:
+      type: object
+      properties:
+        channel: { $ref: '#/components/schemas/ChatChannel' }
+        external_chat_id: { type: string }
+        title: { type: string }
+    SendChatMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1 }
+    ChatSession:
+      allOf:
+        - $ref: '#/components/schemas/BaseModel'
+        - type: object
+          required: [company_id, channel, state, title]
+          properties:
+            company_id: { type: string, format: uuid }
+            channel: { $ref: '#/components/schemas/ChatChannel' }
+            external_chat_id: { type: string }
+            state: { $ref: '#/components/schemas/ChatState' }
+            operator_id: { type: string, format: uuid }
+            title: { type: string }
+            last_message_at: { type: string, format: date-time }
+    ChatSource:
+      type: object
+      required: [source_id, entity_type, entity_id, chunk_idx, title, content, score]
+      properties:
+        source_id: { type: string }
+        entity_type: { $ref: '#/components/schemas/KBEntityType' }
+        entity_id: { type: string, format: uuid }
+        chunk_idx: { type: integer }
+        title: { type: string }
+        content: { type: string }
+        snippet: { type: string }
+        score: { type: number, format: double }
+    ToolCall:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        arguments:
+          type: object
+          additionalProperties: true
+    ChatMessage:
+      allOf:
+        - $ref: '#/components/schemas/BaseModel'
+        - type: object
+          required: [company_id, session_id, role, content, tool_calls, sources, tokens_prompt, tokens_completion]
+          properties:
+            company_id: { type: string, format: uuid }
+            session_id: { type: string, format: uuid }
+            role: { $ref: '#/components/schemas/ChatRole' }
+            content: { type: string }
+            tool_calls:
+              type: array
+              items: { $ref: '#/components/schemas/ToolCall' }
+            sources:
+              type: array
+              items: { $ref: '#/components/schemas/ChatSource' }
+            tokens_prompt: { type: integer, minimum: 0 }
+            tokens_completion: { type: integer, minimum: 0 }
+    ChatSessionWithMessages:
+      type: object
+      required: [session, messages]
+      properties:
+        session: { $ref: '#/components/schemas/ChatSession' }
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/ChatMessage' }
+    ChatExchange:
+      type: object
+      required: [session, user, message, sources]
+      properties:
+        session: { $ref: '#/components/schemas/ChatSession' }
+        user: { $ref: '#/components/schemas/ChatMessage' }
+        message: { $ref: '#/components/schemas/ChatMessage' }
+        sources:
+          type: array
+          items: { $ref: '#/components/schemas/ChatSource' }
+    ChatStreamEvent:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [sources, delta, usage, message, error, done]
+        delta: { type: string }
+        message: { $ref: '#/components/schemas/ChatMessage' }
+        sources:
+          type: array
+          items: { $ref: '#/components/schemas/ChatSource' }
+        usage: { $ref: '#/components/schemas/Usage' }
+        error: { type: string }
+    Usage:
+      type: object
+      required: [prompt_tokens, completion_tokens, total_tokens]
+      properties:
+        prompt_tokens: { type: integer, minimum: 0 }
+        completion_tokens: { type: integer, minimum: 0 }
+        total_tokens: { type: integer, minimum: 0 }
+    ExportData:
+      type: object
+      required: [themes, qa_pairs, pricing_nodes, articles]
+      properties:
+        themes:
+          type: array
+          items: { $ref: '#/components/schemas/Theme' }
+        qa_pairs:
+          type: array
+          items: { $ref: '#/components/schemas/QAPair' }
+        pricing_nodes:
+          type: array
+          items: { $ref: '#/components/schemas/PricingNode' }
+        articles:
+          type: array
+          items: { $ref: '#/components/schemas/Article' }
+        calls:
+          type: array
+          items: { $ref: '#/components/schemas/Call' }
+        qa_pair_call_mentions:
+          type: array
+          items: { $ref: '#/components/schemas/QACallMention' }
+    ImportResult:
+      type: object
+      required: [imported, skipped, errors]
+      properties:
+        imported: { type: integer }
+        skipped: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+    CompanyEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Company' }
+    CompanyListEnvelope:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Company' }
+        total: { type: integer, format: int64 }
+    UserEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/User' }
+    UserListEnvelope:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/User' }
+        total: { type: integer, format: int64 }
+    ThemeEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Theme' }
+    ThemeListEnvelope:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Theme' }
+        total: { type: integer, format: int64 }
+    QAPairEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/QAPair' }
+    QAPairListEnvelope:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/QAPair' }
+        total: { type: integer, format: int64 }
+    PricingNodeEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/PricingNode' }
+    PricingNodeListEnvelope:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/PricingNode' }
+        total: { type: integer, format: int64 }
+    ArticleEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Article' }
+    ArticleListEnvelope:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Article' }
+        total: { type: integer, format: int64 }
+    CommentEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Comment' }
+    CommentListEnvelope:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Comment' }
+        total: { type: integer, format: int64 }
+    EntityLinkEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/EntityLink' }
+    EntityLinkListEnvelope:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/EntityLink' }
+        total: { type: integer, format: int64 }
+    CallEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Call' }
+    QACallMentionListEnvelope:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/QACallMentionView' }
+        total: { type: integer, format: int64 }
+    SearchResultListEnvelope:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/SearchResult' }
+        total: { type: integer, format: int64 }
+    SyncStatusEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/SyncStatus' }
+    SyncPayloadEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/SyncPayload' }
+    BotSettingsEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/BotSettings' }
+    TenantSecretStatusEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/TenantSecretStatus' }
+    TenantSecretStatusArrayEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/TenantSecretStatus' }
+    RAGIndexStatusEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/RAGIndexStatus' }
+    RetrieveResultEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/RetrieveResult' }
+    ChatSessionEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ChatSession' }
+    ChatSessionListEnvelope:
+      type: object
+      required: [data, total]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ChatSession' }
+        total: { type: integer, format: int64 }
+    ChatSessionWithMessagesEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ChatSessionWithMessages' }
+    ChatExchangeEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ChatExchange' }
+    ExportDataEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ExportData' }
+    ImportResultEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ImportResult' }

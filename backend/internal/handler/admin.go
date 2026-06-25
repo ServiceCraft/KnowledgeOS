@@ -1,6 +1,7 @@
 package handler
 
 import (
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -13,11 +14,14 @@ type AdminHandler struct {
 	svc *service.AdminService
 }
 
+// NewAdminHandler executes the handler.NewAdminHandler operation.
 func NewAdminHandler(svc *service.AdminService) *AdminHandler {
 	return &AdminHandler{svc: svc}
 }
 
+// ListCompanies executes the handler.AdminHandler.ListCompanies operation.
 func (h *AdminHandler) ListCompanies(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.AdminHandler.ListCompanies")
 	filter := domain.CompanyFilter{
 		Page:  intQuery(r, "page", 1),
 		Limit: intQuery(r, "limit", 50),
@@ -31,7 +35,9 @@ func (h *AdminHandler) ListCompanies(w http.ResponseWriter, r *http.Request) {
 	JSONList(w, http.StatusOK, items, total)
 }
 
+// GetCompany executes the handler.AdminHandler.GetCompany operation.
 func (h *AdminHandler) GetCompany(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.AdminHandler.GetCompany")
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		Error(w, http.StatusBadRequest, "invalid id")
@@ -46,7 +52,9 @@ func (h *AdminHandler) GetCompany(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, company)
 }
 
+// CreateCompany executes the handler.AdminHandler.CreateCompany operation.
 func (h *AdminHandler) CreateCompany(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.AdminHandler.CreateCompany")
 	var company domain.Company
 	if err := Decode(r, &company); err != nil {
 		Error(w, http.StatusBadRequest, "invalid request body")
@@ -60,7 +68,9 @@ func (h *AdminHandler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusCreated, company)
 }
 
+// UpdateCompany executes the handler.AdminHandler.UpdateCompany operation.
 func (h *AdminHandler) UpdateCompany(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.AdminHandler.UpdateCompany")
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		Error(w, http.StatusBadRequest, "invalid id")
@@ -81,7 +91,9 @@ func (h *AdminHandler) UpdateCompany(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, company)
 }
 
+// DeleteCompany executes the handler.AdminHandler.DeleteCompany operation.
 func (h *AdminHandler) DeleteCompany(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.AdminHandler.DeleteCompany")
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		Error(w, http.StatusBadRequest, "invalid id")
@@ -95,7 +107,9 @@ func (h *AdminHandler) DeleteCompany(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// CreateCompanyAdmin executes the handler.AdminHandler.CreateCompanyAdmin operation.
 func (h *AdminHandler) CreateCompanyAdmin(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.AdminHandler.CreateCompanyAdmin")
 	companyID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		Error(w, http.StatusBadRequest, "invalid id")

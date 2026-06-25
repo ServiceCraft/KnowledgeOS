@@ -16,6 +16,7 @@ type BotSettingsService struct {
 	settings domain.BotSettingsRepository
 }
 
+// NewBotSettingsService executes the service.NewBotSettingsService operation.
 func NewBotSettingsService(settings domain.BotSettingsRepository) *BotSettingsService {
 	return &BotSettingsService{settings: settings}
 }
@@ -33,7 +34,9 @@ type UpdateBotSettingsRequest struct {
 	EnabledModules json.RawMessage      `json:"enabled_modules"`
 }
 
+// Get executes the service.BotSettingsService.Get operation.
 func (s *BotSettingsService) Get(ctx context.Context, companyID uuid.UUID) (*domain.BotSettings, error) {
+	applog.TraceCall(ctx, "service.BotSettingsService.Get")
 	settings, err := s.settings.Get(ctx, companyID)
 	if err == nil {
 		normalizeBotSettings(settings)
@@ -58,7 +61,9 @@ func (s *BotSettingsService) Get(ctx context.Context, companyID uuid.UUID) (*dom
 	return settings, nil
 }
 
+// Update executes the service.BotSettingsService.Update operation.
 func (s *BotSettingsService) Update(ctx context.Context, companyID uuid.UUID, req UpdateBotSettingsRequest) (*domain.BotSettings, error) {
+	applog.TraceCall(ctx, "service.BotSettingsService.Update")
 	current, err := s.Get(ctx, companyID)
 	if err != nil {
 		return nil, err
@@ -140,6 +145,7 @@ func (s *BotSettingsService) Update(ctx context.Context, companyID uuid.UUID, re
 	return current, nil
 }
 
+// DefaultBotSettings executes the service.DefaultBotSettings operation.
 func DefaultBotSettings(companyID uuid.UUID) *domain.BotSettings {
 	return &domain.BotSettings{
 		CompanyID:      companyID,

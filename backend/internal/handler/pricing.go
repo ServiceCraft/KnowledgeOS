@@ -1,6 +1,7 @@
 package handler
 
 import (
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -14,11 +15,14 @@ type PricingHandler struct {
 	svc *service.PricingService
 }
 
+// NewPricingHandler executes the handler.NewPricingHandler operation.
 func NewPricingHandler(svc *service.PricingService) *PricingHandler {
 	return &PricingHandler{svc: svc}
 }
 
+// List executes the handler.PricingHandler.List operation.
 func (h *PricingHandler) List(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.PricingHandler.List")
 	companyID := middleware.GetCompanyID(r.Context())
 	filter := domain.PricingNodeFilter{
 		Page:     intQuery(r, "page", 1),
@@ -40,7 +44,9 @@ func (h *PricingHandler) List(w http.ResponseWriter, r *http.Request) {
 	JSONList(w, http.StatusOK, items, total)
 }
 
+// Get executes the handler.PricingHandler.Get operation.
 func (h *PricingHandler) Get(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.PricingHandler.Get")
 	companyID := middleware.GetCompanyID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -56,7 +62,9 @@ func (h *PricingHandler) Get(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, item)
 }
 
+// Create executes the handler.PricingHandler.Create operation.
 func (h *PricingHandler) Create(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.PricingHandler.Create")
 	companyID := middleware.GetCompanyID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 
@@ -75,7 +83,9 @@ func (h *PricingHandler) Create(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusCreated, node)
 }
 
+// Update executes the handler.PricingHandler.Update operation.
 func (h *PricingHandler) Update(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.PricingHandler.Update")
 	companyID := middleware.GetCompanyID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
@@ -99,7 +109,9 @@ func (h *PricingHandler) Update(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, node)
 }
 
+// Delete executes the handler.PricingHandler.Delete operation.
 func (h *PricingHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.PricingHandler.Delete")
 	companyID := middleware.GetCompanyID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -118,7 +130,9 @@ type moveRequest struct {
 	ParentID *uuid.UUID `json:"parent_id"`
 }
 
+// Move executes the handler.PricingHandler.Move operation.
 func (h *PricingHandler) Move(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.PricingHandler.Move")
 	companyID := middleware.GetCompanyID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {

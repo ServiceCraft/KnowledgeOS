@@ -28,10 +28,12 @@ type JWTManager struct {
 	secret []byte
 }
 
+// NewJWTManager executes the auth.NewJWTManager operation.
 func NewJWTManager(secret string) *JWTManager {
 	return &JWTManager{secret: []byte(secret)}
 }
 
+// Issue executes the auth.JWTManager.Issue operation.
 func (m *JWTManager) Issue(user *domain.User) (*TokenPair, string, error) {
 	now := time.Now()
 	accessExp := now.Add(15 * time.Minute)
@@ -66,6 +68,7 @@ func (m *JWTManager) Issue(user *domain.User) (*TokenPair, string, error) {
 	}, refreshHash, nil
 }
 
+// Validate executes the auth.JWTManager.Validate operation.
 func (m *JWTManager) Validate(tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -84,6 +87,7 @@ func (m *JWTManager) Validate(tokenStr string) (*Claims, error) {
 	return claims, nil
 }
 
+// HashToken executes the auth.HashToken operation.
 func HashToken(token string) string {
 	h := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(h[:])

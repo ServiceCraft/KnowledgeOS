@@ -13,6 +13,7 @@ var validEntityTypes = map[string]bool{
 	"pricing": true,
 }
 
+// EntityType executes the middleware.EntityType operation.
 func EntityType(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		et := chi.URLParam(r, "entityType")

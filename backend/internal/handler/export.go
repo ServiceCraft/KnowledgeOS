@@ -1,6 +1,7 @@
 package handler
 
 import (
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 
 	"github.com/knowledgeos/backend/internal/middleware"
@@ -13,11 +14,14 @@ type ExportHandler struct {
 	users *store.UserStore
 }
 
+// NewExportHandler executes the handler.NewExportHandler operation.
 func NewExportHandler(svc *service.ExportService, users *store.UserStore) *ExportHandler {
 	return &ExportHandler{svc: svc, users: users}
 }
 
+// Export executes the handler.ExportHandler.Export operation.
 func (h *ExportHandler) Export(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.ExportHandler.Export")
 	companyID := middleware.GetCompanyID(r.Context())
 
 	data, err := h.svc.Export(r.Context(), companyID)
@@ -28,7 +32,9 @@ func (h *ExportHandler) Export(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, data)
 }
 
+// Import executes the handler.ExportHandler.Import operation.
 func (h *ExportHandler) Import(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.ExportHandler.Import")
 	// Resolve company_id from DB (not JWT) to handle stale tokens
 	userID := middleware.GetUserID(r.Context())
 	user, err := h.users.GetByID(r.Context(), userID)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	applog "github.com/knowledgeos/backend/internal/logger"
 
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/domain"
@@ -22,6 +23,7 @@ type ExportService struct {
 	mentions domain.QACallMentionRepository
 }
 
+// NewExportService executes the service.NewExportService operation.
 func NewExportService(db *gorm.DB, themes domain.ThemeRepository, qa domain.QAPairRepository, pricing domain.PricingNodeRepository, articles domain.ArticleRepository, comments domain.CommentRepository, links domain.EntityLinkRepository, calls domain.CallRepository, mentions domain.QACallMentionRepository) *ExportService {
 	return &ExportService{db: db, themes: themes, qa: qa, pricing: pricing, articles: articles, comments: comments, links: links, calls: calls, mentions: mentions}
 }
@@ -35,7 +37,9 @@ type ExportData struct {
 	Mentions     []domain.QAPairCallMention `json:"qa_pair_call_mentions,omitempty"`
 }
 
+// Export executes the service.ExportService.Export operation.
 func (s *ExportService) Export(ctx context.Context, companyID uuid.UUID) (*ExportData, error) {
+	applog.TraceCall(ctx, "service.ExportService.Export")
 	bigLimit := domain.ThemeFilter{Page: 1, Limit: 10000}
 	themes, _, err := s.themes.List(ctx, companyID, bigLimit)
 	if err != nil {
@@ -92,7 +96,9 @@ type ImportResult struct {
 	Errors   []string `json:"errors"`
 }
 
+// Import executes the service.ExportService.Import operation.
 func (s *ExportService) Import(ctx context.Context, companyID uuid.UUID, data *ImportData) (*ImportResult, error) {
+	applog.TraceCall(ctx, "service.ExportService.Import")
 	if data == nil {
 		return nil, errors.New("no data to import")
 	}

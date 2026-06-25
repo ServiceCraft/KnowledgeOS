@@ -1,6 +1,7 @@
 package handler
 
 import (
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -14,11 +15,13 @@ type UserHandler struct {
 	svc *service.UserService
 }
 
+// NewUserHandler executes the handler.NewUserHandler operation.
 func NewUserHandler(svc *service.UserService) *UserHandler {
 	return &UserHandler{svc: svc}
 }
 
 func (h *UserHandler) actor(r *http.Request) service.Actor {
+	applog.TraceCall(r.Context(), "handler.UserHandler.actor")
 	return service.Actor{
 		ID:        middleware.GetUserID(r.Context()),
 		Role:      middleware.GetRole(r.Context()),
@@ -26,7 +29,9 @@ func (h *UserHandler) actor(r *http.Request) service.Actor {
 	}
 }
 
+// List executes the handler.UserHandler.List operation.
 func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.UserHandler.List")
 	filter := domain.UserFilter{
 		Page:  intQuery(r, "page", 1),
 		Limit: intQuery(r, "limit", 20),
@@ -51,7 +56,9 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 	JSONList(w, http.StatusOK, items, total)
 }
 
+// Create executes the handler.UserHandler.Create operation.
 func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.UserHandler.Create")
 	var req service.CreateUserRequest
 	if err := Decode(r, &req); err != nil {
 		Error(w, http.StatusBadRequest, "invalid request body")
@@ -66,7 +73,9 @@ func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusCreated, user)
 }
 
+// Update executes the handler.UserHandler.Update operation.
 func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.UserHandler.Update")
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		Error(w, http.StatusBadRequest, "invalid id")
@@ -87,7 +96,9 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, user)
 }
 
+// Delete executes the handler.UserHandler.Delete operation.
 func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.UserHandler.Delete")
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		Error(w, http.StatusBadRequest, "invalid id")

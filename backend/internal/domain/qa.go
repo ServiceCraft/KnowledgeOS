@@ -21,4 +21,5 @@ type QAPair struct {
 	AIReviewedAt *time.Time `json:"ai_reviewed_at,omitempty"`
 }
 
+// TableName executes the domain.QAPair.TableName operation.
 func (QAPair) TableName() string { return "qa_pairs" }

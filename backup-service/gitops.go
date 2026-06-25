@@ -37,6 +37,7 @@ func authURL(repoURL, token string) string {
 // prepareRepo ensures a working clone exists at cfg.RepoWorkdir, refreshes
 // remotes, and checks out the target branch (creating it if necessary).
 func prepareRepo(cfg Config, log *Logger) error {
+	log.Tracef("function called: %s", "main.prepareRepo")
 	gitDir := filepath.Join(cfg.RepoWorkdir, ".git")
 	url := authURL(cfg.GitHubRepoURL, cfg.GitHubToken)
 
@@ -101,6 +102,7 @@ func checkoutBranch(cfg Config) error {
 // commitAndPush replaces the repo's tracked files with the freshly extracted
 // code, commits on the backup branch, tags the snapshot, and pushes both.
 func commitAndPush(cfg Config, codeDir, tag string, meta Metadata, log *Logger) error {
+	log.Tracef("function called: %s", "main.commitAndPush")
 	if err := clearDirExcept(cfg.RepoWorkdir, ".git"); err != nil {
 		return fmt.Errorf("clear repo: %w", err)
 	}

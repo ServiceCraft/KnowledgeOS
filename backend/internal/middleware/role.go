@@ -7,6 +7,7 @@ import (
 	"github.com/knowledgeos/backend/internal/respond"
 )
 
+// RequireRole executes the middleware.RequireRole operation.
 func RequireRole(roles ...domain.Role) func(http.Handler) http.Handler {
 	allowed := map[domain.Role]bool{}
 	for _, r := range roles {

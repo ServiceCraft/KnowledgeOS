@@ -1,6 +1,7 @@
 package handler
 
 import (
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -14,11 +15,14 @@ type CallHandler struct {
 	svc *service.CallService
 }
 
+// NewCallHandler executes the handler.NewCallHandler operation.
 func NewCallHandler(svc *service.CallService) *CallHandler {
 	return &CallHandler{svc: svc}
 }
 
+// GetCall executes the handler.CallHandler.GetCall operation.
 func (h *CallHandler) GetCall(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.CallHandler.GetCall")
 	companyID := middleware.GetCompanyID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -34,7 +38,9 @@ func (h *CallHandler) GetCall(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, call)
 }
 
+// ListMentionsForQA executes the handler.CallHandler.ListMentionsForQA operation.
 func (h *CallHandler) ListMentionsForQA(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.CallHandler.ListMentionsForQA")
 	companyID := middleware.GetCompanyID(r.Context())
 	qaID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {

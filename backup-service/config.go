@@ -26,6 +26,7 @@ type Config struct {
 	GitAuthorEmail string
 }
 
+// LoadConfig executes the main.LoadConfig operation.
 func LoadConfig() (Config, error) {
 	cfg := Config{
 		AppURL:         os.Getenv("APP_URL"),

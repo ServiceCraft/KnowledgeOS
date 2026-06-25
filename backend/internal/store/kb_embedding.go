@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"strconv"
 	"strings"
 
@@ -14,11 +15,14 @@ type KBEmbeddingStore struct {
 	*Store
 }
 
+// NewKBEmbeddingStore executes the store.NewKBEmbeddingStore operation.
 func NewKBEmbeddingStore(s *Store) *KBEmbeddingStore {
 	return &KBEmbeddingStore{Store: s}
 }
 
+// UpsertChunks executes the store.KBEmbeddingStore.UpsertChunks operation.
 func (s *KBEmbeddingStore) UpsertChunks(ctx context.Context, companyID uuid.UUID, chunks []domain.RAGChunk) error {
+	applog.TraceCall(ctx, "store.KBEmbeddingStore.UpsertChunks")
 	for _, chunk := range chunks {
 		if chunk.CompanyID == uuid.Nil {
 			chunk.CompanyID = companyID
@@ -53,13 +57,17 @@ func (s *KBEmbeddingStore) UpsertChunks(ctx context.Context, companyID uuid.UUID
 	return nil
 }
 
+// DeleteEntity executes the store.KBEmbeddingStore.DeleteEntity operation.
 func (s *KBEmbeddingStore) DeleteEntity(ctx context.Context, companyID uuid.UUID, entityType domain.KBEntityType, entityID uuid.UUID) error {
+	applog.TraceCall(ctx, "store.KBEmbeddingStore.DeleteEntity")
 	return s.db.WithContext(ctx).
 		Where("company_id = ? AND entity_type = ? AND entity_id = ?", companyID, entityType, entityID).
 		Delete(&domain.KBEmbedding{}).Error
 }
 
+// DeleteChunksExcept executes the store.KBEmbeddingStore.DeleteChunksExcept operation.
 func (s *KBEmbeddingStore) DeleteChunksExcept(ctx context.Context, companyID uuid.UUID, entityType domain.KBEntityType, entityID uuid.UUID, keepChunkIdx []int) error {
+	applog.TraceCall(ctx, "store.KBEmbeddingStore.DeleteChunksExcept")
 	q := s.db.WithContext(ctx).
 		Where("company_id = ? AND entity_type = ? AND entity_id = ?", companyID, entityType, entityID)
 	if len(keepChunkIdx) > 0 {
@@ -68,11 +76,15 @@ func (s *KBEmbeddingStore) DeleteChunksExcept(ctx context.Context, companyID uui
 	return q.Delete(&domain.KBEmbedding{}).Error
 }
 
+// DeleteCompany executes the store.KBEmbeddingStore.DeleteCompany operation.
 func (s *KBEmbeddingStore) DeleteCompany(ctx context.Context, companyID uuid.UUID) error {
+	applog.TraceCall(ctx, "store.KBEmbeddingStore.DeleteCompany")
 	return s.db.WithContext(ctx).Where("company_id = ?", companyID).Delete(&domain.KBEmbedding{}).Error
 }
 
+// ListByEntity executes the store.KBEmbeddingStore.ListByEntity operation.
 func (s *KBEmbeddingStore) ListByEntity(ctx context.Context, companyID uuid.UUID, entityType domain.KBEntityType, entityID uuid.UUID) ([]domain.KBEmbedding, error) {
+	applog.TraceCall(ctx, "store.KBEmbeddingStore.ListByEntity")
 	var items []domain.KBEmbedding
 	if err := s.db.WithContext(ctx).
 		Where("company_id = ? AND entity_type = ? AND entity_id = ?", companyID, entityType, entityID).
@@ -83,7 +95,9 @@ func (s *KBEmbeddingStore) ListByEntity(ctx context.Context, companyID uuid.UUID
 	return items, nil
 }
 
+// VectorSearch executes the store.KBEmbeddingStore.VectorSearch operation.
 func (s *KBEmbeddingStore) VectorSearch(ctx context.Context, companyID uuid.UUID, embedding []float32, filter domain.RetrieveRequest) ([]domain.RAGCandidate, error) {
+	applog.TraceCall(ctx, "store.KBEmbeddingStore.VectorSearch")
 	limit := filter.VectorTopK
 	if limit <= 0 {
 		limit = 20
@@ -118,7 +132,9 @@ func (s *KBEmbeddingStore) VectorSearch(ctx context.Context, companyID uuid.UUID
 	return results, nil
 }
 
+// CountByCompany executes the store.KBEmbeddingStore.CountByCompany operation.
 func (s *KBEmbeddingStore) CountByCompany(ctx context.Context, companyID uuid.UUID) (int64, error) {
+	applog.TraceCall(ctx, "store.KBEmbeddingStore.CountByCompany")
 	var total int64
 	if err := s.db.WithContext(ctx).Model(&domain.KBEmbedding{}).
 		Where("company_id = ?", companyID).

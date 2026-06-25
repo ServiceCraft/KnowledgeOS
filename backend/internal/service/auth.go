@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"time"
 
 	"github.com/knowledgeos/backend/internal/auth"
@@ -15,6 +16,7 @@ type AuthService struct {
 	jwtMgr   *auth.JWTManager
 }
 
+// NewAuthService executes the service.NewAuthService operation.
 func NewAuthService(users domain.UserRepository, syncRepo domain.SyncRepository, jwtMgr *auth.JWTManager) *AuthService {
 	return &AuthService{users: users, syncRepo: syncRepo, jwtMgr: jwtMgr}
 }
@@ -42,7 +44,9 @@ type LoginUser struct {
 	CompanyID *string `json:"company_id,omitempty"`
 }
 
+// Login executes the service.AuthService.Login operation.
 func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*LoginResponse, error) {
+	applog.TraceCall(ctx, "service.AuthService.Login")
 	user, err := s.users.GetByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, errors.New("invalid credentials")
@@ -88,7 +92,9 @@ func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*LoginRespon
 	}, nil
 }
 
+// Refresh executes the service.AuthService.Refresh operation.
 func (s *AuthService) Refresh(ctx context.Context, req RefreshRequest) (*LoginResponse, error) {
+	applog.TraceCall(ctx, "service.AuthService.Refresh")
 	oldHash := auth.HashToken(req.RefreshToken)
 	stored, err := s.syncRepo.GetRefreshToken(ctx, oldHash)
 	if err != nil {
@@ -144,7 +150,9 @@ func (s *AuthService) Refresh(ctx context.Context, req RefreshRequest) (*LoginRe
 	}, nil
 }
 
+// Logout executes the service.AuthService.Logout operation.
 func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
+	applog.TraceCall(ctx, "service.AuthService.Logout")
 	hash := auth.HashToken(refreshToken)
 	return s.syncRepo.RevokeRefreshToken(ctx, hash)
 }

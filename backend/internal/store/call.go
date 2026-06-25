@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	applog "github.com/knowledgeos/backend/internal/logger"
 
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/domain"
@@ -12,11 +13,14 @@ type CallStore struct {
 	*Store
 }
 
+// NewCallStore executes the store.NewCallStore operation.
 func NewCallStore(s *Store) *CallStore {
 	return &CallStore{Store: s}
 }
 
+// GetByID executes the store.CallStore.GetByID operation.
 func (s *CallStore) GetByID(ctx context.Context, companyID uuid.UUID, id uuid.UUID) (*domain.Call, error) {
+	applog.TraceCall(ctx, "store.CallStore.GetByID")
 	var item domain.Call
 	if err := s.db.WithContext(ctx).Scopes(tenantScope(companyID)).Where("id = ?", id).First(&item).Error; err != nil {
 		return nil, err
@@ -24,7 +28,9 @@ func (s *CallStore) GetByID(ctx context.Context, companyID uuid.UUID, id uuid.UU
 	return &item, nil
 }
 
+// Create executes the store.CallStore.Create operation.
 func (s *CallStore) Create(ctx context.Context, companyID uuid.UUID, call *domain.Call) error {
+	applog.TraceCall(ctx, "store.CallStore.Create")
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
@@ -37,7 +43,9 @@ func (s *CallStore) Create(ctx context.Context, companyID uuid.UUID, call *domai
 	})
 }
 
+// Update executes the store.CallStore.Update operation.
 func (s *CallStore) Update(ctx context.Context, companyID uuid.UUID, call *domain.Call) error {
+	applog.TraceCall(ctx, "store.CallStore.Update")
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
@@ -51,7 +59,9 @@ func (s *CallStore) Update(ctx context.Context, companyID uuid.UUID, call *domai
 	})
 }
 
+// Delete executes the store.CallStore.Delete operation.
 func (s *CallStore) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error {
+	applog.TraceCall(ctx, "store.CallStore.Delete")
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
@@ -62,7 +72,9 @@ func (s *CallStore) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUI
 	})
 }
 
+// ApplyRemote executes the store.CallStore.ApplyRemote operation.
 func (s *CallStore) ApplyRemote(ctx context.Context, companyID uuid.UUID, call *domain.Call) error {
+	applog.TraceCall(ctx, "store.CallStore.ApplyRemote")
 	call.CompanyID = companyID
 	if call.SyncOrigin == "" {
 		call.SyncOrigin = "cloud"
@@ -71,7 +83,9 @@ func (s *CallStore) ApplyRemote(ctx context.Context, companyID uuid.UUID, call *
 		Assign(call).FirstOrCreate(call).Error
 }
 
+// ListAll executes the store.CallStore.ListAll operation.
 func (s *CallStore) ListAll(ctx context.Context, companyID uuid.UUID) ([]domain.Call, error) {
+	applog.TraceCall(ctx, "store.CallStore.ListAll")
 	var items []domain.Call
 	if err := s.db.WithContext(ctx).Scopes(tenantScope(companyID)).Order("occurred_at DESC NULLS LAST, created_at DESC").Find(&items).Error; err != nil {
 		return nil, err

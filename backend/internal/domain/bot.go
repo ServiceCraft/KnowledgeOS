@@ -47,6 +47,7 @@ type BotSettings struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
+// TableName executes the domain.BotSettings.TableName operation.
 func (BotSettings) TableName() string { return "bot_settings" }
 
 type TenantSecret struct {
@@ -60,6 +61,7 @@ type TenantSecret struct {
 	UpdatedAt  time.Time       `json:"updated_at"`
 }
 
+// TableName executes the domain.TenantSecret.TableName operation.
 func (TenantSecret) TableName() string { return "tenant_secrets" }
 
 type TenantSecretStatus struct {
@@ -69,14 +71,17 @@ type TenantSecretStatus struct {
 	UpdatedAt *time.Time      `json:"updated_at,omitempty"`
 }
 
+// ValidBotProvider executes the domain.ValidBotProvider operation.
 func ValidBotProvider(provider BotProvider) bool {
 	return provider == BotProviderYandex
 }
 
+// ValidBotModelTier executes the domain.ValidBotModelTier operation.
 func ValidBotModelTier(tier BotModelTier) bool {
 	return tier == BotModelTierLite || tier == BotModelTierPro
 }
 
+// ValidSecretKind executes the domain.ValidSecretKind operation.
 func ValidSecretKind(kind SecretKind) bool {
 	switch kind {
 	case SecretKindLLM, SecretKindTelegram, SecretKindMAX, SecretKindVK, SecretKindBitrix24:
@@ -86,6 +91,7 @@ func ValidSecretKind(kind SecretKind) bool {
 	}
 }
 
+// SupportedSecretKinds executes the domain.SupportedSecretKinds operation.
 func SupportedSecretKinds() []SecretKind {
 	return []SecretKind{SecretKindLLM, SecretKindTelegram, SecretKindMAX, SecretKindVK, SecretKindBitrix24}
 }

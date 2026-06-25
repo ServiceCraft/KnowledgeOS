@@ -1,6 +1,7 @@
 package handler
 
 import (
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -14,11 +15,14 @@ type CommentHandler struct {
 	svc *service.CommentService
 }
 
+// NewCommentHandler executes the handler.NewCommentHandler operation.
 func NewCommentHandler(svc *service.CommentService) *CommentHandler {
 	return &CommentHandler{svc: svc}
 }
 
+// List executes the handler.CommentHandler.List operation.
 func (h *CommentHandler) List(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.CommentHandler.List")
 	companyID := middleware.GetCompanyID(r.Context())
 	entityType := middleware.GetEntityType(r.Context())
 	entityID, err := uuid.Parse(chi.URLParam(r, "entityID"))
@@ -40,7 +44,9 @@ func (h *CommentHandler) List(w http.ResponseWriter, r *http.Request) {
 	JSONList(w, http.StatusOK, items, total)
 }
 
+// Create executes the handler.CommentHandler.Create operation.
 func (h *CommentHandler) Create(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.CommentHandler.Create")
 	companyID := middleware.GetCompanyID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 	entityType := middleware.GetEntityType(r.Context())
@@ -66,7 +72,9 @@ func (h *CommentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusCreated, comment)
 }
 
+// Update executes the handler.CommentHandler.Update operation.
 func (h *CommentHandler) Update(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.CommentHandler.Update")
 	companyID := middleware.GetCompanyID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -88,7 +96,9 @@ func (h *CommentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, comment)
 }
 
+// Delete executes the handler.CommentHandler.Delete operation.
 func (h *CommentHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.CommentHandler.Delete")
 	companyID := middleware.GetCompanyID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {

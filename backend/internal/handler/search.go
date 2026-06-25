@@ -1,6 +1,7 @@
 package handler
 
 import (
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 	"strings"
 
@@ -14,11 +15,14 @@ type SearchHandler struct {
 	svc *service.SearchService
 }
 
+// NewSearchHandler executes the handler.NewSearchHandler operation.
 func NewSearchHandler(svc *service.SearchService) *SearchHandler {
 	return &SearchHandler{svc: svc}
 }
 
+// Search executes the handler.SearchHandler.Search operation.
 func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.SearchHandler.Search")
 	companyID := middleware.GetCompanyID(r.Context())
 
 	filter := domain.SearchFilter{

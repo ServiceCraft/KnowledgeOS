@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	applog "github.com/knowledgeos/backend/internal/logger"
 
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/domain"
@@ -12,11 +13,14 @@ type QAStore struct {
 	*Store
 }
 
+// NewQAStore executes the store.NewQAStore operation.
 func NewQAStore(s *Store) *QAStore {
 	return &QAStore{Store: s}
 }
 
+// List executes the store.QAStore.List operation.
 func (s *QAStore) List(ctx context.Context, companyID uuid.UUID, filter domain.QAPairFilter) ([]domain.QAPair, int64, error) {
+	applog.TraceCall(ctx, "store.QAStore.List")
 	var items []domain.QAPair
 	var total int64
 
@@ -58,7 +62,9 @@ func (s *QAStore) List(ctx context.Context, companyID uuid.UUID, filter domain.Q
 	return items, total, nil
 }
 
+// GetByID executes the store.QAStore.GetByID operation.
 func (s *QAStore) GetByID(ctx context.Context, companyID uuid.UUID, id uuid.UUID) (*domain.QAPair, error) {
+	applog.TraceCall(ctx, "store.QAStore.GetByID")
 	var item domain.QAPair
 	if err := s.db.WithContext(ctx).Scopes(tenantScope(companyID)).Where("id = ?", id).First(&item).Error; err != nil {
 		return nil, err
@@ -66,7 +72,9 @@ func (s *QAStore) GetByID(ctx context.Context, companyID uuid.UUID, id uuid.UUID
 	return &item, nil
 }
 
+// Create executes the store.QAStore.Create operation.
 func (s *QAStore) Create(ctx context.Context, companyID uuid.UUID, qa *domain.QAPair) error {
+	applog.TraceCall(ctx, "store.QAStore.Create")
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
@@ -79,7 +87,9 @@ func (s *QAStore) Create(ctx context.Context, companyID uuid.UUID, qa *domain.QA
 	})
 }
 
+// Update executes the store.QAStore.Update operation.
 func (s *QAStore) Update(ctx context.Context, companyID uuid.UUID, qa *domain.QAPair) error {
+	applog.TraceCall(ctx, "store.QAStore.Update")
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
@@ -93,7 +103,9 @@ func (s *QAStore) Update(ctx context.Context, companyID uuid.UUID, qa *domain.QA
 	})
 }
 
+// Delete executes the store.QAStore.Delete operation.
 func (s *QAStore) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error {
+	applog.TraceCall(ctx, "store.QAStore.Delete")
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
@@ -104,7 +116,9 @@ func (s *QAStore) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID)
 	})
 }
 
+// ListSince executes the store.QAStore.ListSince operation.
 func (s *QAStore) ListSince(ctx context.Context, companyID uuid.UUID, sinceVersion int64) ([]domain.QAPair, error) {
+	applog.TraceCall(ctx, "store.QAStore.ListSince")
 	var items []domain.QAPair
 	if err := s.db.WithContext(ctx).Unscoped().Scopes(tenantScope(companyID)).
 		Where("sync_version > ?", sinceVersion).
@@ -114,7 +128,9 @@ func (s *QAStore) ListSince(ctx context.Context, companyID uuid.UUID, sinceVersi
 	return items, nil
 }
 
+// ApplyRemote executes the store.QAStore.ApplyRemote operation.
 func (s *QAStore) ApplyRemote(ctx context.Context, companyID uuid.UUID, qa *domain.QAPair) error {
+	applog.TraceCall(ctx, "store.QAStore.ApplyRemote")
 	qa.SyncOrigin = "cloud"
 	qa.CompanyID = companyID
 	return s.db.WithContext(ctx).Where("id = ? AND company_id = ?", qa.ID, companyID).

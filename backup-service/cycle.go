@@ -14,6 +14,7 @@ import (
 // valid data snapshot; any partial failure makes the cycle return an error
 // while keeping whatever succeeded.
 func runCycle(cfg Config, log *Logger) error {
+	log.Tracef("function called: %s", "main.runCycle")
 	start := time.Now()
 	timestamp := start.UTC().Format("20060102-150405")
 	tag := "snapshot-" + timestamp

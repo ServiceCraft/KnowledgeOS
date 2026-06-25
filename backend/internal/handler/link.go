@@ -1,6 +1,7 @@
 package handler
 
 import (
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -14,11 +15,14 @@ type LinkHandler struct {
 	svc *service.LinkService
 }
 
+// NewLinkHandler executes the handler.NewLinkHandler operation.
 func NewLinkHandler(svc *service.LinkService) *LinkHandler {
 	return &LinkHandler{svc: svc}
 }
 
+// List executes the handler.LinkHandler.List operation.
 func (h *LinkHandler) List(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.LinkHandler.List")
 	companyID := middleware.GetCompanyID(r.Context())
 	sourceType := middleware.GetEntityType(r.Context())
 	sourceID, err := uuid.Parse(chi.URLParam(r, "entityID"))
@@ -40,7 +44,9 @@ func (h *LinkHandler) List(w http.ResponseWriter, r *http.Request) {
 	JSONList(w, http.StatusOK, items, total)
 }
 
+// Create executes the handler.LinkHandler.Create operation.
 func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.LinkHandler.Create")
 	companyID := middleware.GetCompanyID(r.Context())
 	sourceType := middleware.GetEntityType(r.Context())
 	sourceID, err := uuid.Parse(chi.URLParam(r, "entityID"))
@@ -64,7 +70,9 @@ func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusCreated, link)
 }
 
+// Delete executes the handler.LinkHandler.Delete operation.
 func (h *LinkHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.LinkHandler.Delete")
 	companyID := middleware.GetCompanyID(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {

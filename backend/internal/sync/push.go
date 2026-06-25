@@ -17,10 +17,12 @@ type Pusher struct {
 	syncSvc  *service.SyncService
 }
 
+// NewPusher executes the sync.NewPusher operation.
 func NewPusher(cloudURL, apiKey string, syncSvc *service.SyncService) *Pusher {
 	return &Pusher{cloudURL: cloudURL, apiKey: apiKey, syncSvc: syncSvc}
 }
 
+// Push executes the sync.Pusher.Push operation.
 func (p *Pusher) Push(companyID uuid.UUID) error {
 	ctx := context.Background()
 

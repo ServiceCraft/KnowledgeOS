@@ -59,4 +59,9 @@ export const queryKeys = {
     detail: (id: string) => ['calls', id] as const,
     mentionsForQA: (qaId: string) => ['calls', 'mentions', 'qa', qaId] as const,
   },
+  botChat: {
+    all: ['botChat'] as const,
+    sessions: ['botChat', 'sessions'] as const,
+    detail: (id: string) => ['botChat', 'sessions', id] as const,
+  },
 };

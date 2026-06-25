@@ -15,6 +15,7 @@ type Logger struct {
 	secrets     []string // values to redact from any log line
 }
 
+// NewLogger executes the main.NewLogger operation.
 func NewLogger(journalPath string, secrets ...string) *Logger {
 	var filtered []string
 	for _, s := range secrets {
@@ -44,8 +45,16 @@ func (l *Logger) write(level, format string, args ...interface{}) {
 	}
 }
 
-func (l *Logger) Infof(format string, args ...interface{})  { l.write("INFO", format, args...) }
-func (l *Logger) Warnf(format string, args ...interface{})  { l.write("WARN", format, args...) }
+// Infof executes the main.Logger.Infof operation.
+func (l *Logger) Infof(format string, args ...interface{}) { l.write("INFO", format, args...) }
+
+// Tracef records low-level execution details for reconstructing backup flow.
+func (l *Logger) Tracef(format string, args ...interface{}) { l.write("TRACE", format, args...) }
+
+// Warnf executes the main.Logger.Warnf operation.
+func (l *Logger) Warnf(format string, args ...interface{}) { l.write("WARN", format, args...) }
+
+// Errorf executes the main.Logger.Errorf operation.
 func (l *Logger) Errorf(format string, args ...interface{}) { l.write("ERROR", format, args...) }
 
 // JournalPath returns the canonical journal location inside the backups dir.

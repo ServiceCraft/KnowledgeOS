@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	applog "github.com/knowledgeos/backend/internal/logger"
 
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/domain"
@@ -12,11 +13,14 @@ type QACallMentionStore struct {
 	*Store
 }
 
+// NewQACallMentionStore executes the store.NewQACallMentionStore operation.
 func NewQACallMentionStore(s *Store) *QACallMentionStore {
 	return &QACallMentionStore{Store: s}
 }
 
+// ListByQA executes the store.QACallMentionStore.ListByQA operation.
 func (s *QACallMentionStore) ListByQA(ctx context.Context, companyID, qaID uuid.UUID, filter domain.QACallMentionFilter) ([]domain.QAPairCallMentionView, int64, error) {
+	applog.TraceCall(ctx, "store.QACallMentionStore.ListByQA")
 	var rows []domain.QAPairCallMentionView
 	var total int64
 
@@ -36,7 +40,9 @@ func (s *QACallMentionStore) ListByQA(ctx context.Context, companyID, qaID uuid.
 	return rows, total, err
 }
 
+// Create executes the store.QACallMentionStore.Create operation.
 func (s *QACallMentionStore) Create(ctx context.Context, companyID uuid.UUID, m *domain.QAPairCallMention) error {
+	applog.TraceCall(ctx, "store.QACallMentionStore.Create")
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
@@ -49,7 +55,9 @@ func (s *QACallMentionStore) Create(ctx context.Context, companyID uuid.UUID, m 
 	})
 }
 
+// Delete executes the store.QACallMentionStore.Delete operation.
 func (s *QACallMentionStore) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error {
+	applog.TraceCall(ctx, "store.QACallMentionStore.Delete")
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
@@ -60,7 +68,9 @@ func (s *QACallMentionStore) Delete(ctx context.Context, companyID uuid.UUID, id
 	})
 }
 
+// ApplyRemote executes the store.QACallMentionStore.ApplyRemote operation.
 func (s *QACallMentionStore) ApplyRemote(ctx context.Context, companyID uuid.UUID, m *domain.QAPairCallMention) error {
+	applog.TraceCall(ctx, "store.QACallMentionStore.ApplyRemote")
 	m.CompanyID = companyID
 	if m.SyncOrigin == "" {
 		m.SyncOrigin = "cloud"
@@ -69,7 +79,9 @@ func (s *QACallMentionStore) ApplyRemote(ctx context.Context, companyID uuid.UUI
 		Assign(m).FirstOrCreate(m).Error
 }
 
+// ListAll executes the store.QACallMentionStore.ListAll operation.
 func (s *QACallMentionStore) ListAll(ctx context.Context, companyID uuid.UUID) ([]domain.QAPairCallMention, error) {
+	applog.TraceCall(ctx, "store.QACallMentionStore.ListAll")
 	var items []domain.QAPairCallMention
 	if err := s.db.WithContext(ctx).Scopes(tenantScope(companyID)).Order("created_at DESC").Find(&items).Error; err != nil {
 		return nil, err

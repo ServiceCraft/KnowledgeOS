@@ -7,4 +7,5 @@ type Article struct {
 	SearchVector string `gorm:"type:tsvector;->" json:"-"`
 }
 
+// TableName executes the domain.Article.TableName operation.
 func (Article) TableName() string { return "articles" }

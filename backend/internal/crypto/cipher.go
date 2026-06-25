@@ -24,6 +24,7 @@ type Cipher struct {
 	key []byte
 }
 
+// NewCipher executes the crypto.NewCipher operation.
 func NewCipher(master string) (*Cipher, error) {
 	key, err := normalizeKey(master)
 	if err != nil {
@@ -32,6 +33,7 @@ func NewCipher(master string) (*Cipher, error) {
 	return &Cipher{key: key}, nil
 }
 
+// Encrypt executes the crypto.Cipher.Encrypt operation.
 func (c *Cipher) Encrypt(plaintext []byte) ([]byte, []byte, error) {
 	if c == nil {
 		return nil, nil, ErrEmptyMasterKey
@@ -51,6 +53,7 @@ func (c *Cipher) Encrypt(plaintext []byte) ([]byte, []byte, error) {
 	return gcm.Seal(nil, nonce, plaintext, nil), nonce, nil
 }
 
+// Decrypt executes the crypto.Cipher.Decrypt operation.
 func (c *Cipher) Decrypt(ciphertext, nonce []byte) ([]byte, error) {
 	if c == nil {
 		return nil, ErrEmptyMasterKey
