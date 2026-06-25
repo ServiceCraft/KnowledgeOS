@@ -27,12 +27,12 @@ func NewExportService(db *gorm.DB, themes domain.ThemeRepository, qa domain.QAPa
 }
 
 type ExportData struct {
-	Themes       []domain.Theme              `json:"themes"`
-	QAPairs      []domain.QAPair             `json:"qa_pairs"`
-	PricingNodes []domain.PricingNode        `json:"pricing_nodes"`
-	Articles     []domain.Article            `json:"articles"`
-	Calls        []domain.Call               `json:"calls,omitempty"`
-	Mentions     []domain.QAPairCallMention  `json:"qa_pair_call_mentions,omitempty"`
+	Themes       []domain.Theme             `json:"themes"`
+	QAPairs      []domain.QAPair            `json:"qa_pairs"`
+	PricingNodes []domain.PricingNode       `json:"pricing_nodes"`
+	Articles     []domain.Article           `json:"articles"`
+	Calls        []domain.Call              `json:"calls,omitempty"`
+	Mentions     []domain.QAPairCallMention `json:"qa_pair_call_mentions,omitempty"`
 }
 
 func (s *ExportService) Export(ctx context.Context, companyID uuid.UUID) (*ExportData, error) {
@@ -78,12 +78,12 @@ func (s *ExportService) Export(ctx context.Context, companyID uuid.UUID) (*Expor
 }
 
 type ImportData struct {
-	Themes       []domain.Theme              `json:"themes"`
-	QAPairs      []domain.QAPair             `json:"qa_pairs"`
-	PricingNodes []domain.PricingNode        `json:"pricing_nodes"`
-	Articles     []domain.Article            `json:"articles"`
-	Calls        []domain.Call               `json:"calls,omitempty"`
-	Mentions     []domain.QAPairCallMention  `json:"qa_pair_call_mentions,omitempty"`
+	Themes       []domain.Theme             `json:"themes"`
+	QAPairs      []domain.QAPair            `json:"qa_pairs"`
+	PricingNodes []domain.PricingNode       `json:"pricing_nodes"`
+	Articles     []domain.Article           `json:"articles"`
+	Calls        []domain.Call              `json:"calls,omitempty"`
+	Mentions     []domain.QAPairCallMention `json:"qa_pair_call_mentions,omitempty"`
 }
 
 type ImportResult struct {

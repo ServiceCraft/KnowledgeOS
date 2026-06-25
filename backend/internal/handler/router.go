@@ -23,6 +23,8 @@ type Handlers struct {
 	User    *UserHandler
 	Call    *CallHandler
 	Backup  *BackupHandler
+	Bot     *BotHandler
+	RAG     *RAGHandler
 }
 
 // writeRoles are allowed to mutate business entities. Viewer (Оператор) is
@@ -122,6 +124,19 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 				r.Post("/admin/users", h.User.Create)
 				r.Patch("/admin/users/{id}", h.User.Update)
 				r.Delete("/admin/users/{id}", h.User.Delete)
+			})
+
+			// Bot settings and tenant secrets — admin + superadmin.
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRole(domain.RoleAdmin, domain.RoleSuperadmin))
+				r.Get("/admin/bot/settings", h.Bot.GetSettings)
+				r.Put("/admin/bot/settings", h.Bot.UpdateSettings)
+				r.Get("/admin/bot/secrets", h.Bot.ListSecrets)
+				r.Put("/admin/bot/secrets/{kind}", h.Bot.SetSecret)
+				r.Delete("/admin/bot/secrets/{kind}", h.Bot.DeleteSecret)
+				r.Post("/admin/bot/rag/reindex", h.RAG.Reindex)
+				r.Get("/admin/bot/rag/index-status", h.RAG.Status)
+				r.Post("/admin/bot/rag/search", h.RAG.Search)
 			})
 
 			// Import/Export of the knowledge base — superadmin only.

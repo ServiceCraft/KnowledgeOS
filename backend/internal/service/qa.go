@@ -10,12 +10,17 @@ import (
 )
 
 type QAService struct {
-	qa     domain.QAPairRepository
-	themes domain.ThemeRepository
+	qa      domain.QAPairRepository
+	themes  domain.ThemeRepository
+	indexer domain.KnowledgeIndexScheduler
 }
 
-func NewQAService(qa domain.QAPairRepository, themes domain.ThemeRepository) *QAService {
-	return &QAService{qa: qa, themes: themes}
+func NewQAService(qa domain.QAPairRepository, themes domain.ThemeRepository, schedulers ...domain.KnowledgeIndexScheduler) *QAService {
+	var indexer domain.KnowledgeIndexScheduler
+	if len(schedulers) > 0 {
+		indexer = schedulers[0]
+	}
+	return &QAService{qa: qa, themes: themes, indexer: indexer}
 }
 
 func (s *QAService) List(ctx context.Context, companyID uuid.UUID, filter domain.QAPairFilter) ([]domain.QAPair, int64, error) {
@@ -35,21 +40,33 @@ func (s *QAService) Create(ctx context.Context, companyID uuid.UUID, qa *domain.
 			return errors.New("theme not found")
 		}
 	}
-	return s.qa.Create(ctx, companyID, qa)
+	if err := s.qa.Create(ctx, companyID, qa); err != nil {
+		return err
+	}
+	s.scheduleUpsert(ctx, companyID, qa.ID)
+	return nil
 }
 
 func (s *QAService) Update(ctx context.Context, companyID uuid.UUID, qa *domain.QAPair) error {
 	if _, err := s.qa.GetByID(ctx, companyID, qa.ID); err != nil {
 		return errors.New("qa pair not found")
 	}
-	return s.qa.Update(ctx, companyID, qa)
+	if err := s.qa.Update(ctx, companyID, qa); err != nil {
+		return err
+	}
+	s.scheduleUpsert(ctx, companyID, qa.ID)
+	return nil
 }
 
 func (s *QAService) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error {
 	if _, err := s.qa.GetByID(ctx, companyID, id); err != nil {
 		return errors.New("qa pair not found")
 	}
-	return s.qa.Delete(ctx, companyID, id)
+	if err := s.qa.Delete(ctx, companyID, id); err != nil {
+		return err
+	}
+	s.scheduleDelete(ctx, companyID, id)
+	return nil
 }
 
 func (s *QAService) ReviewAIAnswer(ctx context.Context, companyID uuid.UUID, qaID uuid.UUID, userID uuid.UUID, action string, editedAnswer string) (*domain.QAPair, error) {
@@ -91,5 +108,18 @@ func (s *QAService) ReviewAIAnswer(ctx context.Context, companyID uuid.UUID, qaI
 	if err := s.qa.Update(ctx, companyID, qa); err != nil {
 		return nil, err
 	}
+	s.scheduleUpsert(ctx, companyID, qa.ID)
 	return qa, nil
+}
+
+func (s *QAService) scheduleUpsert(ctx context.Context, companyID, id uuid.UUID) {
+	if s.indexer != nil {
+		_ = s.indexer.ScheduleUpsert(ctx, companyID, domain.KBEntityQA, id)
+	}
+}
+
+func (s *QAService) scheduleDelete(ctx context.Context, companyID, id uuid.UUID) {
+	if s.indexer != nil {
+		_ = s.indexer.ScheduleDelete(ctx, companyID, domain.KBEntityQA, id)
+	}
 }

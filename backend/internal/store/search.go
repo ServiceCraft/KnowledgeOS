@@ -68,6 +68,16 @@ func (s *SearchStore) Search(ctx context.Context, companyID uuid.UUID, filter do
 		unions = append(unions, sub)
 	}
 
+	if len(typeSet) == 0 || typeSet["pricing"] {
+		sub := `SELECT 'pricing' AS entity_type, id AS entity_id, name AS title,
+				CASE WHEN price IS NULL THEN name ELSE name || ' — ' || price::text END AS snippet,
+				word_similarity(?, name) AS rank
+				FROM pricing_nodes WHERE company_id = ? AND deleted_at IS NULL
+				AND ? <% name`
+		args = append(args, filter.Query, companyID, filter.Query)
+		unions = append(unions, sub)
+	}
+
 	if len(unions) == 0 {
 		return nil, 0, nil
 	}

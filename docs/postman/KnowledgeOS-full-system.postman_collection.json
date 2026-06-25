@@ -1,0 +1,580 @@
+{
+  "info": {
+    "_postman_id": "1d7c0f6b-5cf9-4f46-9a3d-knowledgeos-full-system",
+    "name": "KnowledgeOS Full System API",
+    "description": "Full manual API collection for the current KnowledgeOS backend: auth, knowledge base, comments, links, search, sync status, admin, import/export, backup, sync API-key routes, and B1 bot foundation endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080/api/v1", "type": "string" },
+    { "key": "email", "value": "admin@example.com", "type": "string" },
+    { "key": "password", "value": "changeme", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "refreshToken", "value": "", "type": "string" },
+    { "key": "companyId", "value": "", "type": "string" },
+    { "key": "companyAdminEmail", "value": "company-admin-{{$timestamp}}@example.com", "type": "string" },
+    { "key": "newUserEmail", "value": "editor-{{$timestamp}}@example.com", "type": "string" },
+    { "key": "newUserPassword", "value": "password123", "type": "string" },
+    { "key": "userId", "value": "", "type": "string" },
+    { "key": "themeId", "value": "", "type": "string" },
+    { "key": "qaId", "value": "", "type": "string" },
+    { "key": "articleId", "value": "", "type": "string" },
+    { "key": "pricingCategoryId", "value": "", "type": "string" },
+    { "key": "pricingServiceId", "value": "", "type": "string" },
+    { "key": "commentId", "value": "", "type": "string" },
+    { "key": "linkId", "value": "", "type": "string" },
+    { "key": "callId", "value": "00000000-0000-0000-0000-000000000000", "type": "string" },
+    { "key": "syncApiKey", "value": "kos_live_changeme", "type": "string" },
+    { "key": "backupApiKey", "value": "changeme", "type": "string" },
+    { "key": "llmSecret", "value": "test-iam-token", "type": "string" },
+    { "key": "secretAuthType", "value": "iam", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "00 Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json().data;",
+              "pm.collectionVariables.set('accessToken', d.access_token);",
+              "pm.collectionVariables.set('refreshToken', d.refresh_token);",
+              "if (d.user && d.user.company_id) pm.collectionVariables.set('companyId', d.user.company_id);"
+            ] }
+          }]
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}" },
+            "url": "{{baseUrl}}/auth/refresh"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json().data;",
+              "pm.collectionVariables.set('accessToken', d.access_token);",
+              "pm.collectionVariables.set('refreshToken', d.refresh_token);"
+            ] }
+          }]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}" },
+            "url": "{{baseUrl}}/auth/logout"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "01 Themes",
+      "item": [
+        {
+          "name": "List Themes",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/themes?page=1&limit=50&query=" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Create Theme",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman Theme {{$timestamp}}\",\n  \"description\": \"Created by full-system Postman collection\"\n}" },
+            "url": "{{baseUrl}}/themes"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('themeId', pm.response.json().data.id);"
+          ] } }]
+        },
+        {
+          "name": "Get Theme",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/themes/{{themeId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Update Theme",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman Theme Updated {{$timestamp}}\",\n  \"description\": \"Updated by Postman\"\n}" },
+            "url": "{{baseUrl}}/themes/{{themeId}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "List QA By Theme",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/themes/{{themeId}}/qa?page=1&limit=50" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "02 QA",
+      "item": [
+        {
+          "name": "List QA",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/qa?page=1&limit=50&query=&sort=-created_at" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Create QA",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"theme_id\": \"{{themeId}}\",\n  \"question\": \"Как подготовиться к визиту? {{$timestamp}}\",\n  \"answer\": \"Возьмите документы и заранее запишите вопросы врачу.\",\n  \"is_faq\": true\n}" },
+            "url": "{{baseUrl}}/qa"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('qaId', pm.response.json().data.id);"
+          ] } }]
+        },
+        {
+          "name": "Get QA",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/qa/{{qaId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Update QA",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"answer\": \"Обновленный ответ из Postman.\",\n  \"frequency\": 3,\n  \"is_faq\": true\n}" },
+            "url": "{{baseUrl}}/qa/{{qaId}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Review QA AI Answer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"action\": \"reject\",\n  \"edited_answer\": \"\"\n}" },
+            "url": "{{baseUrl}}/qa/{{qaId}}/review"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 or 400 if no pending AI answer', () => pm.expect([200,400]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "List QA Call Mentions",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/qa/{{qaId}}/mentions?page=1&limit=100" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 or 404 if no mentions/call data', () => pm.expect([200,404]).to.include(pm.response.code));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "03 Pricing",
+      "item": [
+        {
+          "name": "List Pricing",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/pricing?page=1&limit=50" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Create Pricing Category",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"node_type\": \"category\",\n  \"name\": \"Postman Category {{$timestamp}}\"\n}" },
+            "url": "{{baseUrl}}/pricing"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('pricingCategoryId', pm.response.json().data.id);"
+          ] } }]
+        },
+        {
+          "name": "Create Pricing Service",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"parent_id\": \"{{pricingCategoryId}}\",\n  \"node_type\": \"service\",\n  \"name\": \"Postman Service {{$timestamp}}\",\n  \"price\": 1500\n}" },
+            "url": "{{baseUrl}}/pricing"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('pricingServiceId', pm.response.json().data.id);"
+          ] } }]
+        },
+        {
+          "name": "Get Pricing Service",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/pricing/{{pricingServiceId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Update Pricing Service",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"parent_id\": \"{{pricingCategoryId}}\",\n  \"node_type\": \"service\",\n  \"name\": \"Postman Service Updated {{$timestamp}}\",\n  \"price\": 1750\n}" },
+            "url": "{{baseUrl}}/pricing/{{pricingServiceId}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Move Pricing Service To Root",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"parent_id\": null\n}" },
+            "url": "{{baseUrl}}/pricing/{{pricingServiceId}}/move"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "04 Articles",
+      "item": [
+        {
+          "name": "List Articles",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/articles?page=1&limit=50&query=" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Create Article",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Postman Article {{$timestamp}}\",\n  \"body\": \"Текст статьи для ручной проверки API.\"\n}" },
+            "url": "{{baseUrl}}/articles"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('articleId', pm.response.json().data.id);"
+          ] } }]
+        },
+        {
+          "name": "Get Article",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/articles/{{articleId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Update Article",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Postman Article Updated {{$timestamp}}\",\n  \"body\": \"Обновленный текст статьи.\"\n}" },
+            "url": "{{baseUrl}}/articles/{{articleId}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "05 Comments And Links",
+      "item": [
+        {
+          "name": "List Article Comments",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/article/{{articleId}}/comments?page=1&limit=50" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Create Article Comment",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"body\": \"Postman comment {{$timestamp}}\"\n}" },
+            "url": "{{baseUrl}}/article/{{articleId}}/comments"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('commentId', pm.response.json().data.id);"
+          ] } }]
+        },
+        {
+          "name": "Update Article Comment",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"body\": \"Postman comment updated {{$timestamp}}\"\n}" },
+            "url": "{{baseUrl}}/article/{{articleId}}/comments/{{commentId}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Create Article External Link",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"url\": \"https://example.com\",\n  \"label\": \"Example\"\n}" },
+            "url": "{{baseUrl}}/article/{{articleId}}/links"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('linkId', pm.response.json().data.id);"
+          ] } }]
+        },
+        {
+          "name": "List Article Links",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/article/{{articleId}}/links?page=1&limit=50" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "06 Search And Calls",
+      "item": [
+        {
+          "name": "Search All",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/search?query=Postman&types=qa,article&page=1&limit=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Sync Status",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/sync/status" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Get Call",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/calls/{{callId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 or 404 if callId is placeholder', () => pm.expect([200,404]).to.include(pm.response.code));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "07 Admin Users And Companies",
+      "item": [
+        {
+          "name": "List Users",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/admin/users?page=1&limit=20&q=&sort=-created_at" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Create Editor User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{newUserEmail}}\",\n  \"password\": \"{{newUserPassword}}\",\n  \"role\": \"editor\",\n  \"is_active\": true\n}" },
+            "url": "{{baseUrl}}/admin/users"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created or 409 if rerun with same email', () => pm.expect([201,409]).to.include(pm.response.code));",
+            "if (pm.response.code === 201) pm.collectionVariables.set('userId', pm.response.json().data.id);"
+          ] } }]
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"role\": \"viewer\",\n  \"is_active\": true\n}" },
+            "url": "{{baseUrl}}/admin/users/{{userId}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 or 400 if userId empty', () => pm.expect([200,400,404]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "List Companies (superadmin)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/admin/companies?page=1&limit=50" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 or 403 if not superadmin', () => pm.expect([200,403]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "Create Company (superadmin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman Company {{$timestamp}}\",\n  \"tier\": \"local\"\n}" },
+            "url": "{{baseUrl}}/admin/companies"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 or 403 if not superadmin', () => pm.expect([201,403]).to.include(pm.response.code));",
+            "if (pm.response.code === 201) pm.collectionVariables.set('companyId', pm.response.json().data.id);"
+          ] } }]
+        },
+        {
+          "name": "Get Company (superadmin)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/admin/companies/{{companyId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 or 403/404 depending on role/id', () => pm.expect([200,403,404]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "Create Company Admin (superadmin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{companyAdminEmail}}\",\n  \"password\": \"password123\"\n}" },
+            "url": "{{baseUrl}}/admin/companies/{{companyId}}/admin"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('201 or 403 if not superadmin', () => pm.expect([201,403,400]).to.include(pm.response.code));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "08 Import Export",
+      "item": [
+        {
+          "name": "Export Knowledge Base (superadmin)",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/export" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 or 403 if not superadmin', () => pm.expect([200,403]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "Import Knowledge Base (superadmin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"themes\": [],\n  \"qa_pairs\": [],\n  \"pricing_nodes\": [],\n  \"articles\": [],\n  \"comments\": [],\n  \"links\": [],\n  \"calls\": [],\n  \"qa_call_mentions\": []\n}" },
+            "url": "{{baseUrl}}/import"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 or 403 if not superadmin', () => pm.expect([200,403,400]).to.include(pm.response.code));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "09 Bot Foundation B1",
+      "item": [
+        {
+          "name": "Get Bot Settings",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/admin/bot/settings" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Update Bot Settings",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"enabled\": true,\n  \"provider\": \"yandex\",\n  \"model_tier\": \"lite\",\n  \"model\": \"\",\n  \"temperature\": 0.2,\n  \"max_tokens\": 1024,\n  \"persona_name\": \"Администратор\",\n  \"persona_tone\": \"friendly_professional\",\n  \"persona_rules\": \"Отвечай только по базе знаний.\",\n  \"enabled_modules\": { \"rag\": true, \"handoff\": false, \"channels\": false, \"bitrix24\": false }\n}" },
+            "url": "{{baseUrl}}/admin/bot/settings"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "List Bot Secrets",
+          "request": { "method": "GET", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/admin/bot/secrets" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('no plaintext/cipher internals', () => { const txt = pm.response.text(); pm.expect(txt).to.not.include(pm.collectionVariables.get('llmSecret')); pm.expect(txt).to.not.include('ciphertext'); pm.expect(txt).to.not.include('nonce'); });"
+          ] } }]
+        },
+        {
+          "name": "Set LLM Secret",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Company-ID", "value": "{{companyId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"value\": \"{{llmSecret}}\",\n  \"metadata\": { \"auth_type\": \"{{secretAuthType}}\" }\n}" },
+            "url": "{{baseUrl}}/admin/bot/secrets/llm"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK or 400 if SECRETS_ENCRYPTION_KEY not configured', () => pm.expect([200,400]).to.include(pm.response.code));",
+            "pm.test('does not expose secret', () => pm.expect(pm.response.text()).to.not.include(pm.collectionVariables.get('llmSecret')));"
+          ] } }]
+        },
+        {
+          "name": "Delete LLM Secret",
+          "request": { "method": "DELETE", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/admin/bot/secrets/llm" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "10 Sync API Key Routes",
+      "item": [
+        {
+          "name": "Sync Pull",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{syncApiKey}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{baseUrl}}/sync/pull"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 or 401 depending on syncApiKey', () => pm.expect([200,401]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "Sync Push Empty Payload",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{syncApiKey}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"themes\": [],\n  \"qa_pairs\": [],\n  \"pricing_nodes\": [],\n  \"articles\": [],\n  \"comments\": [],\n  \"links\": []\n}" },
+            "url": "{{baseUrl}}/sync/push"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200/401/500 depending on syncApiKey and payload', () => pm.expect([200,400,401,500]).to.include(pm.response.code));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "11 Backup",
+      "item": [
+        {
+          "name": "Backup Snapshot",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{backupApiKey}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{baseUrl}}/backup/snapshot"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200, 401, or 503 depending on BACKUP_API_KEY', () => pm.expect([200,401,503]).to.include(pm.response.code));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "99 Cleanup",
+      "item": [
+        {
+          "name": "Delete Article Link",
+          "request": { "method": "DELETE", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/article/{{articleId}}/links/{{linkId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('204/400/404 depending on existing link', () => pm.expect([204,400,404]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "Delete Article Comment",
+          "request": { "method": "DELETE", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/article/{{articleId}}/comments/{{commentId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('204/400/404 depending on existing comment', () => pm.expect([204,400,404]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "Delete QA",
+          "request": { "method": "DELETE", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/qa/{{qaId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('204/400/404 depending on existing QA', () => pm.expect([204,400,404]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "Delete Article",
+          "request": { "method": "DELETE", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/articles/{{articleId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('204/400/404 depending on existing article', () => pm.expect([204,400,404]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "Delete Pricing Service",
+          "request": { "method": "DELETE", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/pricing/{{pricingServiceId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('204/400/404 depending on existing pricing service', () => pm.expect([204,400,404]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "Delete Pricing Category",
+          "request": { "method": "DELETE", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/pricing/{{pricingCategoryId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('204/400/404 depending on existing pricing category', () => pm.expect([204,400,404]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "Delete Theme",
+          "request": { "method": "DELETE", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/themes/{{themeId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('204/400/404 depending on existing theme', () => pm.expect([204,400,404]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "Delete User",
+          "request": { "method": "DELETE", "header": [{ "key": "X-Company-ID", "value": "{{companyId}}" }], "url": "{{baseUrl}}/admin/users/{{userId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('204/400/403/404 depending on user/role', () => pm.expect([204,400,403,404]).to.include(pm.response.code));"] } }]
+        }
+      ]
+    }
+  ]
+}

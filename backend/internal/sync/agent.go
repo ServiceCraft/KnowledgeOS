@@ -1,12 +1,12 @@
 package sync
 
 import (
-	"log"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/config"
 	"github.com/knowledgeos/backend/internal/service"
+	"github.com/rs/zerolog/log"
 )
 
 type Agent struct {
@@ -32,7 +32,10 @@ func (a *Agent) Run() {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	log.Printf("Sync agent started, interval: %s, company: %s", interval, a.companyID)
+	log.Info().
+		Dur("interval", interval).
+		Str("company_id", a.companyID.String()).
+		Msg("sync agent started")
 
 	// Run once immediately
 	a.cycle()
@@ -43,15 +46,15 @@ func (a *Agent) Run() {
 }
 
 func (a *Agent) cycle() {
-	log.Println("Sync cycle starting...")
+	log.Debug().Str("company_id", a.companyID.String()).Msg("sync cycle starting")
 
 	if err := a.pusher.Push(a.companyID); err != nil {
-		log.Printf("Push error: %v", err)
+		log.Error().Err(err).Str("company_id", a.companyID.String()).Msg("sync push failed")
 	}
 
 	if err := a.puller.Pull(a.companyID); err != nil {
-		log.Printf("Pull error: %v", err)
+		log.Error().Err(err).Str("company_id", a.companyID.String()).Msg("sync pull failed")
 	}
 
-	log.Println("Sync cycle complete")
+	log.Debug().Str("company_id", a.companyID.String()).Msg("sync cycle completed")
 }

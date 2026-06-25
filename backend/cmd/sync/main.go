@@ -2,26 +2,28 @@ package main
 
 import (
 	"context"
-	"log"
 
 	"github.com/knowledgeos/backend/internal/config"
 	"github.com/knowledgeos/backend/internal/database"
 	"github.com/knowledgeos/backend/internal/domain"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"github.com/knowledgeos/backend/internal/service"
 	"github.com/knowledgeos/backend/internal/store"
 	syncagent "github.com/knowledgeos/backend/internal/sync"
+	"github.com/rs/zerolog/log"
 )
 
 func main() {
 	cfg := config.Load()
+	applog.Configure(cfg.LogLevel, cfg.LogFormat, "knowledgeos-sync")
 
 	if cfg.CloudAPIURL == "" || cfg.CloudAPIKey == "" {
-		log.Fatal("CLOUD_API_URL and CLOUD_API_KEY must be set for sync agent")
+		log.Fatal().Msg("CLOUD_API_URL and CLOUD_API_KEY must be set for sync agent")
 	}
 
 	db, err := database.Connect(cfg)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatal().Err(err).Msg("failed to connect to database")
 	}
 
 	s := store.New(db, cfg.AppProfile)
@@ -40,11 +42,11 @@ func main() {
 	companyStore := store.NewCompanyStore(s)
 	companies, _, err := companyStore.List(context.Background(), domain.CompanyFilter{Page: 1, Limit: 1})
 	if err != nil || len(companies) == 0 {
-		log.Fatal("No companies found to sync")
+		log.Fatal().Err(err).Msg("no companies found to sync")
 	}
 
 	agent := syncagent.NewAgent(cfg, syncSvc, companies[0].ID)
 
-	log.Println("KnowledgeOS Sync Agent starting...")
+	log.Info().Str("company_id", companies[0].ID.String()).Msg("knowledgeos sync agent starting")
 	agent.Run()
 }

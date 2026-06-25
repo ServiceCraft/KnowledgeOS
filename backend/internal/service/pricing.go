@@ -10,10 +10,15 @@ import (
 
 type PricingService struct {
 	pricing domain.PricingNodeRepository
+	indexer domain.KnowledgeIndexScheduler
 }
 
-func NewPricingService(pricing domain.PricingNodeRepository) *PricingService {
-	return &PricingService{pricing: pricing}
+func NewPricingService(pricing domain.PricingNodeRepository, schedulers ...domain.KnowledgeIndexScheduler) *PricingService {
+	var indexer domain.KnowledgeIndexScheduler
+	if len(schedulers) > 0 {
+		indexer = schedulers[0]
+	}
+	return &PricingService{pricing: pricing, indexer: indexer}
 }
 
 func (s *PricingService) List(ctx context.Context, companyID uuid.UUID, filter domain.PricingNodeFilter) ([]domain.PricingNode, int64, error) {
@@ -33,21 +38,33 @@ func (s *PricingService) Create(ctx context.Context, companyID uuid.UUID, node *
 			return errors.New("parent node not found")
 		}
 	}
-	return s.pricing.Create(ctx, companyID, node)
+	if err := s.pricing.Create(ctx, companyID, node); err != nil {
+		return err
+	}
+	s.scheduleUpsert(ctx, companyID, node.ID)
+	return nil
 }
 
 func (s *PricingService) Update(ctx context.Context, companyID uuid.UUID, node *domain.PricingNode) error {
 	if _, err := s.pricing.GetByID(ctx, companyID, node.ID); err != nil {
 		return errors.New("pricing node not found")
 	}
-	return s.pricing.Update(ctx, companyID, node)
+	if err := s.pricing.Update(ctx, companyID, node); err != nil {
+		return err
+	}
+	s.scheduleUpsert(ctx, companyID, node.ID)
+	return nil
 }
 
 func (s *PricingService) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error {
 	if _, err := s.pricing.GetByID(ctx, companyID, id); err != nil {
 		return errors.New("pricing node not found")
 	}
-	return s.pricing.Delete(ctx, companyID, id)
+	if err := s.pricing.Delete(ctx, companyID, id); err != nil {
+		return err
+	}
+	s.scheduleDelete(ctx, companyID, id)
+	return nil
 }
 
 func (s *PricingService) Move(ctx context.Context, companyID uuid.UUID, id uuid.UUID, newParentID *uuid.UUID) error {
@@ -69,7 +86,11 @@ func (s *PricingService) Move(ctx context.Context, companyID uuid.UUID, id uuid.
 	}
 
 	node.ParentID = newParentID
-	return s.pricing.Update(ctx, companyID, node)
+	if err := s.pricing.Update(ctx, companyID, node); err != nil {
+		return err
+	}
+	s.scheduleUpsert(ctx, companyID, node.ID)
+	return nil
 }
 
 func (s *PricingService) checkCycle(ctx context.Context, companyID uuid.UUID, nodeID, targetParentID uuid.UUID) error {
@@ -92,4 +113,16 @@ func (s *PricingService) checkCycle(ctx context.Context, companyID uuid.UUID, no
 		current = *parent.ParentID
 	}
 	return nil
+}
+
+func (s *PricingService) scheduleUpsert(ctx context.Context, companyID, id uuid.UUID) {
+	if s.indexer != nil {
+		_ = s.indexer.ScheduleUpsert(ctx, companyID, domain.KBEntityPricing, id)
+	}
+}
+
+func (s *PricingService) scheduleDelete(ctx context.Context, companyID, id uuid.UUID) {
+	if s.indexer != nil {
+		_ = s.indexer.ScheduleDelete(ctx, companyID, domain.KBEntityPricing, id)
+	}
 }

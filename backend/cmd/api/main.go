@@ -2,29 +2,33 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/knowledgeos/backend/internal/auth"
 	"github.com/knowledgeos/backend/internal/config"
+	secretcrypto "github.com/knowledgeos/backend/internal/crypto"
 	"github.com/knowledgeos/backend/internal/database"
 	"github.com/knowledgeos/backend/internal/domain"
 	"github.com/knowledgeos/backend/internal/handler"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"github.com/knowledgeos/backend/internal/service"
 	"github.com/knowledgeos/backend/internal/store"
+	"github.com/rs/zerolog/log"
 )
 
 func main() {
 	cfg := config.Load()
+	applog.Configure(cfg.LogLevel, cfg.LogFormat, "knowledgeos-api")
 
 	db, err := database.Connect(cfg)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatal().Err(err).Msg("failed to connect to database")
 	}
 
 	if err := database.RunMigrations(db, "migrations"); err != nil {
-		log.Fatalf("Failed to run migrations: %v", err)
+		log.Fatal().Err(err).Msg("failed to run migrations")
 	}
 
 	jwtMgr := auth.NewJWTManager(cfg.JWTSecret)
@@ -44,16 +48,42 @@ func main() {
 	syncStore := store.NewSyncStore(s)
 	callStore := store.NewCallStore(s)
 	mentionStore := store.NewQACallMentionStore(s)
+	botSettingsStore := store.NewBotSettingsStore(s)
+	tenantSecretStore := store.NewTenantSecretStore(s)
+	kbEmbeddingStore := store.NewKBEmbeddingStore(s)
+	kbIndexJobStore := store.NewKBIndexJobStore(s)
 
 	// Services
+	secretCipher, err := secretcrypto.NewCipher(cfg.SecretsEncryptionKey)
+	if err != nil {
+		log.Warn().Err(err).Msg("bot tenant secrets are disabled")
+	}
+	botSettingsSvc := service.NewBotSettingsService(botSettingsStore)
+	tenantSecretSvc := service.NewTenantSecretService(tenantSecretStore, secretCipher)
+	llmFactory := service.NewLLMFactory(cfg, botSettingsSvc, tenantSecretSvc)
+	ragIndexerSvc := service.NewRAGIndexerService(
+		kbIndexJobStore,
+		kbEmbeddingStore,
+		articleStore,
+		qaStore,
+		pricingStore,
+		llmFactory,
+		service.RAGIndexerConfig{
+			WorkerEnabled:      cfg.RAGWorkerEnabled,
+			WorkerBatchSize:    cfg.RAGWorkerBatchSize,
+			WorkerPollInterval: time.Duration(cfg.RAGWorkerPollIntervalSeconds) * time.Second,
+			IndexMaxAttempts:   cfg.RAGIndexMaxAttempts,
+		},
+	)
 	authSvc := service.NewAuthService(userStore, syncStore, jwtMgr)
-	qaSvc := service.NewQAService(qaStore, themeStore)
+	qaSvc := service.NewQAService(qaStore, themeStore, ragIndexerSvc)
 	themeSvc := service.NewThemeService(themeStore, qaStore)
-	pricingSvc := service.NewPricingService(pricingStore)
-	articleSvc := service.NewArticleService(articleStore)
+	pricingSvc := service.NewPricingService(pricingStore, ragIndexerSvc)
+	articleSvc := service.NewArticleService(articleStore, ragIndexerSvc)
 	commentSvc := service.NewCommentService(commentStore, qaStore, articleStore, pricingStore)
 	linkSvc := service.NewLinkService(linkStore, qaStore, articleStore, pricingStore)
 	searchSvc := service.NewSearchService(searchStore)
+	retrieverSvc := service.NewRetrieverService(kbEmbeddingStore, searchStore, llmFactory, cfg.RAGVectorTopK, cfg.RAGHybridTopK)
 	exportSvc := service.NewExportService(db, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore, callStore, mentionStore)
 	syncSvc := service.NewSyncService(syncStore, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore)
 	callSvc := service.NewCallService(callStore, mentionStore, qaStore)
@@ -89,6 +119,8 @@ func main() {
 		User:    handler.NewUserHandler(userSvc),
 		Call:    handler.NewCallHandler(callSvc),
 		Backup:  handler.NewBackupHandler(snapshotSvc),
+		Bot:     handler.NewBotHandler(botSettingsSvc, tenantSecretSvc),
+		RAG:     handler.NewRAGHandler(ragIndexerSvc, retrieverSvc),
 	}
 
 	var syncRepo domain.SyncRepository = syncStore
@@ -96,9 +128,12 @@ func main() {
 	// without restarting the process.
 	backupKey := func() string { return os.Getenv("BACKUP_API_KEY") }
 	router := handler.NewRouter(h, jwtMgr, syncRepo, backupKey)
+	ragIndexerSvc.StartWorker(context.Background())
 
-	log.Println("KnowledgeOS API starting on :8080")
-	log.Fatal(http.ListenAndServe(":8080", router))
+	log.Info().Str("addr", ":8080").Msg("knowledgeos api starting")
+	if err := http.ListenAndServe(":8080", router); err != nil {
+		log.Fatal().Err(err).Msg("knowledgeos api stopped")
+	}
 }
 
 func bootstrap(cfg *config.Config, companies *store.CompanyStore, users *store.UserStore, syncRepo *store.SyncStore) {
@@ -109,15 +144,15 @@ func bootstrap(cfg *config.Config, companies *store.CompanyStore, users *store.U
 	}
 
 	if cfg.SuperadminEmail == "" || cfg.SuperadminPassword == "" {
-		log.Println("No companies found and SUPERADMIN_EMAIL/PASSWORD not set, skipping bootstrap")
+		log.Warn().Msg("no companies found and bootstrap credentials are not set")
 		return
 	}
 
-	log.Println("First run detected, bootstrapping superadmin...")
+	log.Info().Msg("first run detected, bootstrapping superadmin")
 
 	hash, err := auth.HashPassword(cfg.SuperadminPassword)
 	if err != nil {
-		log.Fatalf("Failed to hash superadmin password: %v", err)
+		log.Fatal().Err(err).Msg("failed to hash superadmin password")
 	}
 
 	company := &domain.Company{
@@ -125,11 +160,11 @@ func bootstrap(cfg *config.Config, companies *store.CompanyStore, users *store.U
 		Tier: "local",
 	}
 	if err := companies.Create(ctx, company); err != nil {
-		log.Fatalf("Failed to create default company: %v", err)
+		log.Fatal().Err(err).Msg("failed to create default company")
 	}
 
 	if err := syncRepo.InitSequence(ctx, company.ID); err != nil {
-		log.Fatalf("Failed to init sync sequence: %v", err)
+		log.Fatal().Err(err).Msg("failed to init sync sequence")
 	}
 
 	user := &domain.User{
@@ -140,8 +175,8 @@ func bootstrap(cfg *config.Config, companies *store.CompanyStore, users *store.U
 		IsActive:     true,
 	}
 	if err := users.Create(ctx, user); err != nil {
-		log.Fatalf("Failed to create superadmin user: %v", err)
+		log.Fatal().Err(err).Msg("failed to create superadmin user")
 	}
 
-	log.Printf("Superadmin created: %s", cfg.SuperadminEmail)
+	log.Info().Str("company_id", company.ID.String()).Msg("superadmin created")
 }

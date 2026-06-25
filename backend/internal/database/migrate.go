@@ -2,11 +2,11 @@ package database
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
 
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -50,7 +50,7 @@ func RunMigrations(db *gorm.DB, migrationsDir string) error {
 		if err != nil {
 			return err
 		}
-		log.Printf("Applied migration: %s", f)
+		log.Info().Str("migration", f).Msg("migration applied")
 	}
 
 	return nil

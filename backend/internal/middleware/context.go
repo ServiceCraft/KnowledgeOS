@@ -14,6 +14,7 @@ const (
 	claimsKey     contextKey = "claims"
 	companyIDKey  contextKey = "company_id"
 	entityTypeKey contextKey = "entity_type"
+	requestIDKey  contextKey = "request_id"
 )
 
 func SetClaims(ctx context.Context, claims *auth.Claims) context.Context {
@@ -58,4 +59,13 @@ func SetEntityType(ctx context.Context, et string) context.Context {
 func GetEntityType(ctx context.Context) string {
 	et, _ := ctx.Value(entityTypeKey).(string)
 	return et
+}
+
+func SetRequestID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, requestIDKey, id)
+}
+
+func GetRequestID(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDKey).(string)
+	return id
 }
