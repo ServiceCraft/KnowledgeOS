@@ -90,6 +90,12 @@ func (s *ChatStore) AppendMessage(ctx context.Context, companyID uuid.UUID, mess
 	if len(message.Sources) == 0 {
 		message.Sources = []byte("[]")
 	}
+	if len(message.CitedSourceIDs) == 0 {
+		message.CitedSourceIDs = []byte("[]")
+	}
+	if message.GuardrailAction == "" {
+		message.GuardrailAction = domain.GuardrailActionAnswer
+	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(message).Error; err != nil {
 			return err

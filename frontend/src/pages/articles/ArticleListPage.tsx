@@ -1,31 +1,19 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Plus, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { SearchInput } from '@/components/shared/SearchInput';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { useArticlesList, useCreateArticle } from '@/hooks/useArticles';
+import { useArticlesList } from '@/hooks/useArticles';
 import { usePermissions } from '@/hooks/usePermissions';
-import { toast } from 'sonner';
 
 export function ArticleListPage() {
   const navigate = useNavigate();
   const { canWrite } = usePermissions();
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
-  const [showCreate, setShowCreate] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
 
   const limit = 20;
   const { data, isLoading, isError } = useArticlesList({
@@ -33,27 +21,10 @@ export function ArticleListPage() {
     page,
     limit,
   });
-  const createArticle = useCreateArticle();
 
   const items = data?.data ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / limit) || 1;
-
-  const handleCreate = (e: React.FormEvent) => {
-    e.preventDefault();
-    createArticle.mutate(
-      { title: newTitle, body: '' },
-      {
-        onSuccess: (article) => {
-          setShowCreate(false);
-          setNewTitle('');
-          toast.success('Статья создана');
-          navigate(`/kb/articles/${article.id}`);
-        },
-        onError: () => toast.error('Не удалось создать статью'),
-      }
-    );
-  };
 
   if (isLoading) return <LoadingState />;
   if (isError) return <ErrorState message="Не удалось загрузить статьи." />;
@@ -66,7 +37,7 @@ export function ArticleListPage() {
           <p className="text-sm text-muted-foreground mt-1">{total} {total === 1 ? 'статья' : total >= 2 && total <= 4 ? 'статьи' : 'статей'}</p>
         </div>
         {canWrite && (
-          <Button onClick={() => setShowCreate(true)}>
+          <Button onClick={() => navigate('/kb/articles/new')}>
             <Plus className="h-4 w-4 mr-2" />
             Новая статья
           </Button>
@@ -122,33 +93,6 @@ export function ArticleListPage() {
           </div>
         </div>
       )}
-
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Создать статью</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleCreate} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="title">Заголовок</Label>
-              <Input
-                id="title"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                required
-              />
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>
-                Отмена
-              </Button>
-              <Button type="submit" disabled={createArticle.isPending}>
-                Создать
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

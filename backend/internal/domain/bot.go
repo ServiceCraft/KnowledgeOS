@@ -43,8 +43,17 @@ type BotSettings struct {
 	PersonaTone    string          `gorm:"type:text;not null;default:friendly_professional" json:"persona_tone"`
 	PersonaRules   string          `gorm:"type:text;not null;default:''" json:"persona_rules"`
 	EnabledModules json.RawMessage `gorm:"type:jsonb;not null;default:'{}'" json:"enabled_modules"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+
+	// Б5 guardrail thresholds. Zero thresholds disable the optional gates and
+	// keep the bot backward-compatible until an admin opts in.
+	MinRetrievalScore       float64         `gorm:"type:numeric(6,4);not null;default:0" json:"min_retrieval_score"`
+	MinConfidence           float64         `gorm:"type:numeric(4,3);not null;default:0" json:"min_confidence"`
+	AllowedThemeIDs         json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"allowed_theme_ids"`
+	EscalateOnLowConfidence bool            `gorm:"not null;default:false" json:"escalate_on_low_confidence"`
+	RequireCitations        bool            `gorm:"not null;default:false" json:"require_citations"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // TableName executes the domain.BotSettings.TableName operation.

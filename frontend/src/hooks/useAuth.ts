@@ -22,10 +22,11 @@ export function useLogin() {
 
 export function useLogout() {
   const logout = useAuthStore((s) => s.logout);
+  const tokens = useAuthStore((s) => s.tokens);
   const navigate = useNavigate();
 
   return useMutation({
-    mutationFn: () => authApi.logout(),
+    mutationFn: () => authApi.logout(tokens?.refresh_token ?? ''),
     onSettled: () => {
       logout();
       navigate('/login');

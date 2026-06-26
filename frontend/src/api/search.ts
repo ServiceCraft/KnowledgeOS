@@ -10,6 +10,15 @@ export interface SearchParams {
 }
 
 export const searchApi = {
-  search: (params: SearchParams) =>
-    client.get<SearchResponse>('/search', { params }).then((r) => r.data),
+  search: (params: SearchParams) => {
+    const { types, ...rest } = params;
+    return client
+      .get<SearchResponse>('/search', {
+        params: {
+          ...rest,
+          ...(types?.length ? { types: types.join(',') } : {}),
+        },
+      })
+      .then((r) => r.data);
+  },
 };

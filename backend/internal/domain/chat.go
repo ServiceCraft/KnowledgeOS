@@ -21,8 +21,21 @@ const (
 type ChatState string
 
 const (
-	ChatStateBot    ChatState = "bot"
-	ChatStateClosed ChatState = "closed"
+	ChatStateBot             ChatState = "bot"
+	ChatStateWaitingOperator ChatState = "waiting_operator"
+	ChatStateOperator        ChatState = "operator"
+	ChatStateClosed          ChatState = "closed"
+)
+
+// GuardrailAction is the machine-readable outcome of the Б5 guardrail layer for
+// an assistant turn: a normal grounded answer, a polite refusal or an
+// escalation signal for the future operator handoff module.
+type GuardrailAction string
+
+const (
+	GuardrailActionAnswer   GuardrailAction = "answer"
+	GuardrailActionRefuse   GuardrailAction = "refuse"
+	GuardrailActionEscalate GuardrailAction = "escalate"
 )
 
 type ChatRole string
@@ -57,12 +70,28 @@ type ChatMessage struct {
 	ToolCallID       string          `gorm:"type:text;not null;default:''" json:"tool_call_id,omitempty"`
 	ToolCalls        json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"tool_calls"`
 	Sources          json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"sources"`
+	GuardrailAction  GuardrailAction `gorm:"type:text;not null;default:answer" json:"guardrail_action,omitempty"`
+	ConfidenceScore  *float64        `gorm:"type:numeric(4,3)" json:"confidence_score,omitempty"`
+	RefusalReason    string          `gorm:"type:text;not null;default:''" json:"refusal_reason,omitempty"`
+	CitedSourceIDs   json.RawMessage `gorm:"type:jsonb;not null;default:'[]'" json:"cited_source_ids,omitempty"`
 	TokensPrompt     int             `gorm:"not null;default:0" json:"tokens_prompt"`
 	TokensCompletion int             `gorm:"not null;default:0" json:"tokens_completion"`
 }
 
 // TableName executes the domain.ChatMessage.TableName operation.
 func (ChatMessage) TableName() string { return "chat_messages" }
+
+// SourcesList decodes the stored Sources JSON into a slice of ChatSource.
+func (m *ChatMessage) SourcesList() []ChatSource {
+	if len(m.Sources) == 0 {
+		return nil
+	}
+	var out []ChatSource
+	if err := json.Unmarshal(m.Sources, &out); err != nil {
+		return nil
+	}
+	return out
+}
 
 type ChatSource struct {
 	SourceID   string       `json:"source_id"`

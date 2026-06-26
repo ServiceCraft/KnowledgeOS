@@ -27,6 +27,7 @@ const routeLabels: Record<string, string> = {
   qa: 'Вопросы и ответы',
   themes: 'Темы',
   articles: 'Статьи',
+  new: 'Новая статья',
   faq: 'FAQ',
   pricing: 'Прайс',
   search: 'Поиск',

@@ -27,6 +27,12 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+func (rw *responseWriter) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // Logger executes the middleware.Logger operation.
 func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

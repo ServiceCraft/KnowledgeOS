@@ -1,0 +1,141 @@
+// Package guardrails implements the Б5 defense-in-depth checks layered on top of
+// the chat pipeline: deterministic context gates, verifiable citation
+// post-checks, a transparent confidence heuristic and a system-prompt leak
+// filter. The functions are pure so they can be unit tested in isolation and
+// reused by the eval harness.
+package guardrails
+
+import (
+	"regexp"
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/knowledgeos/backend/internal/domain"
+)
+
+// FilterCandidates applies the cheap deterministic gates to retriever output: it
+// drops candidates scoring below minScore (when minScore > 0) and, when a theme
+// allow-list is set, keeps only candidates whose theme is allowed. Candidates
+// with no theme are always kept, mirroring the kb_embedding vector filter.
+func FilterCandidates(items []domain.RAGCandidate, minScore float64, allowed map[uuid.UUID]bool) []domain.RAGCandidate {
+	out := make([]domain.RAGCandidate, 0, len(items))
+	for _, item := range items {
+		if minScore > 0 && item.Score < minScore {
+			continue
+		}
+		if len(allowed) > 0 && item.ThemeID != nil && !allowed[*item.ThemeID] {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// CitationResult is the outcome of comparing the citations in an answer against
+// the set of source IDs actually supplied to the model.
+type CitationResult struct {
+	Cited      []string
+	Valid      []string
+	Fabricated []string
+}
+
+var citationRe = regexp.MustCompile(`\[([^\[\]\n]+)\]`)
+
+// ExtractCitations returns the distinct source-id-like tokens cited inside square
+// brackets in the answer. A single bracket group may contain several
+// comma-separated ids.
+func ExtractCitations(answer string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range citationRe.FindAllStringSubmatch(answer, -1) {
+		for _, part := range strings.Split(m[1], ",") {
+			token := strings.TrimSpace(part)
+			if token == "" || !looksLikeSourceID(token) {
+				continue
+			}
+			if !seen[token] {
+				seen[token] = true
+				out = append(out, token)
+			}
+		}
+	}
+	return out
+}
+
+// looksLikeSourceID keeps the extractor from treating ordinary bracketed prose
+// (for example "[важно]") as a citation. Source IDs follow
+// "entity_type:entity_id:chunk_idx" and therefore contain colons.
+func looksLikeSourceID(token string) bool {
+	return strings.Count(token, ":") >= 2
+}
+
+// CheckCitations classifies the citations in answer against validIDs. Fabricated
+// citations (ids the model invented) are the signal that the answer is not
+// grounded and must be rejected.
+func CheckCitations(answer string, validIDs map[string]bool) CitationResult {
+	res := CitationResult{}
+	for _, id := range ExtractCitations(answer) {
+		res.Cited = append(res.Cited, id)
+		if validIDs[id] {
+			res.Valid = append(res.Valid, id)
+		} else {
+			res.Fabricated = append(res.Fabricated, id)
+		}
+	}
+	return res
+}
+
+// ConfidenceInput carries the transparent signals used to score an answer.
+type ConfidenceInput struct {
+	SourceCount    int
+	ValidCitations int
+	HasFabrication bool
+}
+
+// Confidence returns a value in [0,1] from explainable signals: having grounded
+// context, citing it validly and citing more than one source raise confidence;
+// any fabricated citation collapses it.
+func Confidence(in ConfidenceInput) float64 {
+	if in.HasFabrication {
+		return 0
+	}
+	if in.SourceCount == 0 {
+		return 0
+	}
+	score := 0.5
+	if in.ValidCitations > 0 {
+		score += 0.3
+	}
+	if in.SourceCount >= 2 {
+		score += 0.2
+	}
+	if score > 1 {
+		score = 1
+	}
+	return score
+}
+
+// leakMarkers are distinctive fragments of our system prompt / scaffolding. If
+// the model echoes them back it is leaking instructions and the answer must be
+// suppressed.
+var leakMarkers = []string{
+	"<context>",
+	"</context>",
+	"правила персоны",
+	"системный промпт",
+	"system prompt",
+	"ты — ",
+	"администратор колл-центра",
+}
+
+// LeaksSystemPrompt reports whether the answer appears to expose the system
+// prompt, persona scaffolding or context delimiters.
+func LeaksSystemPrompt(answer string) bool {
+	lower := strings.ToLower(answer)
+	for _, marker := range leakMarkers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}

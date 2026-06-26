@@ -36,7 +36,7 @@ func NewJWTManager(secret string) *JWTManager {
 // Issue executes the auth.JWTManager.Issue operation.
 func (m *JWTManager) Issue(user *domain.User) (*TokenPair, string, error) {
 	now := time.Now()
-	accessExp := now.Add(15 * time.Minute)
+	accessExp := now.Add(24 * time.Hour) // TODO: make < 30 min after all tests
 
 	accessClaims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{

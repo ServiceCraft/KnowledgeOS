@@ -1,10 +1,10 @@
-import type { QAPair, Article, Theme, PricingNode, Comment, EntityLink, Company, User, SyncStatus } from './models';
+import type { QAPair, Article, Theme, PricingNode, Call, QAPairCallMention, Company, User, SyncStatus } from './models';
 
 export interface PaginatedResponse<T> {
   data: T[];
   total: number;
-  page: number;
-  limit: number;
+  page?: number;
+  limit?: number;
 }
 
 export interface SearchResult {
@@ -25,8 +25,8 @@ export interface ExportData {
   qa_pairs: QAPair[];
   pricing_nodes: PricingNode[];
   articles: Article[];
-  comments: Comment[];
-  entity_links: EntityLink[];
+  calls?: Call[];
+  qa_pair_call_mentions?: QAPairCallMention[];
 }
 
 export interface ImportResult {
@@ -35,4 +35,4 @@ export interface ImportResult {
   errors: string[];
 }
 
-export type { QAPair, Article, Theme, PricingNode, Comment, EntityLink, Company, User, SyncStatus };
+export type { QAPair, Article, Theme, PricingNode, Call, QAPairCallMention, Company, User, SyncStatus };

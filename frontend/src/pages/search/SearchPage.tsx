@@ -11,11 +11,12 @@ import {
 } from '@/components/ui/command';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSearch } from '@/hooks/useSearch';
-import { MessageSquareQuote, FileText, Search, Loader2 } from 'lucide-react';
+import { MessageSquareQuote, FileText, DollarSign, Search, Loader2 } from 'lucide-react';
 
 const TYPE_META: Record<string, { label: string; icon: typeof FileText; color: string }> = {
   qa: { label: 'Q&A', icon: MessageSquareQuote, color: 'text-blue-600' },
   article: { label: 'Статья', icon: FileText, color: 'text-amber-600' },
+  pricing: { label: 'Прайс', icon: DollarSign, color: 'text-green-600' },
 };
 
 export function SearchPage() {
@@ -48,6 +49,7 @@ export function SearchPage() {
     const [entityType, entityId] = value.split(':');
     if (entityType === 'qa') navigate(`/kb/qa/${entityId}`);
     else if (entityType === 'article') navigate(`/kb/articles/${entityId}`);
+    else if (entityType === 'pricing') navigate('/kb/pricing');
   };
 
   return (
@@ -55,7 +57,7 @@ export function SearchPage() {
       <div>
         <h1 className="text-2xl font-semibold">Поиск</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Поиск по вопросам и статьям
+          Поиск по вопросам, статьям и прайсу
         </p>
       </div>
 
@@ -64,6 +66,7 @@ export function SearchPage() {
           <TabsTrigger value="all">Все</TabsTrigger>
           <TabsTrigger value="qa">Q&A</TabsTrigger>
           <TabsTrigger value="article">Статьи</TabsTrigger>
+          <TabsTrigger value="pricing">Прайс</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -100,7 +103,11 @@ export function SearchPage() {
               }
             >
               {results.map((result) => {
-                const meta = TYPE_META[result.entity_type] ?? TYPE_META.qa;
+                const meta = TYPE_META[result.entity_type] ?? {
+                  label: result.entity_type,
+                  icon: FileText,
+                  color: 'text-muted-foreground',
+                };
                 const Icon = meta.icon;
                 return (
                   <CommandItem

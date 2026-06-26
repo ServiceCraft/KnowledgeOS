@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Bot, Loader2, MessageSquare, Plus, Send, User } from 'lucide-react';
-import { botChatApi } from '@/api/botChat';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Bot, Loader2, MessageSquare, Plus, Send, ShieldAlert, ShieldCheck, Square, User } from 'lucide-react';
+import { botChatApi, type ChatStreamEvent } from '@/api/botChat';
 import { useChatSession, useChatSessions, useCreateChatSession } from '@/hooks/useBotChat';
 import type { ChatMessage, ChatSource } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,8 @@ export function BotPlaygroundPage() {
   const [streamSources, setStreamSources] = useState<ChatSource[]>([]);
   const [error, setError] = useState<string>();
   const [isStreaming, setIsStreaming] = useState(false);
+  const [lastUsage, setLastUsage] = useState<ChatStreamEvent['usage']>();
+  const abortRef = useRef<AbortController | undefined>(undefined);
 
   const sessionQuery = useChatSession(selectedSessionId);
   const sessions = useMemo(() => sessionsQuery.data?.data ?? [], [sessionsQuery.data?.data]);
@@ -62,6 +64,10 @@ export function BotPlaygroundPage() {
     setStreamSources([]);
   }
 
+  function stopStreaming() {
+    abortRef.current?.abort();
+  }
+
   async function sendMessage() {
     const content = draft.trim();
     if (!content || isStreaming) return;
@@ -69,6 +75,7 @@ export function BotPlaygroundPage() {
     setError(undefined);
     setStreamingText('');
     setStreamSources([]);
+    setLastUsage(undefined);
     const sessionId = await ensureSession();
     const optimistic: ChatMessage = {
       id: `local-${Date.now()}`,
@@ -85,29 +92,44 @@ export function BotPlaygroundPage() {
     };
     setLocalMessages((items) => [...items, optimistic]);
     setIsStreaming(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
-      await botChatApi.streamMessage(sessionId, { content }, (event) => {
-        if (event.type === 'sources' && event.sources) {
-          setStreamSources(event.sources);
-        }
-        if (event.type === 'delta' && event.delta) {
-          setStreamingText((current) => current + event.delta);
-        }
-        if (event.type === 'message' && event.message) {
-          setLocalMessages((items) => [...items.filter((item) => item.id !== event.message!.id), event.message!]);
-          setStreamingText('');
-          setStreamSources(event.message.sources ?? []);
-        }
-        if (event.type === 'error') {
-          setError(event.error ?? 'Ошибка генерации ответа');
-        }
-      });
+      await botChatApi.streamMessage(
+        sessionId,
+        { content },
+        (event) => {
+          if (event.type === 'sources' && event.sources) {
+            setStreamSources(event.sources);
+          }
+          if (event.type === 'delta' && event.delta) {
+            setStreamingText((current) => current + event.delta);
+          }
+          if (event.type === 'usage' && event.usage) {
+            setLastUsage(event.usage);
+          }
+          if (event.type === 'message' && event.message) {
+            setLocalMessages((items) => [...items.filter((item) => item.id !== event.message!.id), event.message!]);
+            setStreamingText('');
+            setStreamSources(event.message.sources ?? []);
+          }
+          if (event.type === 'error') {
+            setError(event.error ?? 'Ошибка генерации ответа');
+          }
+        },
+        controller.signal
+      );
       qc.invalidateQueries({ queryKey: queryKeys.botChat.sessions });
       qc.invalidateQueries({ queryKey: queryKeys.botChat.detail(sessionId) });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка генерации ответа');
+      if (controller.signal.aborted) {
+        setError(undefined);
+      } else {
+        setError(err instanceof Error ? err.message : 'Ошибка генерации ответа');
+      }
     } finally {
       setIsStreaming(false);
+      abortRef.current = undefined;
     }
   }
 
@@ -189,12 +211,17 @@ export function BotPlaygroundPage() {
 
           {visibleSources.length > 0 && (
             <div className="rounded-lg border p-3">
-              <div className="mb-2 text-sm font-medium">Источники ответа</div>
-              <div className="flex flex-wrap gap-2">
+              <div className="mb-2 flex items-center justify-between text-sm font-medium">
+                <span>Источники ответа</span>
+                {lastUsage && (
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Токены: {lastUsage.prompt_tokens}+{lastUsage.completion_tokens}={lastUsage.total_tokens}
+                  </span>
+                )}
+              </div>
+              <div className="space-y-2">
                 {visibleSources.map((source) => (
-                  <Badge key={source.source_id} variant="outline" className="h-auto max-w-full justify-start whitespace-normal">
-                    {source.title || source.source_id}
-                  </Badge>
+                  <SourceRow key={source.source_id} source={source} />
                 ))}
               </div>
             </div>
@@ -214,10 +241,17 @@ export function BotPlaygroundPage() {
               disabled={isStreaming}
               className="min-h-20"
             />
-            <Button onClick={sendMessage} disabled={!draft.trim() || isStreaming}>
-              {isStreaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Отправить
-            </Button>
+            {isStreaming ? (
+              <Button variant="outline" onClick={stopStreaming}>
+                <Square className="h-4 w-4" />
+                Стоп
+              </Button>
+            ) : (
+              <Button onClick={sendMessage} disabled={!draft.trim()}>
+                <Send className="h-4 w-4" />
+                Отправить
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -227,13 +261,72 @@ export function BotPlaygroundPage() {
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user';
+  if (message.role === 'tool') return null;
   const Icon = isUser ? User : Bot;
   return (
     <div className={cn('flex items-start gap-3', isUser && 'flex-row-reverse')}>
       <Icon className={cn('mt-1 h-5 w-5', isUser ? 'text-muted-foreground' : 'text-primary')} />
       <div className={cn('max-w-[80%] rounded-lg p-3 text-sm ring-1', isUser ? 'bg-primary text-primary-foreground ring-primary' : 'bg-card ring-border')}>
         <p className="whitespace-pre-wrap">{message.content}</p>
+        {!isUser && <GuardrailVerdict message={message} />}
       </div>
+    </div>
+  );
+}
+
+function GuardrailVerdict({ message }: { message: ChatMessage }) {
+  const action = message.guardrail_action;
+  if (!action || action === 'answer') {
+    if (typeof message.confidence_score !== 'number') return null;
+    return (
+      <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+        <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+        <span>Уверенность {Math.round(message.confidence_score * 100)}%</span>
+      </div>
+    );
+  }
+  const label = action === 'escalate' ? 'Эскалация оператору' : 'Отказ';
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <Badge variant={action === 'escalate' ? 'default' : 'secondary'} className="gap-1">
+        <ShieldAlert className="h-3.5 w-3.5" />
+        {label}
+      </Badge>
+      {message.refusal_reason && <span className="text-muted-foreground">{guardrailReasonLabel(message.refusal_reason)}</span>}
+    </div>
+  );
+}
+
+function guardrailReasonLabel(reason: string): string {
+  switch (reason) {
+    case 'no_context':
+      return 'нет данных в базе знаний';
+    case 'low_confidence':
+      return 'низкая уверенность';
+    case 'missing_citation':
+      return 'нет подтверждающего источника';
+    case 'fabricated_citation':
+      return 'выдуманный источник';
+    case 'prompt_leak':
+      return 'попытка раскрыть инструкции';
+    default:
+      return reason;
+  }
+}
+
+function SourceRow({ source }: { source: ChatSource }) {
+  return (
+    <div className="rounded-md border bg-card/40 p-2 text-xs">
+      <div className="flex items-center gap-2">
+        <Badge variant="outline" className="shrink-0 uppercase">
+          {source.entity_type}
+        </Badge>
+        <span className="truncate font-medium">{source.title || source.source_id}</span>
+        {typeof source.score === 'number' && source.score > 0 && (
+          <span className="ml-auto shrink-0 text-muted-foreground">{source.score.toFixed(3)}</span>
+        )}
+      </div>
+      {source.snippet && <p className="mt-1 line-clamp-2 text-muted-foreground">{source.snippet}</p>}
     </div>
   );
 }

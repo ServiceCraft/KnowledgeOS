@@ -119,8 +119,8 @@ export function ArticleDetailPage() {
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <CommentsPanel entityType="articles" entityId={id!} />
-        <LinksPanel entityType="articles" entityId={id!} />
+        <CommentsPanel entityType="article" entityId={id!} />
+        <LinksPanel entityType="article" entityId={id!} />
       </div>
 
       <ConfirmDialog

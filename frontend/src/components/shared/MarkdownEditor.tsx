@@ -1,4 +1,5 @@
 import MDEditor from '@uiw/react-md-editor';
+import { useUIStore } from '@/stores/uiStore';
 
 interface MarkdownEditorProps {
   value: string;
@@ -7,8 +8,10 @@ interface MarkdownEditorProps {
 }
 
 export function MarkdownEditor({ value, onChange, height = 400 }: MarkdownEditorProps) {
+  const darkMode = useUIStore((s) => s.darkMode);
+
   return (
-    <div data-color-mode="light" className="[.dark_&]:hidden">
+    <div data-color-mode={darkMode ? 'dark' : 'light'}>
       <MDEditor value={value} onChange={(v) => onChange(v ?? '')} height={height} />
     </div>
   );

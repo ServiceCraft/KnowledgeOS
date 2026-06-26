@@ -146,7 +146,7 @@ export interface Call {
   transcript: string;
 }
 
-export interface CallMention {
+export interface QAPairCallMention {
   id: string;
   created_at: string;
   updated_at: string;
@@ -164,13 +164,17 @@ export interface CallMention {
   start_sec?: number;
   end_sec?: number;
   confidence?: number;
+}
+
+export interface CallMention extends QAPairCallMention {
   call_title: string;
   call_occurred_at?: string;
 }
 
 export type ChatRole = 'user' | 'assistant' | 'tool' | 'operator';
 export type ChatChannel = 'playground' | 'api' | 'telegram' | 'max' | 'vk';
-export type ChatState = 'bot' | 'closed';
+export type ChatState = 'bot' | 'waiting_operator' | 'operator' | 'closed';
+export type GuardrailAction = 'answer' | 'refuse' | 'escalate';
 
 export interface ChatSession {
   id: string;
@@ -196,6 +200,12 @@ export interface ChatSource {
   score: number;
 }
 
+export interface ChatToolCall {
+  id?: string;
+  name: string;
+  arguments?: unknown;
+}
+
 export interface ChatMessage {
   id: string;
   created_at: string;
@@ -204,8 +214,13 @@ export interface ChatMessage {
   session_id: string;
   role: ChatRole;
   content: string;
-  tool_calls: unknown[];
+  tool_call_id?: string;
+  tool_calls: ChatToolCall[];
   sources: ChatSource[];
+  guardrail_action?: GuardrailAction;
+  confidence_score?: number | null;
+  refusal_reason?: string;
+  cited_source_ids?: string[];
   tokens_prompt: number;
   tokens_completion: number;
 }

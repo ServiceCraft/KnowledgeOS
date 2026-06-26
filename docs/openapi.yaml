@@ -2111,6 +2111,27 @@ components:
         enabled_modules:
           type: object
           additionalProperties: true
+        min_retrieval_score:
+          type: number
+          format: double
+          minimum: 0
+          description: Порог релевантности RAG (Б5). 0 отключает гейт по score.
+        min_confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Порог уверенности ответа (Б5). 0 отключает авто-отказ по confidence.
+        allowed_theme_ids:
+          type: array
+          items: { type: string, format: uuid }
+          description: Разрешённые темы (Б5). Пустой список — без ограничения по теме.
+        escalate_on_low_confidence:
+          type: boolean
+          description: Эскалировать на оператора вместо простого отказа при срабатывании guardrail.
+        require_citations:
+          type: boolean
+          description: Требовать валидную цитату источника, иначе отказ.
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     UpdateBotSettingsRequest:
@@ -2128,6 +2149,13 @@ components:
         enabled_modules:
           type: object
           additionalProperties: true
+        min_retrieval_score: { type: number, format: double, minimum: 0 }
+        min_confidence: { type: number, format: double, minimum: 0, maximum: 1 }
+        allowed_theme_ids:
+          type: array
+          items: { type: string, format: uuid }
+        escalate_on_low_confidence: { type: boolean }
+        require_citations: { type: boolean }
     SecretKind:
       type: string
       enum: [llm, telegram, max, vk, bitrix24]
@@ -2205,10 +2233,17 @@ components:
       enum: [playground, api, telegram, max, vk]
     ChatState:
       type: string
-      enum: [bot, closed]
+      enum: [bot, waiting_operator, operator, closed]
     ChatRole:
       type: string
       enum: [user, assistant, tool, operator]
+    GuardrailAction:
+      type: string
+      enum: [answer, refuse, escalate]
+      default: answer
+      description: |
+        Решение guardrail-слоя (Б5): answer — обычный ответ; refuse — штатный
+        отказ; escalate — отказ с сигналом передать диалог оператору.
     CreateChatSessionRequest:
       type: object
       properties:
@@ -2263,12 +2298,32 @@ components:
             session_id: { type: string, format: uuid }
             role: { $ref: '#/components/schemas/ChatRole' }
             content: { type: string }
+            tool_call_id:
+              type: string
+              description: Для сообщений с ролью tool — id вызова инструмента (ToolCall.id).
             tool_calls:
               type: array
               items: { $ref: '#/components/schemas/ToolCall' }
             sources:
               type: array
               items: { $ref: '#/components/schemas/ChatSource' }
+            guardrail_action: { $ref: '#/components/schemas/GuardrailAction' }
+            confidence_score:
+              type: [number, "null"]
+              format: double
+              minimum: 0
+              maximum: 1
+              description: Оценка уверенности guardrail-слоя (Б5), 0..1; null до вызова LLM.
+            refusal_reason:
+              type: string
+              description: |
+                Причина отказа/эскалации, если guardrail_action != answer
+                (no_context, low_confidence, missing_citation,
+                fabricated_citation, prompt_leak).
+            cited_source_ids:
+              type: array
+              items: { type: string }
+              description: source_id валидно процитированных источников.
             tokens_prompt: { type: integer, minimum: 0 }
             tokens_completion: { type: integer, minimum: 0 }
     ChatSessionWithMessages:

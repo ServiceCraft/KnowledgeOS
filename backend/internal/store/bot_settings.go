@@ -45,6 +45,11 @@ func (s *BotSettingsStore) Upsert(ctx context.Context, companyID uuid.UUID, sett
 			"persona_tone",
 			"persona_rules",
 			"enabled_modules",
+			"min_retrieval_score",
+			"min_confidence",
+			"allowed_theme_ids",
+			"escalate_on_low_confidence",
+			"require_citations",
 			"updated_at",
 		}),
 	}).Create(settings).Error

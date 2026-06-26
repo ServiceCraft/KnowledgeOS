@@ -13,6 +13,7 @@ import { QADetailPage } from '@/pages/qa/QADetailPage';
 import { ThemesPage } from '@/pages/themes/ThemesPage';
 import { PricingPage } from '@/pages/pricing/PricingPage';
 import { ArticleListPage } from '@/pages/articles/ArticleListPage';
+import { ArticleCreatePage } from '@/pages/articles/ArticleCreatePage';
 import { ArticleDetailPage } from '@/pages/articles/ArticleDetailPage';
 import { FAQPage } from '@/pages/faq/FAQPage';
 import { SearchPage } from '@/pages/search/SearchPage';
@@ -60,6 +61,9 @@ export default function App() {
                 <Route path="/kb/themes" element={<ThemesPage />} />
                 <Route path="/kb/pricing" element={<PricingPage />} />
                 <Route path="/kb/articles" element={<ArticleListPage />} />
+                <Route element={<ProtectedRoute minimumRole="editor" />}>
+                  <Route path="/kb/articles/new" element={<ArticleCreatePage />} />
+                </Route>
                 <Route path="/kb/articles/:id" element={<ArticleDetailPage />} />
                 <Route path="/kb/faq" element={<FAQPage />} />
                 <Route path="/kb/search" element={<SearchPage />} />

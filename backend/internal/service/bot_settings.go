@@ -32,6 +32,12 @@ type UpdateBotSettingsRequest struct {
 	PersonaTone    *string              `json:"persona_tone"`
 	PersonaRules   *string              `json:"persona_rules"`
 	EnabledModules json.RawMessage      `json:"enabled_modules"`
+
+	MinRetrievalScore       *float64        `json:"min_retrieval_score"`
+	MinConfidence           *float64        `json:"min_confidence"`
+	AllowedThemeIDs         json.RawMessage `json:"allowed_theme_ids"`
+	EscalateOnLowConfidence *bool           `json:"escalate_on_low_confidence"`
+	RequireCitations        *bool           `json:"require_citations"`
 }
 
 // Get executes the service.BotSettingsService.Get operation.
@@ -128,6 +134,31 @@ func (s *BotSettingsService) Update(ctx context.Context, companyID uuid.UUID, re
 		}
 		current.EnabledModules = modules
 	}
+	if req.MinRetrievalScore != nil {
+		if *req.MinRetrievalScore < 0 {
+			return nil, badRequest("min_retrieval_score must be >= 0")
+		}
+		current.MinRetrievalScore = *req.MinRetrievalScore
+	}
+	if req.MinConfidence != nil {
+		if *req.MinConfidence < 0 || *req.MinConfidence > 1 {
+			return nil, badRequest("min_confidence must be between 0 and 1")
+		}
+		current.MinConfidence = *req.MinConfidence
+	}
+	if len(req.AllowedThemeIDs) > 0 {
+		themes, err := normalizeThemeIDList(req.AllowedThemeIDs)
+		if err != nil {
+			return nil, badRequest("allowed_theme_ids must be an array of UUIDs")
+		}
+		current.AllowedThemeIDs = themes
+	}
+	if req.EscalateOnLowConfidence != nil {
+		current.EscalateOnLowConfidence = *req.EscalateOnLowConfidence
+	}
+	if req.RequireCitations != nil {
+		current.RequireCitations = *req.RequireCitations
+	}
 
 	if err := s.settings.Upsert(ctx, companyID, current); err != nil {
 		applog.From(ctx).Error().Err(err).Str("company_id", companyID.String()).Msg("bot settings update failed")
@@ -158,12 +189,21 @@ func DefaultBotSettings(companyID uuid.UUID) *domain.BotSettings {
 		PersonaTone:    "friendly_professional",
 		PersonaRules:   "",
 		EnabledModules: json.RawMessage(`{}`),
+
+		MinRetrievalScore:       0,
+		MinConfidence:           0,
+		AllowedThemeIDs:         json.RawMessage(`[]`),
+		EscalateOnLowConfidence: false,
+		RequireCitations:        false,
 	}
 }
 
 func normalizeBotSettings(settings *domain.BotSettings) {
 	if len(settings.EnabledModules) == 0 {
 		settings.EnabledModules = json.RawMessage(`{}`)
+	}
+	if len(settings.AllowedThemeIDs) == 0 {
+		settings.AllowedThemeIDs = json.RawMessage(`[]`)
 	}
 	if settings.Provider == "" {
 		settings.Provider = domain.BotProviderYandex
@@ -180,6 +220,21 @@ func normalizeBotSettings(settings *domain.BotSettings) {
 	if settings.PersonaTone == "" {
 		settings.PersonaTone = "friendly_professional"
 	}
+}
+
+func normalizeThemeIDList(raw json.RawMessage) (json.RawMessage, error) {
+	if len(raw) == 0 {
+		return json.RawMessage(`[]`), nil
+	}
+	var ids []uuid.UUID
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return nil, err
+	}
+	out, err := json.Marshal(ids)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(out), nil
 }
 
 func normalizeJSONObject(raw json.RawMessage) (json.RawMessage, error) {
