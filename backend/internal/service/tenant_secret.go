@@ -164,6 +164,34 @@ func (s *TenantSecretService) GetPlaintext(ctx context.Context, companyID uuid.U
 	return string(plaintext), nil
 }
 
+// GetPlaintextWithMetadata decrypts a tenant secret and returns its public
+// metadata for internal integrations that need both the token and webhook config.
+func (s *TenantSecretService) GetPlaintextWithMetadata(ctx context.Context, companyID uuid.UUID, kind domain.SecretKind) (string, json.RawMessage, error) {
+	applog.TraceCall(ctx, "service.TenantSecretService.GetPlaintextWithMetadata")
+	if !domain.ValidSecretKind(kind) {
+		return "", nil, badRequest("invalid secret kind")
+	}
+	if s.cipher == nil {
+		return "", nil, badRequest("SECRETS_ENCRYPTION_KEY is not configured")
+	}
+	secret, err := s.secrets.Get(ctx, companyID, kind)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil, notFound("secret not found")
+		}
+		return "", nil, err
+	}
+	plaintext, err := s.cipher.Decrypt(secret.Ciphertext, secret.Nonce)
+	if err != nil {
+		applog.From(ctx).Error().Err(err).
+			Str("company_id", companyID.String()).
+			Str("kind", string(kind)).
+			Msg("tenant secret decrypt failed")
+		return "", nil, err
+	}
+	return string(plaintext), normalizeJSONRaw(secret.Metadata), nil
+}
+
 func secretStatus(secret *domain.TenantSecret) *domain.TenantSecretStatus {
 	updatedAt := secret.UpdatedAt
 	return &domain.TenantSecretStatus{

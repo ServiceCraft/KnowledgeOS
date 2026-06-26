@@ -487,6 +487,16 @@ func (r *fakeChatRepo) GetSession(_ context.Context, companyID uuid.UUID, id uui
 	return &copy, nil
 }
 
+func (r *fakeChatRepo) GetSessionByExternal(_ context.Context, companyID uuid.UUID, channel domain.ChatChannel, externalChatID string) (*domain.ChatSession, error) {
+	for _, session := range r.sessions {
+		if session.CompanyID == companyID && session.Channel == channel && session.ExternalChatID != nil && *session.ExternalChatID == externalChatID && session.State != domain.ChatStateClosed {
+			copy := *session
+			return &copy, nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+
 func (r *fakeChatRepo) UpdateSession(_ context.Context, companyID uuid.UUID, session *domain.ChatSession) error {
 	if _, err := r.GetSession(context.Background(), companyID, session.ID); err != nil {
 		return err

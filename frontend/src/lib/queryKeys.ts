@@ -68,6 +68,7 @@ export const queryKeys = {
   botAdmin: {
     settings: ['botAdmin', 'settings'] as const,
     secrets: ['botAdmin', 'secrets'] as const,
+    channels: ['botAdmin', 'channels'] as const,
   },
   rag: {
     status: ['rag', 'status'] as const,

@@ -287,6 +287,17 @@ export interface TenantSecretStatus {
   updated_at?: string;
 }
 
+export interface ChannelStatus {
+  channel: Extract<ChatChannel, 'telegram' | 'max' | 'vk'>;
+  secret_kind: Extract<SecretKind, 'telegram' | 'max' | 'vk'>;
+  configured: boolean;
+  enabled: boolean;
+  bot_enabled: boolean;
+  webhook_url: string;
+  metadata: Record<string, unknown>;
+  updated_at?: string;
+}
+
 export interface RagIndexStatus {
   embeddings: number;
   jobs: Record<string, number>;

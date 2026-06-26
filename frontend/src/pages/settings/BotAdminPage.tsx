@@ -28,11 +28,12 @@ import {
   useBotSettings,
   useUpdateBotSettings,
   useBotSecrets,
+  useChannelStatus,
   useSetBotSecret,
   useDeleteBotSecret,
 } from '@/hooks/useBotAdmin';
 import { useRagIndexStatus, useRagReindex, useRagSearch } from '@/hooks/useRag';
-import type { BotSettings, SecretKind, TenantSecretStatus } from '@/types';
+import type { BotSettings, ChannelStatus, SecretKind, TenantSecretStatus } from '@/types';
 import { toast } from 'sonner';
 import { Loader2, RefreshCw } from 'lucide-react';
 
@@ -50,6 +51,43 @@ const SECRET_LABELS: Record<SecretKind, string> = {
   vk: 'ВКонтакте',
   bitrix24: 'Битрикс24',
 };
+
+const CHANNEL_LABELS: Record<ChannelStatus['channel'], string> = {
+  telegram: 'Telegram',
+  max: 'MAX',
+  vk: 'ВКонтакте',
+};
+
+const CHANNEL_METADATA_FIELDS: Record<ChannelStatus['channel'], Array<{ key: string; label: string; placeholder?: string }>> = {
+  telegram: [
+    { key: 'webhook_secret', label: 'Webhook secret token', placeholder: 'Секрет для X-Telegram-Bot-Api-Secret-Token' },
+  ],
+  max: [
+    { key: 'webhook_secret', label: 'Webhook secret', placeholder: 'Секрет для X-Max-Bot-Api-Secret' },
+    { key: 'api_base', label: 'API base URL', placeholder: 'https://botapi.max.ru' },
+  ],
+  vk: [
+    { key: 'secret', label: 'Callback secret', placeholder: 'Секрет Callback API' },
+    { key: 'confirmation_token', label: 'Confirmation token', placeholder: 'Строка подтверждения VK' },
+    { key: 'group_id', label: 'Group ID', placeholder: 'ID сообщества' },
+  ],
+};
+
+function channelModules(enabledModules?: Record<string, unknown>) {
+  const raw = enabledModules?.channels;
+  if (typeof raw === 'boolean') {
+    return { telegram: raw, max: raw, vk: raw };
+  }
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const data = raw as Record<string, unknown>;
+    return {
+      telegram: data.telegram === true,
+      max: data.max === true,
+      vk: data.vk === true,
+    };
+  }
+  return { telegram: false, max: false, vk: false };
+}
 
 function SettingsTab() {
   const { data, isLoading, isError } = useBotSettings();
@@ -75,6 +113,7 @@ function SettingsTab() {
         persona_name: form.persona_name,
         persona_tone: form.persona_tone,
         persona_rules: form.persona_rules,
+        enabled_modules: form.enabled_modules,
         min_retrieval_score: form.min_retrieval_score,
         min_confidence: form.min_confidence,
         escalate_on_low_confidence: form.escalate_on_low_confidence,
@@ -365,6 +404,166 @@ function SecretsTab() {
   );
 }
 
+function ChannelsTab() {
+  const { data: statuses, isLoading, isError } = useChannelStatus();
+  const { data: settings } = useBotSettings();
+  const updateSettings = useUpdateBotSettings();
+  const setSecret = useSetBotSecret();
+  const [editing, setEditing] = useState<ChannelStatus | null>(null);
+  const [token, setToken] = useState('');
+  const [metadata, setMetadata] = useState<Record<string, string>>({});
+
+  if (isLoading) return <LoadingState />;
+  if (isError) return <ErrorState message="Не удалось загрузить статус каналов." />;
+
+  const modules = channelModules(settings?.enabled_modules);
+
+  const openEditor = (status: ChannelStatus) => {
+    const next: Record<string, string> = {};
+    for (const field of CHANNEL_METADATA_FIELDS[status.channel]) {
+      const value = status.metadata?.[field.key];
+      next[field.key] = typeof value === 'string' ? value : value == null ? '' : String(value);
+    }
+    setEditing(status);
+    setToken('');
+    setMetadata(next);
+  };
+
+  const saveChannelSecret = () => {
+    if (!editing || !token.trim()) return;
+    const cleanMetadata = Object.fromEntries(
+      Object.entries(metadata)
+        .map(([key, value]) => [key, value.trim()])
+        .filter(([, value]) => value)
+    );
+    setSecret.mutate(
+      { kind: editing.secret_kind, data: { value: token.trim(), metadata: cleanMetadata } },
+      {
+        onSuccess: () => {
+          setEditing(null);
+          setToken('');
+          setMetadata({});
+          toast.success('Канал сохранён');
+        },
+        onError: () => toast.error('Не удалось сохранить канал'),
+      }
+    );
+  };
+
+  const toggleChannel = (channel: ChannelStatus['channel'], enabled: boolean) => {
+    if (!settings) return;
+    const current = channelModules(settings.enabled_modules);
+    const enabled_modules = {
+      ...(settings.enabled_modules ?? {}),
+      channels: { ...current, [channel]: enabled },
+    };
+    updateSettings.mutate(
+      { enabled_modules },
+      {
+        onSuccess: () => toast.success('Настройки каналов сохранены'),
+        onError: () => toast.error('Не удалось сохранить настройки каналов'),
+      }
+    );
+  };
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      {(statuses ?? []).map((status) => (
+        <Card key={status.channel}>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-base">{CHANNEL_LABELS[status.channel]}</CardTitle>
+                <CardDescription>Публичный webhook и настройки канала</CardDescription>
+              </div>
+              <Badge variant={status.configured ? 'secondary' : 'outline'}>
+                {status.configured ? 'Настроен' : 'Не задан'}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-3">
+              <Label htmlFor={`channel-${status.channel}`}>Канал включён</Label>
+              <input
+                id={`channel-${status.channel}`}
+                type="checkbox"
+                checked={modules[status.channel]}
+                disabled={!settings || updateSettings.isPending}
+                onChange={(e) => toggleChannel(status.channel, e.target.checked)}
+              />
+              {!status.bot_enabled && (
+                <span className="text-xs text-muted-foreground">Бот выключен в основных настройках</span>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Webhook URL</Label>
+              <div className="flex gap-2">
+                <Input value={status.webhook_url} readOnly />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(status.webhook_url);
+                    toast.success('Webhook URL скопирован');
+                  }}
+                >
+                  Скопировать
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={() => openEditor(status)}>
+                {status.configured ? 'Обновить токен и параметры' : 'Настроить'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+
+      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editing ? CHANNEL_LABELS[editing.channel] : 'Канал'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="channel-token">Токен бота</Label>
+              <Input
+                id="channel-token"
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="Введите токен заново при сохранении"
+                autoFocus
+              />
+            </div>
+            {editing &&
+              CHANNEL_METADATA_FIELDS[editing.channel].map((field) => (
+                <div className="space-y-2" key={field.key}>
+                  <Label htmlFor={`metadata-${field.key}`}>{field.label}</Label>
+                  <Input
+                    id={`metadata-${field.key}`}
+                    value={metadata[field.key] ?? ''}
+                    placeholder={field.placeholder}
+                    onChange={(e) => setMetadata((m) => ({ ...m, [field.key]: e.target.value }))}
+                  />
+                </div>
+              ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)}>Отмена</Button>
+            <Button onClick={saveChannelSecret} disabled={!token.trim() || setSecret.isPending}>
+              Сохранить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 function RagTab() {
   const { data: status, isLoading } = useRagIndexStatus();
   const reindex = useRagReindex();
@@ -463,11 +662,15 @@ export function BotAdminPage() {
       <Tabs defaultValue="settings">
         <TabsList>
           <TabsTrigger value="settings">Настройки</TabsTrigger>
+          <TabsTrigger value="channels">Каналы</TabsTrigger>
           <TabsTrigger value="secrets">Секреты</TabsTrigger>
           <TabsTrigger value="rag">База знаний</TabsTrigger>
         </TabsList>
         <TabsContent value="settings" className="mt-4">
           <SettingsTab />
+        </TabsContent>
+        <TabsContent value="channels" className="mt-4">
+          <ChannelsTab />
         </TabsContent>
         <TabsContent value="secrets" className="mt-4">
           <SecretsTab />

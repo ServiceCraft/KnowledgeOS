@@ -9,23 +9,24 @@ import (
 )
 
 type Handlers struct {
-	Auth    *AuthHandler
-	QA      *QAHandler
-	Theme   *ThemeHandler
-	Pricing *PricingHandler
-	Article *ArticleHandler
-	Comment *CommentHandler
-	Link    *LinkHandler
-	Search  *SearchHandler
-	Export  *ExportHandler
-	Sync    *SyncHandler
-	Admin   *AdminHandler
-	User    *UserHandler
-	Call    *CallHandler
-	Backup  *BackupHandler
-	Bot     *BotHandler
-	RAG     *RAGHandler
-	Chat    *ChatHandler
+	Auth     *AuthHandler
+	QA       *QAHandler
+	Theme    *ThemeHandler
+	Pricing  *PricingHandler
+	Article  *ArticleHandler
+	Comment  *CommentHandler
+	Link     *LinkHandler
+	Search   *SearchHandler
+	Export   *ExportHandler
+	Sync     *SyncHandler
+	Admin    *AdminHandler
+	User     *UserHandler
+	Call     *CallHandler
+	Backup   *BackupHandler
+	Bot      *BotHandler
+	RAG      *RAGHandler
+	Chat     *ChatHandler
+	Channels *ChannelWebhookHandler
 }
 
 // writeRoles are allowed to mutate business entities. Viewer (Оператор) is
@@ -44,6 +45,7 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 		// Public
 		r.Post("/auth/login", h.Auth.Login)
 		r.Post("/auth/refresh", h.Auth.Refresh)
+		r.Post("/webhooks/{channel}/{company_id}", h.Channels.Handle)
 
 		// Protected (JWT + tenant). All reads available to any authenticated
 		// role (viewer included); writes are gated to editor and above.
@@ -136,6 +138,7 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 				r.Get("/admin/bot/secrets", h.Bot.ListSecrets)
 				r.Put("/admin/bot/secrets/{kind}", h.Bot.SetSecret)
 				r.Delete("/admin/bot/secrets/{kind}", h.Bot.DeleteSecret)
+				r.Get("/admin/bot/channels/status", h.Channels.Status)
 				r.Post("/admin/bot/rag/reindex", h.RAG.Reindex)
 				r.Get("/admin/bot/rag/index-status", h.RAG.Status)
 				r.Post("/admin/bot/rag/search", h.RAG.Search)

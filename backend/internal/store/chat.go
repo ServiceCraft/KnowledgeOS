@@ -63,6 +63,20 @@ func (s *ChatStore) GetSession(ctx context.Context, companyID uuid.UUID, id uuid
 	return &session, nil
 }
 
+// GetSessionByExternal executes the store.ChatStore.GetSessionByExternal operation.
+func (s *ChatStore) GetSessionByExternal(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, externalChatID string) (*domain.ChatSession, error) {
+	applog.TraceCall(ctx, "store.ChatStore.GetSessionByExternal")
+	var session domain.ChatSession
+	if err := s.db.WithContext(ctx).
+		Scopes(tenantScope(companyID)).
+		Where("channel = ? AND external_chat_id = ? AND state <> ?", channel, externalChatID, domain.ChatStateClosed).
+		Order("created_at DESC").
+		First(&session).Error; err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
 // UpdateSession executes the store.ChatStore.UpdateSession operation.
 func (s *ChatStore) UpdateSession(ctx context.Context, companyID uuid.UUID, session *domain.ChatSession) error {
 	applog.TraceCall(ctx, "store.ChatStore.UpdateSession")

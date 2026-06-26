@@ -7,6 +7,10 @@ import (
 	"time"
 
 	"github.com/knowledgeos/backend/internal/auth"
+	"github.com/knowledgeos/backend/internal/channels"
+	channelmax "github.com/knowledgeos/backend/internal/channels/max"
+	"github.com/knowledgeos/backend/internal/channels/telegram"
+	"github.com/knowledgeos/backend/internal/channels/vk"
 	"github.com/knowledgeos/backend/internal/chat/tools"
 	"github.com/knowledgeos/backend/internal/config"
 	secretcrypto "github.com/knowledgeos/backend/internal/crypto"
@@ -95,6 +99,15 @@ func main() {
 		tools.NewGetServiceInfoTool(articleSvc, qaSvc, pricingSvc),
 	)
 	chatSvc := service.NewChatService(chatStore, botSettingsSvc, retrieverSvc, llmFactory, chatTools, cfg.BotChatDebugLog)
+	channelGateway := channels.NewGateway(
+		chatStore,
+		chatSvc,
+		botSettingsSvc,
+		tenantSecretSvc,
+		telegram.New(nil),
+		channelmax.New(nil),
+		vk.New(nil),
+	)
 	exportSvc := service.NewExportService(db, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore, callStore, mentionStore)
 	syncSvc := service.NewSyncService(syncStore, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore)
 	callSvc := service.NewCallService(callStore, mentionStore, qaStore)
@@ -116,23 +129,24 @@ func main() {
 
 	// Handlers
 	h := &handler.Handlers{
-		Auth:    handler.NewAuthHandler(authSvc),
-		QA:      handler.NewQAHandler(qaSvc),
-		Theme:   handler.NewThemeHandler(themeSvc),
-		Pricing: handler.NewPricingHandler(pricingSvc),
-		Article: handler.NewArticleHandler(articleSvc),
-		Comment: handler.NewCommentHandler(commentSvc),
-		Link:    handler.NewLinkHandler(linkSvc),
-		Search:  handler.NewSearchHandler(searchSvc),
-		Export:  handler.NewExportHandler(exportSvc, userStore),
-		Sync:    handler.NewSyncHandler(syncSvc),
-		Admin:   handler.NewAdminHandler(adminSvc),
-		User:    handler.NewUserHandler(userSvc),
-		Call:    handler.NewCallHandler(callSvc),
-		Backup:  handler.NewBackupHandler(snapshotSvc),
-		Bot:     handler.NewBotHandler(botSettingsSvc, tenantSecretSvc),
-		RAG:     handler.NewRAGHandler(ragIndexerSvc, retrieverSvc),
-		Chat:    handler.NewChatHandler(chatSvc),
+		Auth:     handler.NewAuthHandler(authSvc),
+		QA:       handler.NewQAHandler(qaSvc),
+		Theme:    handler.NewThemeHandler(themeSvc),
+		Pricing:  handler.NewPricingHandler(pricingSvc),
+		Article:  handler.NewArticleHandler(articleSvc),
+		Comment:  handler.NewCommentHandler(commentSvc),
+		Link:     handler.NewLinkHandler(linkSvc),
+		Search:   handler.NewSearchHandler(searchSvc),
+		Export:   handler.NewExportHandler(exportSvc, userStore),
+		Sync:     handler.NewSyncHandler(syncSvc),
+		Admin:    handler.NewAdminHandler(adminSvc),
+		User:     handler.NewUserHandler(userSvc),
+		Call:     handler.NewCallHandler(callSvc),
+		Backup:   handler.NewBackupHandler(snapshotSvc),
+		Bot:      handler.NewBotHandler(botSettingsSvc, tenantSecretSvc),
+		RAG:      handler.NewRAGHandler(ragIndexerSvc, retrieverSvc),
+		Chat:     handler.NewChatHandler(chatSvc),
+		Channels: handler.NewChannelWebhookHandler(channelGateway),
 	}
 
 	var syncRepo domain.SyncRepository = syncStore

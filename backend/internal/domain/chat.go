@@ -118,6 +118,7 @@ type ChatRepository interface {
 	CreateSession(ctx context.Context, companyID uuid.UUID, session *ChatSession) error
 	ListSessions(ctx context.Context, companyID uuid.UUID, filter ChatSessionFilter) ([]ChatSession, int64, error)
 	GetSession(ctx context.Context, companyID uuid.UUID, id uuid.UUID) (*ChatSession, error)
+	GetSessionByExternal(ctx context.Context, companyID uuid.UUID, channel ChatChannel, externalChatID string) (*ChatSession, error)
 	UpdateSession(ctx context.Context, companyID uuid.UUID, session *ChatSession) error
 	AppendMessage(ctx context.Context, companyID uuid.UUID, message *ChatMessage) error
 	ListMessages(ctx context.Context, companyID uuid.UUID, sessionID uuid.UUID, limit int) ([]ChatMessage, error)

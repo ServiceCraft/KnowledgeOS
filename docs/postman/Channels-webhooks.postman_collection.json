@@ -1,0 +1,59 @@
+{
+  "info": {
+    "name": "KnowledgeOS Channels Webhooks",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8080/api/v1" },
+    { "key": "company_id", "value": "00000000-0000-0000-0000-000000000000" },
+    { "key": "telegram_secret", "value": "change-me" },
+    { "key": "max_secret", "value": "change-me" },
+    { "key": "vk_secret", "value": "change-me" }
+  ],
+  "item": [
+    {
+      "name": "Telegram webhook",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Telegram-Bot-Api-Secret-Token", "value": "{{telegram_secret}}" }
+        ],
+        "url": "{{base_url}}/webhooks/telegram/{{company_id}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"update_id\":1,\"message\":{\"text\":\"Привет\",\"chat\":{\"id\":123}}}"
+        }
+      }
+    },
+    {
+      "name": "MAX webhook",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Max-Bot-Api-Secret", "value": "{{max_secret}}" }
+        ],
+        "url": "{{base_url}}/webhooks/max/{{company_id}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"update_id\":\"1\",\"message\":{\"text\":\"Привет\",\"chat_id\":\"123\"}}"
+        }
+      }
+    },
+    {
+      "name": "VK webhook",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{base_url}}/webhooks/vk/{{company_id}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"type\":\"message_new\",\"secret\":\"{{vk_secret}}\",\"object\":{\"message\":{\"id\":1,\"peer_id\":123,\"text\":\"Привет\"}}}"
+        }
+      }
+    }
+  ]
+}

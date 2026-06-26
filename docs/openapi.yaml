@@ -57,6 +57,8 @@ tags:
     description: Индексация и hybrid retrieval базы знаний.
   - name: Bot Chat
     description: Playground/API чат с ботом.
+  - name: Channels
+    description: Публичные webhook-интеграции Telegram, MAX и VK.
   - name: Import Export
     description: Импорт и экспорт базы знаний.
   - name: Backup
@@ -124,6 +126,45 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /webhooks/{channel}/{company_id}:
+    post:
+      tags: [Channels]
+      operationId: handleChannelWebhook
+      summary: Принять webhook канала
+      description: |
+        Public endpoint без JWT для входящих обновлений Telegram, MAX и VK.
+        Tenant выбирается по `company_id` в URL, а подлинность проверяется
+        channel-specific secret из `tenant_secrets.{channel}.metadata`.
+      security: []
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [telegram, max, vk]
+        - name: company_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Обновление принято или проигнорировано без retry.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Бот или канал выключен.
   /auth/logout:
     post:
       tags: [Auth]
@@ -1220,6 +1261,28 @@ paths:
           description: Удалено.
         '400':
           $ref: '#/components/responses/BadRequest'
+  /admin/bot/channels/status:
+    get:
+      tags: [Channels]
+      operationId: listChannelStatus
+      summary: Получить статус каналов
+      description: |
+        Возвращает настройки Telegram, MAX и VK для текущего tenant: включён ли
+        канал через `enabled_modules.channels`, задан ли token secret, публичный
+        webhook URL и сохранённую metadata без plaintext token.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Статусы каналов.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelStatusArrayEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /admin/bot/rag/reindex:
     post:
       tags: [RAG]
@@ -2179,6 +2242,24 @@ components:
           type: object
           additionalProperties: true
         updated_at: { type: string, format: date-time }
+    ChannelStatus:
+      type: object
+      required: [channel, secret_kind, configured, enabled, bot_enabled, webhook_url, metadata]
+      properties:
+        channel:
+          type: string
+          enum: [telegram, max, vk]
+        secret_kind:
+          type: string
+          enum: [telegram, max, vk]
+        configured: { type: boolean }
+        enabled: { type: boolean }
+        bot_enabled: { type: boolean }
+        webhook_url: { type: string }
+        metadata:
+          type: object
+          additionalProperties: true
+        updated_at: { type: string, format: date-time }
     KBEntityType:
       type: string
       enum: [article, qa, pricing]
@@ -2548,6 +2629,13 @@ components:
         data:
           type: array
           items: { $ref: '#/components/schemas/TenantSecretStatus' }
+    ChannelStatusArrayEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ChannelStatus' }
     RAGIndexStatusEnvelope:
       type: object
       required: [data]

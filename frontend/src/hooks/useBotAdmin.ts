@@ -14,7 +14,10 @@ export function useUpdateBotSettings() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: UpdateBotSettingsRequest) => botAdminApi.updateSettings(data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.botAdmin.settings }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.botAdmin.settings });
+      qc.invalidateQueries({ queryKey: queryKeys.botAdmin.channels });
+    },
   });
 }
 
@@ -25,12 +28,22 @@ export function useBotSecrets() {
   });
 }
 
+export function useChannelStatus() {
+  return useQuery({
+    queryKey: queryKeys.botAdmin.channels,
+    queryFn: botAdminApi.getChannelStatus,
+  });
+}
+
 export function useSetBotSecret() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ kind, data }: { kind: string; data: SetSecretRequest }) =>
       botAdminApi.setSecret(kind, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.botAdmin.secrets }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.botAdmin.secrets });
+      qc.invalidateQueries({ queryKey: queryKeys.botAdmin.channels });
+    },
   });
 }
 
@@ -38,6 +51,9 @@ export function useDeleteBotSecret() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (kind: string) => botAdminApi.deleteSecret(kind),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.botAdmin.secrets }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.botAdmin.secrets });
+      qc.invalidateQueries({ queryKey: queryKeys.botAdmin.channels });
+    },
   });
 }
