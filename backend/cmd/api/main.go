@@ -22,6 +22,9 @@ import (
 func main() {
 	cfg := config.Load()
 	applog.Configure(cfg.LogLevel, cfg.LogFormat, "knowledgeos-api")
+	if cfg.BotChatDebugLog {
+		log.Warn().Msg("BOT_CHAT_DEBUG_LOG enabled: chat prompts and LLM responses are written to logs (may contain PII)")
+	}
 
 	db, err := database.Connect(cfg)
 	if err != nil {
@@ -91,7 +94,7 @@ func main() {
 		tools.NewGetPricingTool(pricingSvc),
 		tools.NewGetServiceInfoTool(articleSvc, qaSvc, pricingSvc),
 	)
-	chatSvc := service.NewChatService(chatStore, botSettingsSvc, retrieverSvc, llmFactory, chatTools)
+	chatSvc := service.NewChatService(chatStore, botSettingsSvc, retrieverSvc, llmFactory, chatTools, cfg.BotChatDebugLog)
 	exportSvc := service.NewExportService(db, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore, callStore, mentionStore)
 	syncSvc := service.NewSyncService(syncStore, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore)
 	callSvc := service.NewCallService(callStore, mentionStore, qaStore)

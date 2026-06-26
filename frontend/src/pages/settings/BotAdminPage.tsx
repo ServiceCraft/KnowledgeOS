@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/number-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -35,12 +36,19 @@ import type { BotSettings, SecretKind, TenantSecretStatus } from '@/types';
 import { toast } from 'sonner';
 import { Loader2, RefreshCw } from 'lucide-react';
 
+const BOOL_LABELS = { true: 'Да', false: 'Нет' } as const;
+
+const MODEL_TIER_LABELS: Record<BotSettings['model_tier'], string> = {
+  lite: 'Лайт',
+  pro: 'Про',
+};
+
 const SECRET_LABELS: Record<SecretKind, string> = {
-  llm: 'LLM API',
+  llm: 'API языковой модели',
   telegram: 'Telegram',
   max: 'MAX',
-  vk: 'VK',
-  bitrix24: 'Bitrix24',
+  vk: 'ВКонтакте',
+  bitrix24: 'Битрикс24',
 };
 
 function SettingsTab() {
@@ -94,11 +102,13 @@ function SettingsTab() {
               onValueChange={(v) => setForm((f) => ({ ...f, enabled: v === 'true' }))}
             >
               <SelectTrigger className="w-32">
-                <SelectValue />
+                <SelectValue>
+                  {form.enabled ? BOOL_LABELS.true : BOOL_LABELS.false}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="true">Да</SelectItem>
-                <SelectItem value="false">Нет</SelectItem>
+                <SelectItem value="true">{BOOL_LABELS.true}</SelectItem>
+                <SelectItem value="false">{BOOL_LABELS.false}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -109,10 +119,14 @@ function SettingsTab() {
                 value={form.model_tier ?? 'lite'}
                 onValueChange={(v) => setForm((f) => ({ ...f, model_tier: v as BotSettings['model_tier'] }))}
               >
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue>
+                    {MODEL_TIER_LABELS[form.model_tier ?? 'lite']}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="lite">Lite</SelectItem>
-                  <SelectItem value="pro">Pro</SelectItem>
+                  <SelectItem value="lite">{MODEL_TIER_LABELS.lite}</SelectItem>
+                  <SelectItem value="pro">{MODEL_TIER_LABELS.pro}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -128,24 +142,24 @@ function SettingsTab() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="temperature">Temperature</Label>
-              <Input
+              <Label htmlFor="temperature">Температура</Label>
+              <NumberInput
                 id="temperature"
-                type="number"
-                step="0.1"
-                min="0"
-                max="2"
+                step={0.1}
+                min={0}
+                max={2}
                 value={form.temperature ?? 0.2}
-                onChange={(e) => setForm((f) => ({ ...f, temperature: parseFloat(e.target.value) }))}
+                onChange={(temperature) => setForm((f) => ({ ...f, temperature }))}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="max_tokens">Max tokens</Label>
-              <Input
+              <Label htmlFor="max_tokens">Макс. токенов</Label>
+              <NumberInput
                 id="max_tokens"
-                type="number"
+                min={1}
+                max={8192}
                 value={form.max_tokens ?? 1024}
-                onChange={(e) => setForm((f) => ({ ...f, max_tokens: parseInt(e.target.value, 10) }))}
+                onChange={(max_tokens) => setForm((f) => ({ ...f, max_tokens }))}
               />
             </div>
           </div>
@@ -187,28 +201,30 @@ function SettingsTab() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Guardrails</CardTitle>
+          <CardTitle className="text-base">Ограничения</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="min_retrieval">Min retrieval score</Label>
-              <Input
+              <Label htmlFor="min_retrieval">Мин. оценка поиска</Label>
+              <NumberInput
                 id="min_retrieval"
-                type="number"
-                step="0.01"
+                step={0.01}
+                min={0}
+                max={1}
                 value={form.min_retrieval_score ?? 0}
-                onChange={(e) => setForm((f) => ({ ...f, min_retrieval_score: parseFloat(e.target.value) }))}
+                onChange={(min_retrieval_score) => setForm((f) => ({ ...f, min_retrieval_score }))}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="min_confidence">Min confidence</Label>
-              <Input
+              <Label htmlFor="min_confidence">Мин. уверенность</Label>
+              <NumberInput
                 id="min_confidence"
-                type="number"
-                step="0.01"
+                step={0.01}
+                min={0}
+                max={1}
                 value={form.min_confidence ?? 0}
-                onChange={(e) => setForm((f) => ({ ...f, min_confidence: parseFloat(e.target.value) }))}
+                onChange={(min_confidence) => setForm((f) => ({ ...f, min_confidence }))}
               />
             </div>
           </div>
@@ -424,7 +440,7 @@ function RagTab() {
                   <div className="flex items-center gap-2 mb-1">
                     <Badge variant="outline">{r.entity_type}</Badge>
                     <span className="font-medium">{r.title}</span>
-                    <span className="text-muted-foreground ml-auto">score {r.score.toFixed(3)}</span>
+                    <span className="text-muted-foreground ml-auto">оценка {r.score.toFixed(3)}</span>
                   </div>
                   <p className="text-muted-foreground line-clamp-2">{r.snippet || r.content}</p>
                 </div>
@@ -448,7 +464,7 @@ export function BotAdminPage() {
         <TabsList>
           <TabsTrigger value="settings">Настройки</TabsTrigger>
           <TabsTrigger value="secrets">Секреты</TabsTrigger>
-          <TabsTrigger value="rag">RAG</TabsTrigger>
+          <TabsTrigger value="rag">База знаний</TabsTrigger>
         </TabsList>
         <TabsContent value="settings" className="mt-4">
           <SettingsTab />

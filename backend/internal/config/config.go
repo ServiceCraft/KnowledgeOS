@@ -53,6 +53,9 @@ type Config struct {
 	RAGIndexMaxAttempts          int
 	RAGVectorTopK                int
 	RAGHybridTopK                int
+
+	// Bot chat debug: log assembled LLM prompts and raw model responses (may contain PII).
+	BotChatDebugLog bool
 }
 
 // DSN executes the config.Config.DSN operation.
@@ -109,6 +112,7 @@ func Load() *Config {
 		RAGIndexMaxAttempts:          ragIndexMaxAttempts,
 		RAGVectorTopK:                ragVectorTopK,
 		RAGHybridTopK:                ragHybridTopK,
+		BotChatDebugLog:              getEnv("BOT_CHAT_DEBUG_LOG", "false") == "true",
 	}
 }
 

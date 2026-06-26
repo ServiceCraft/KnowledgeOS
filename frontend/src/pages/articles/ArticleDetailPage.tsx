@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, Pencil, Trash2, Save, X } from 'lucide-react';
 import { useArticleDetail, useUpdateArticle, useDeleteArticle } from '@/hooks/useArticles';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -33,6 +32,13 @@ export function ArticleDetailPage() {
     setTitle(article.title);
     setBody(article.body);
     setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    if (!article) return;
+    setTitle(article.title);
+    setBody(article.body);
+    setEditing(false);
   };
 
   const handleSave = () => {
@@ -96,7 +102,7 @@ export function ArticleDetailPage() {
               <Save className="h-4 w-4 mr-2" />
               {updateArticle.isPending ? 'Сохранение...' : 'Сохранить'}
             </Button>
-            <Button variant="outline" onClick={() => setEditing(false)}>
+            <Button variant="outline" onClick={cancelEditing}>
               <X className="h-4 w-4 mr-2" />
               Отмена
             </Button>
@@ -104,15 +110,13 @@ export function ArticleDetailPage() {
         )}
       </div>
 
-      <Card>
-        <CardContent className="pt-6">
-          {editing ? (
-            <MarkdownEditor value={body} onChange={setBody} />
-          ) : (
-            <MarkdownViewer source={article.body || '*Контент отсутствует.*'} />
-          )}
-        </CardContent>
-      </Card>
+      {editing ? (
+        <MarkdownEditor value={body} onChange={setBody} />
+      ) : (
+        <div className="rounded-lg border border-border p-6">
+          <MarkdownViewer source={article.body || '*Контент отсутствует.*'} />
+        </div>
+      )}
 
       <p className="text-sm text-muted-foreground">
         Последнее обновление: {new Date(article.updated_at).toLocaleString()}

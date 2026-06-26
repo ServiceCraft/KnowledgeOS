@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, Save, X } from 'lucide-react';
 import { useCreateArticle } from '@/hooks/useArticles';
 import { MarkdownEditor } from '@/components/shared/MarkdownEditor';
@@ -58,11 +57,7 @@ export function ArticleCreatePage() {
         </div>
       </div>
 
-      <Card>
-        <CardContent className="pt-6">
-          <MarkdownEditor value={body} onChange={setBody} height={560} />
-        </CardContent>
-      </Card>
+      <MarkdownEditor value={body} onChange={setBody} />
     </div>
   );
 }

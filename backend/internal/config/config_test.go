@@ -27,6 +27,9 @@ func TestLoadBotYandexDefaults(t *testing.T) {
 	if cfg.YandexEmbeddingDocModel != "" || cfg.YandexEmbeddingQueryModel != "" {
 		t.Fatalf("embedding defaults = %q/%q, want empty env defaults", cfg.YandexEmbeddingDocModel, cfg.YandexEmbeddingQueryModel)
 	}
+	if cfg.BotChatDebugLog {
+		t.Fatalf("BotChatDebugLog = true, want false by default")
+	}
 }
 
 func TestLoadBotYandexCustomValues(t *testing.T) {
@@ -42,11 +45,13 @@ func TestLoadBotYandexCustomValues(t *testing.T) {
 	t.Setenv("YANDEX_MAX_RETRIES", "5")
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("LOG_FORMAT", "console")
+	t.Setenv("BOT_CHAT_DEBUG_LOG", "true")
 
 	cfg := Load()
 	if cfg.SecretsEncryptionKey != "secret-key" ||
 		cfg.LogLevel != "debug" ||
 		cfg.LogFormat != "console" ||
+		cfg.BotChatDebugLog != true ||
 		cfg.YandexEndpoint != "https://example.test/v1" ||
 		cfg.YandexFolderID != "folder" ||
 		cfg.YandexAPIKey != "api-key" ||

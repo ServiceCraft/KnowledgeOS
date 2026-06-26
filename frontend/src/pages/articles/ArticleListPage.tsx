@@ -8,6 +8,7 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { useArticlesList } from '@/hooks/useArticles';
 import { usePermissions } from '@/hooks/usePermissions';
+import { formatArticleExcerpt } from '@/lib/markdown';
 
 export function ArticleListPage() {
   const navigate = useNavigate();
@@ -66,8 +67,8 @@ export function ArticleListPage() {
                 </div>
                 <h3 className="font-medium text-sm leading-snug line-clamp-2 pt-1">{item.title}</h3>
               </div>
-              <p className="text-sm text-muted-foreground line-clamp-3 flex-1">
-                {item.body?.slice(0, 160) || 'Пустая статья'}
+              <p className="text-sm text-muted-foreground line-clamp-4 flex-1 whitespace-pre-line leading-relaxed">
+                {formatArticleExcerpt(item.body)}
               </p>
               <p className="text-xs text-muted-foreground mt-3 pt-3 border-t">
                 {new Date(item.updated_at).toLocaleDateString()}

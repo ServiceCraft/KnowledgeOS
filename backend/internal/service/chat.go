@@ -60,11 +60,19 @@ type ChatService struct {
 	retriever  chatRetriever
 	llmFactory chatLLMFactory
 	toolset    chatToolset
+	debugLog   bool
 }
 
 // NewChatService executes the service.NewChatService operation.
-func NewChatService(chats domain.ChatRepository, settings chatSettingsProvider, retriever chatRetriever, llmFactory chatLLMFactory, toolset chatToolset) *ChatService {
-	return &ChatService{chats: chats, settings: settings, retriever: retriever, llmFactory: llmFactory, toolset: toolset}
+func NewChatService(chats domain.ChatRepository, settings chatSettingsProvider, retriever chatRetriever, llmFactory chatLLMFactory, toolset chatToolset, debugLog bool) *ChatService {
+	return &ChatService{
+		chats:      chats,
+		settings:   settings,
+		retriever:  retriever,
+		llmFactory: llmFactory,
+		toolset:    toolset,
+		debugLog:   debugLog,
+	}
 }
 
 func (s *ChatService) toolDefinitions() []llm.Tool {
@@ -284,6 +292,12 @@ func (s *ChatService) generate(ctx context.Context, companyID, sessionID uuid.UU
 	if !settings.Enabled {
 		return nil, nil, conflict("bot is disabled")
 	}
+	if s.debugLog {
+		applog.From(ctx).Info().
+			Str("company_id", companyID.String()).
+			Str("session_id", sessionID.String()).
+			Msg("chat generate started")
+	}
 	cfg := newGuardrailConfig(settings)
 	toolDefs := s.toolDefinitions()
 	hasTools := len(toolDefs) > 0
@@ -306,6 +320,7 @@ func (s *ChatService) generate(ctx context.Context, companyID, sessionID uuid.UU
 	// refuse before calling the LLM. With tools the model may call
 	// search_knowledge or get_pricing itself, so we still invoke the LLM.
 	if len(sources) == 0 && !hasTools {
+		s.logChatSkippedLLM(ctx, companyID, sessionID, reasonNoContext, len(sources))
 		message := s.refusalMessage(cfg, reasonNoContext, nil, llm.Usage{})
 		s.logTurn(ctx, companyID, sessionID, message, len(sources), 0, false)
 		if err := s.emitAnswer(stream, emit, message); err != nil {
@@ -322,7 +337,7 @@ func (s *ChatService) generate(ctx context.Context, companyID, sessionID uuid.UU
 	var raw rawAnswer
 	usedTools := false
 	if !hasTools {
-		raw, err = s.runSingle(ctx, provider, settings, sources, history, stream)
+		raw, err = s.runSingle(ctx, companyID, sessionID, provider, settings, sources, history, stream)
 	} else {
 		usedTools = true
 		raw, err = s.runToolLoop(ctx, companyID, sessionID, settings, provider, toolDefs, sources, history)
@@ -342,10 +357,11 @@ func (s *ChatService) generate(ctx context.Context, companyID, sessionID uuid.UU
 // runSingle produces an answer without tools. In stream mode it consumes the
 // provider stream but buffers the text: the guardrail post-check may reject the
 // answer, so unvetted tokens must not reach the client.
-func (s *ChatService) runSingle(ctx context.Context, provider llm.Provider, settings *domain.BotSettings, sources []domain.ChatSource, history []domain.ChatMessage, stream bool) (rawAnswer, error) {
+func (s *ChatService) runSingle(ctx context.Context, companyID, sessionID uuid.UUID, provider llm.Provider, settings *domain.BotSettings, sources []domain.ChatSource, history []domain.ChatMessage, stream bool) (rawAnswer, error) {
 	applog.TraceCall(ctx, "service.ChatService.runSingle")
+	messages := buildLLMMessages(settings, sources, false, history)
 	req := llm.ChatRequest{
-		Messages:         buildLLMMessages(settings, sources, false, history),
+		Messages:         messages,
 		GenerationParams: llm.GenerationParams{Temperature: settings.Temperature, MaxTokens: settings.MaxTokens},
 	}
 	if stream {
@@ -364,12 +380,15 @@ func (s *ChatService) runSingle(ctx context.Context, provider llm.Provider, sett
 				usage = chunk.Usage
 			}
 		}
-		return rawAnswer{content: content.String(), sources: sources, usage: usage}, nil
+		response := content.String()
+		s.logLLMExchange(ctx, companyID, sessionID, "single_stream", messages, response, nil)
+		return rawAnswer{content: response, sources: sources, usage: usage}, nil
 	}
 	resp, err := provider.Chat(ctx, req)
 	if err != nil {
 		return rawAnswer{}, err
 	}
+	s.logLLMExchange(ctx, companyID, sessionID, "single", messages, resp.Message.Content, resp.Message.ToolCalls)
 	return rawAnswer{content: resp.Message.Content, sources: sources, usage: resp.Usage}, nil
 }
 
@@ -402,6 +421,7 @@ func (s *ChatService) runToolLoop(ctx context.Context, companyID, sessionID uuid
 		usage = addUsage(usage, resp.Usage)
 
 		calls := resp.Message.ToolCalls
+		s.logLLMExchange(ctx, companyID, sessionID, chatLLMPhaseToolLoop(iter), llmMessages, resp.Message.Content, calls)
 		if len(calls) == 0 {
 			return rawAnswer{content: resp.Message.Content, sources: dedupeSources(collected), usage: usage}, nil
 		}

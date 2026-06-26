@@ -2,6 +2,7 @@ import MDEditor from '@uiw/react-md-editor';
 import '@uiw/react-markdown-preview/markdown.css';
 import { useUIStore } from '@/stores/uiStore';
 import { cn } from '@/lib/utils';
+import { markdownPreviewOptions } from '@/lib/markdown';
 
 interface MarkdownViewerProps {
   source: string;
@@ -16,7 +17,11 @@ export function MarkdownViewer({ source, className }: MarkdownViewerProps) {
       data-color-mode={darkMode ? 'dark' : 'light'}
       className={cn('article-markdown', className)}
     >
-      <MDEditor.Markdown source={source} style={{ backgroundColor: 'transparent' }} />
+      <MDEditor.Markdown
+        source={source}
+        style={{ backgroundColor: 'transparent' }}
+        {...markdownPreviewOptions}
+      />
     </div>
   );
 }
