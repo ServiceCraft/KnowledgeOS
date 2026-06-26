@@ -85,6 +85,81 @@ func CheckCitations(answer string, validIDs map[string]bool) CitationResult {
 	return res
 }
 
+var usedSourcesFooterRe = regexp.MustCompile(`(?i)использованн`)
+
+// StripCitationMarkers removes machine-readable source_id citations from the
+// user-facing answer text. Call only after CheckCitations so guardrails still
+// see the raw model output.
+func StripCitationMarkers(answer string) string {
+	answer = stripInlineCitations(answer)
+	answer = stripCitationFooter(answer)
+	return strings.TrimSpace(answer)
+}
+
+func stripInlineCitations(answer string) string {
+	return citationRe.ReplaceAllStringFunc(answer, func(match string) string {
+		submatch := citationRe.FindStringSubmatch(match)
+		if len(submatch) < 2 {
+			return match
+		}
+		parts := strings.Split(submatch[1], ",")
+		allSourceIDs := true
+		hasToken := false
+		for _, part := range parts {
+			token := strings.TrimSpace(part)
+			if token == "" {
+				continue
+			}
+			hasToken = true
+			if !looksLikeSourceID(token) {
+				allSourceIDs = false
+				break
+			}
+		}
+		if hasToken && allSourceIDs {
+			return ""
+		}
+		return match
+	})
+}
+
+func stripCitationFooter(answer string) string {
+	lines := strings.Split(answer, "\n")
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	for len(lines) > 0 {
+		last := strings.TrimSpace(lines[len(lines)-1])
+		if last == "" {
+			lines = lines[:len(lines)-1]
+			continue
+		}
+		if usedSourcesFooterRe.MatchString(last) || isCitationOnlyLine(last) {
+			lines = lines[:len(lines)-1]
+			continue
+		}
+		break
+	}
+	return strings.Join(lines, "\n")
+}
+
+func isCitationOnlyLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return true
+	}
+	without := stripInlineCitations(trimmed)
+	without = strings.Map(func(r rune) rune {
+		switch r {
+		case '.', ',', ';', ':', ' ':
+			return -1
+		default:
+			return r
+		}
+	}, without)
+	return without == ""
+}
+
 // ConfidenceInput carries the transparent signals used to score an answer.
 type ConfidenceInput struct {
 	SourceCount    int

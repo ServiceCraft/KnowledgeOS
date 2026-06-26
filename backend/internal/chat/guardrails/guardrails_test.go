@@ -88,3 +88,29 @@ func TestLeaksSystemPrompt(t *testing.T) {
 		t.Fatalf("false positive on a normal answer")
 	}
 }
+
+func TestStripCitationMarkers(t *testing.T) {
+	sourceID := "qa:11111111-1111-1111-1111-111111111111:0"
+	raw := "Стерилизация стоит 3500 рублей [" + sourceID + "].\n\nИспользованные источники: [" + sourceID + "]."
+	got := StripCitationMarkers(raw)
+	want := "Стерилизация стоит 3500 рублей ."
+	if got != want {
+		t.Fatalf("StripCitationMarkers() = %q, want %q", got, want)
+	}
+}
+
+func TestStripCitationMarkersKeepsBracketedProse(t *testing.T) {
+	raw := "Это [важно] для клиента."
+	if got := StripCitationMarkers(raw); got != raw {
+		t.Fatalf("StripCitationMarkers() = %q, want prose preserved", got)
+	}
+}
+
+func TestStripCitationMarkersFooterOnly(t *testing.T) {
+	sourceID := "article:22222222-2222-2222-2222-222222222222:1"
+	raw := "Ответ по базе.\nиспользованные источники: [" + sourceID + "]"
+	got := StripCitationMarkers(raw)
+	if got != "Ответ по базе." {
+		t.Fatalf("StripCitationMarkers() = %q", got)
+	}
+}

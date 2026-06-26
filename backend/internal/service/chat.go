@@ -484,6 +484,11 @@ func (s *ChatService) applyGuardrails(cfg guardrailConfig, raw rawAnswer) *domai
 		return msg
 	}
 
+	content = guardrails.StripCitationMarkers(content)
+	if content == "" {
+		content = chatNoAnswerFallback
+	}
+
 	message := assistantMessage(content, nil, sources, raw.usage)
 	message.GuardrailAction = domain.GuardrailActionAnswer
 	message.ConfidenceScore = &confidence

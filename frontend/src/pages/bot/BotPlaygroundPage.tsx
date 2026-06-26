@@ -1,8 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot,
-  ChevronDown,
-  ChevronUp,
   Loader2,
   MessageSquare,
   Plus,
@@ -12,18 +10,22 @@ import {
   Square,
   User,
 } from 'lucide-react';
-import { botChatApi, type ChatStreamEvent } from '@/api/botChat';
+import { botChatApi } from '@/api/botChat';
 import { useChatSession, useChatSessions, useCreateChatSession } from '@/hooks/useBotChat';
-import type { ChatMessage, ChatSource } from '@/types';
+import type { ChatMessage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { queryKeys } from '@/lib/queryKeys';
 import { useQueryClient } from '@tanstack/react-query';
+import { ChatAnswerContent } from '@/components/chat/ChatCitations';
+import { BotTypingIndicator } from '@/components/chat/BotTypingIndicator';
+import { ChatComposer } from '@/components/chat/ChatComposer';
+import { MessageText } from '@/components/chat/MessageText';
+import { formatMessageBody } from '@/lib/chatSources';
 
 export function BotPlaygroundPage() {
   const qc = useQueryClient();
@@ -33,18 +35,26 @@ export function BotPlaygroundPage() {
   const [selectedSessionId, setSelectedSessionId] = useState<string>();
   const [draft, setDraft] = useState('');
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
-  const [streamingText, setStreamingText] = useState('');
-  const [streamSources, setStreamSources] = useState<ChatSource[]>([]);
   const [error, setError] = useState<string>();
   const [isStreaming, setIsStreaming] = useState(false);
-  const [lastUsage, setLastUsage] = useState<ChatStreamEvent['usage']>();
-  const [showSources, setShowSources] = useState(false);
   const abortRef = useRef<AbortController | undefined>(undefined);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const loadedSessionRef = useRef<string | undefined>(undefined);
+  const pendingInitialScrollRef = useRef(false);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto', force = false) => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (!force && distanceFromBottom > 120 && behavior === 'auto') return;
+    container.scrollTo({ top: container.scrollHeight, behavior });
+  }, []);
 
   const sessionQuery = useChatSession(selectedSessionId);
   const sessions = useMemo(() => sessionsQuery.data?.data ?? [], [sessionsQuery.data?.data]);
   const sessionsTotal = sessionsQuery.data?.total ?? 0;
   const sessionsTotalPages = Math.ceil(sessionsTotal / 30) || 1;
+  const showTypingIndicator = isStreaming && localMessages[localMessages.length - 1]?.role === 'user';
 
   useEffect(() => {
     if (!selectedSessionId && sessions.length > 0) {
@@ -53,16 +63,32 @@ export function BotPlaygroundPage() {
   }, [selectedSessionId, sessions]);
 
   useEffect(() => {
-    if (sessionQuery.data?.messages) {
-      setLocalMessages(sessionQuery.data.messages);
-    }
-  }, [sessionQuery.data?.messages]);
+    setLocalMessages([]);
+    loadedSessionRef.current = undefined;
+    pendingInitialScrollRef.current = true;
+  }, [selectedSessionId]);
 
-  const visibleSources = useMemo(() => {
-    if (streamSources.length > 0) return streamSources;
-    const lastAssistant = [...localMessages].reverse().find((m) => m.role === 'assistant');
-    return lastAssistant?.sources ?? [];
-  }, [localMessages, streamSources]);
+  useEffect(() => {
+    const data = sessionQuery.data;
+    if (!data || data.session.id !== selectedSessionId) return;
+    if (loadedSessionRef.current === selectedSessionId) return;
+    loadedSessionRef.current = selectedSessionId;
+    setLocalMessages(data.messages);
+    pendingInitialScrollRef.current = true;
+  }, [sessionQuery.data, selectedSessionId]);
+
+  useEffect(() => {
+    if (localMessages.length === 0 && !showTypingIndicator) return;
+    const force = pendingInitialScrollRef.current;
+    const run = () => scrollToBottom('auto', force);
+    requestAnimationFrame(() => {
+      run();
+      requestAnimationFrame(() => {
+        run();
+        pendingInitialScrollRef.current = false;
+      });
+    });
+  }, [localMessages, showTypingIndicator, scrollToBottom]);
 
   async function ensureSession() {
     if (selectedSessionId) return selectedSessionId;
@@ -76,8 +102,6 @@ export function BotPlaygroundPage() {
     const created = await createSession.mutateAsync({ channel: 'playground' });
     setSelectedSessionId(created.id);
     setLocalMessages([]);
-    setStreamingText('');
-    setStreamSources([]);
   }
 
   function stopStreaming() {
@@ -89,10 +113,6 @@ export function BotPlaygroundPage() {
     if (!content || isStreaming) return;
     setDraft('');
     setError(undefined);
-    setStreamingText('');
-    setStreamSources([]);
-    setShowSources(false);
-    setLastUsage(undefined);
     const sessionId = await ensureSession();
     const optimistic: ChatMessage = {
       id: `local-${Date.now()}`,
@@ -116,19 +136,8 @@ export function BotPlaygroundPage() {
         sessionId,
         { content },
         (event) => {
-          if (event.type === 'sources' && event.sources) {
-            setStreamSources(event.sources);
-          }
-          if (event.type === 'delta' && event.delta) {
-            setStreamingText((current) => current + event.delta);
-          }
-          if (event.type === 'usage' && event.usage) {
-            setLastUsage(event.usage);
-          }
           if (event.type === 'message' && event.message) {
-            setLocalMessages((items) => [...items.filter((item) => item.id !== event.message!.id), event.message!]);
-            setStreamingText('');
-            setStreamSources(event.message.sources ?? []);
+            setLocalMessages((items) => [...items, event.message!]);
           }
           if (event.type === 'error') {
             setError(event.error ?? 'Ошибка генерации ответа');
@@ -136,7 +145,7 @@ export function BotPlaygroundPage() {
         },
         controller.signal
       );
-      qc.invalidateQueries({ queryKey: queryKeys.botChat.all });
+      qc.invalidateQueries({ queryKey: queryKeys.botChat.sessions(sessionsPage) });
       qc.invalidateQueries({ queryKey: queryKeys.botChat.detail(sessionId) });
     } catch (err) {
       if (controller.signal.aborted) {
@@ -227,72 +236,32 @@ export function BotPlaygroundPage() {
             </Alert>
           )}
 
-          <ScrollArea className="min-h-0 flex-1 rounded-lg border bg-muted/20 p-4">
+          <div
+            ref={scrollContainerRef}
+            className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-muted/20 p-4"
+          >
             <div className="space-y-4 pr-3">
               {localMessages.map((message) => (
                 <MessageBubble key={message.id} message={message} />
               ))}
-              {streamingText && (
-                <div className="flex items-start gap-3">
-                  <Bot className="mt-1 h-5 w-5 text-primary" />
-                  <div className="max-w-[80%] rounded-lg bg-card p-3 text-sm ring-1 ring-border">
-                    <p className="whitespace-pre-wrap">{streamingText}</p>
-                  </div>
-                </div>
-              )}
-              {localMessages.length === 0 && !streamingText && (
+              {showTypingIndicator && <BotTypingIndicator />}
+              {localMessages.length === 0 && !isStreaming && (
                 <div className="flex h-48 flex-col items-center justify-center text-center text-muted-foreground">
                   <Bot className="mb-3 h-8 w-8" />
                   <p className="text-sm">Задайте вопрос по базе знаний, статьям или прайсу.</p>
                 </div>
               )}
             </div>
-          </ScrollArea>
-
-          {visibleSources.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
-                  onClick={() => setShowSources((v) => !v)}
-                >
-                  {showSources ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                  {showSources ? 'Скрыть источники' : `Показать источники (${visibleSources.length})`}
-                </Button>
-                {lastUsage && (
-                  <span className="text-xs text-muted-foreground">
-                    {lastUsage.prompt_tokens}+{lastUsage.completion_tokens}={lastUsage.total_tokens} ток.
-                  </span>
-                )}
-              </div>
-              {showSources && (
-                <ScrollArea className="max-h-40 rounded-md border bg-muted/20 p-2">
-                  <div className="space-y-2 pr-2">
-                    {visibleSources.map((source) => (
-                      <SourceRow key={source.source_id} source={source} />
-                    ))}
-                  </div>
-                </ScrollArea>
-              )}
-            </div>
-          )}
+          </div>
 
           <div className="flex items-end gap-2">
-            <Textarea
+            <ChatComposer
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  sendMessage();
-                }
-              }}
-              placeholder="Введите сообщение. Ctrl/⌘ + Enter отправляет."
+              onChange={setDraft}
+              onSubmit={sendMessage}
               disabled={isStreaming}
-              className="min-h-20"
+              placeholder="Введите сообщение. Ctrl/⌘ + Enter отправляет."
+              className="flex-1"
             />
             {isStreaming ? (
               <Button variant="outline" onClick={stopStreaming}>
@@ -312,27 +281,31 @@ export function BotPlaygroundPage() {
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user';
   if (message.role === 'tool') return null;
   const Icon = isUser ? User : Bot;
+  const body = isUser ? message.content.trim() : formatMessageBody(message.content);
   return (
-    <div className={cn('flex items-start gap-3', isUser && 'flex-row-reverse')}>
-      <Icon className={cn('mt-1 h-5 w-5', isUser ? 'text-muted-foreground' : 'text-primary')} />
+    <div className={cn('flex select-none items-start gap-3', isUser && 'flex-row-reverse')}>
+      <Icon className={cn('mt-1 h-5 w-5 shrink-0', isUser ? 'text-muted-foreground' : 'text-primary')} />
       <div className={cn('max-w-[80%] rounded-lg p-3 text-sm ring-1', isUser ? 'bg-primary text-primary-foreground ring-primary' : 'bg-card ring-border')}>
-        <p className="whitespace-pre-wrap">{message.content}</p>
+        {isUser ? (
+          <MessageText text={body} />
+        ) : (
+          <ChatAnswerContent message={message} />
+        )}
         {!isUser && <GuardrailVerdict message={message} />}
       </div>
     </div>
   );
-}
-
+});
 function GuardrailVerdict({ message }: { message: ChatMessage }) {
   const action = message.guardrail_action;
   if (!action || action === 'answer') {
     if (typeof message.confidence_score !== 'number') return null;
     return (
-      <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div className="mt-2 flex select-none items-center gap-1.5 text-xs text-muted-foreground">
         <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
         <span>Уверенность {Math.round(message.confidence_score * 100)}%</span>
       </div>
@@ -340,7 +313,7 @@ function GuardrailVerdict({ message }: { message: ChatMessage }) {
   }
   const label = action === 'escalate' ? 'Эскалация оператору' : 'Отказ';
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+    <div className="mt-2 flex select-none flex-wrap items-center gap-2 text-xs">
       <Badge variant={action === 'escalate' ? 'default' : 'secondary'} className="gap-1">
         <ShieldAlert className="h-3.5 w-3.5" />
         {label}
@@ -367,19 +340,3 @@ function guardrailReasonLabel(reason: string): string {
   }
 }
 
-function SourceRow({ source }: { source: ChatSource }) {
-  return (
-    <div className="rounded-md border bg-card/40 p-2 text-xs">
-      <div className="flex items-center gap-2">
-        <Badge variant="outline" className="shrink-0 uppercase">
-          {source.entity_type}
-        </Badge>
-        <span className="truncate font-medium">{source.title || source.source_id}</span>
-        {typeof source.score === 'number' && source.score > 0 && (
-          <span className="ml-auto shrink-0 text-muted-foreground">{source.score.toFixed(3)}</span>
-        )}
-      </div>
-      {source.snippet && <p className="mt-1 line-clamp-2 text-muted-foreground">{source.snippet}</p>}
-    </div>
-  );
-}

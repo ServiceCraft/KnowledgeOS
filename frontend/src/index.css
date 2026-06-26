@@ -132,3 +132,117 @@
     cursor: pointer;
     }
 }
+
+@layer components {
+  .article-markdown .wmde-markdown {
+    background-color: transparent !important;
+    color: inherit;
+    font-family: inherit;
+    font-size: 0.9375rem;
+    line-height: 1.75;
+  }
+
+  .article-markdown .wmde-markdown > :first-child {
+    margin-top: 0;
+  }
+
+  .article-markdown .wmde-markdown > :last-child {
+    margin-bottom: 0;
+  }
+
+  .article-markdown .wmde-markdown h1 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 2rem 0 1rem;
+  }
+
+  .article-markdown .wmde-markdown h2 {
+    font-size: 1.375rem;
+    font-weight: 600;
+    line-height: 1.35;
+    margin: 1.75rem 0 0.75rem;
+  }
+
+  .article-markdown .wmde-markdown h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    line-height: 1.4;
+    margin: 1.5rem 0 0.5rem;
+  }
+
+  .article-markdown .wmde-markdown p {
+    margin: 0 0 1rem;
+  }
+
+  .article-markdown .wmde-markdown ul,
+  .article-markdown .wmde-markdown ol {
+    margin: 0 0 1rem;
+    padding-left: 1.5rem;
+  }
+
+  .article-markdown .wmde-markdown li + li {
+    margin-top: 0.35rem;
+  }
+
+  .article-markdown .wmde-markdown blockquote {
+    margin: 1rem 0;
+    padding: 0.75rem 1rem;
+    border-left: 3px solid var(--border);
+    background: var(--muted);
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    color: var(--muted-foreground);
+  }
+
+  .article-markdown .wmde-markdown code {
+    font-size: 0.875em;
+    padding: 0.15rem 0.35rem;
+    border-radius: var(--radius-sm);
+    background: var(--muted);
+  }
+
+  .article-markdown .wmde-markdown pre {
+    margin: 1rem 0;
+    padding: 1rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background: var(--muted);
+    overflow-x: auto;
+  }
+
+  .article-markdown .wmde-markdown pre code {
+    padding: 0;
+    background: transparent;
+  }
+
+  .article-markdown .wmde-markdown a {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .article-markdown .wmde-markdown table {
+    width: 100%;
+    margin: 1rem 0;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  .article-markdown .wmde-markdown th,
+  .article-markdown .wmde-markdown td {
+    border: 1px solid var(--border);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+  }
+
+  .article-markdown .wmde-markdown th {
+    background: var(--muted);
+    font-weight: 600;
+  }
+
+  .article-markdown .wmde-markdown hr {
+    margin: 1.5rem 0;
+    border: none;
+    border-top: 1px solid var(--border);
+  }
+}

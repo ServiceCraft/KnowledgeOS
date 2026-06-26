@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -282,6 +283,12 @@ func TestChatServiceValidCitationPasses(t *testing.T) {
 	}
 	if exchange.Message.ConfidenceScore == nil || *exchange.Message.ConfidenceScore <= 0.5 {
 		t.Fatalf("confidence = %v, want > 0.5 with a valid citation", exchange.Message.ConfidenceScore)
+	}
+	if strings.Contains(exchange.Message.Content, sourceID) {
+		t.Fatalf("content should not expose raw source_id, got %q", exchange.Message.Content)
+	}
+	if exchange.Message.Content != "Ответ по базе" {
+		t.Fatalf("content = %q, want citation stripped", exchange.Message.Content)
 	}
 }
 
