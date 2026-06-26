@@ -41,6 +41,9 @@ type handlerFakeAdapter struct{}
 
 func (a *handlerFakeAdapter) Channel() domain.ChatChannel   { return domain.ChatChannelTelegram }
 func (a *handlerFakeAdapter) SecretKind() domain.SecretKind { return domain.SecretKindTelegram }
+func (a *handlerFakeAdapter) RegisterWebhook(context.Context, channels.ChannelConfig, string) (bool, error) {
+	return true, nil
+}
 func (a *handlerFakeAdapter) ParseInbound(channels.WebhookRequest, channels.ChannelConfig) (*channels.InboundMessage, *channels.WebhookResponse, error) {
 	return &channels.InboundMessage{Channel: domain.ChatChannelTelegram, ExternalChatID: "chat-1", Text: "hello"}, nil, nil
 }

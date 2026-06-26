@@ -143,7 +143,7 @@ func main() {
 		User:     handler.NewUserHandler(userSvc),
 		Call:     handler.NewCallHandler(callSvc),
 		Backup:   handler.NewBackupHandler(snapshotSvc),
-		Bot:      handler.NewBotHandler(botSettingsSvc, tenantSecretSvc),
+		Bot:      handler.NewBotHandlerWithChannels(botSettingsSvc, tenantSecretSvc, channelGateway),
 		RAG:      handler.NewRAGHandler(ragIndexerSvc, retrieverSvc),
 		Chat:     handler.NewChatHandler(chatSvc),
 		Channels: handler.NewChannelWebhookHandler(channelGateway),

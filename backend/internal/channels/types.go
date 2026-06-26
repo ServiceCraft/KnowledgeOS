@@ -41,6 +41,7 @@ type OutboundMessage struct {
 type Adapter interface {
 	Channel() domain.ChatChannel
 	SecretKind() domain.SecretKind
+	RegisterWebhook(ctx context.Context, cfg ChannelConfig, webhookURL string) (bool, error)
 	ParseInbound(r WebhookRequest, cfg ChannelConfig) (*InboundMessage, *WebhookResponse, error)
 	SendTyping(ctx context.Context, cfg ChannelConfig, externalChatID string) error
 	SendMessage(ctx context.Context, cfg ChannelConfig, msg OutboundMessage) error

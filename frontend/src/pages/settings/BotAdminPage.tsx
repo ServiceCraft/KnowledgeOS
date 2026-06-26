@@ -65,11 +65,13 @@ const CHANNEL_METADATA_FIELDS: Record<ChannelStatus['channel'], Array<{ key: str
   max: [
     { key: 'webhook_secret', label: 'Webhook secret', placeholder: 'Секрет для X-Max-Bot-Api-Secret' },
     { key: 'api_base', label: 'API base URL', placeholder: 'https://botapi.max.ru' },
+    { key: 'webhook_registration_url', label: 'Webhook registration URL', placeholder: 'Endpoint MAX для автоматической регистрации' },
   ],
   vk: [
     { key: 'secret', label: 'Callback secret', placeholder: 'Секрет Callback API' },
     { key: 'confirmation_token', label: 'Confirmation token', placeholder: 'Строка подтверждения VK' },
     { key: 'group_id', label: 'Group ID', placeholder: 'ID сообщества' },
+    { key: 'webhook_registration_url', label: 'Webhook registration URL', placeholder: 'Endpoint VK/прокси для автоматической регистрации' },
   ],
 };
 

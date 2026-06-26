@@ -63,6 +63,9 @@ type fakeAdapter struct {
 
 func (a *fakeAdapter) Channel() domain.ChatChannel   { return a.channel }
 func (a *fakeAdapter) SecretKind() domain.SecretKind { return a.kind }
+func (a *fakeAdapter) RegisterWebhook(context.Context, ChannelConfig, string) (bool, error) {
+	return true, nil
+}
 func (a *fakeAdapter) ParseInbound(WebhookRequest, ChannelConfig) (*InboundMessage, *WebhookResponse, error) {
 	return &InboundMessage{Channel: a.channel, ExternalChatID: "external-1", Text: "Привет"}, nil, nil
 }

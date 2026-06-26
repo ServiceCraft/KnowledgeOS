@@ -57,6 +57,23 @@ func NewGateway(chats domain.ChatRepository, chat chatService, settings settings
 	return &Gateway{chats: chats, chat: chat, settings: settings, secrets: secrets, adapters: byChannel}
 }
 
+func (g *Gateway) EnsureWebhook(ctx context.Context, companyID uuid.UUID, kind domain.SecretKind, baseURL string) (bool, error) {
+	adapter := g.adapterBySecretKind(kind)
+	if adapter == nil {
+		return false, nil
+	}
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" || !strings.HasPrefix(baseURL, "https://") {
+		return false, nil
+	}
+	token, metadata, err := g.secrets.GetPlaintextWithMetadata(ctx, companyID, kind)
+	if err != nil {
+		return false, err
+	}
+	cfg := ChannelConfig{Token: token, Metadata: metadata}
+	return adapter.RegisterWebhook(ctx, cfg, webhookURL(baseURL, adapter.Channel(), companyID))
+}
+
 func (g *Gateway) HandleWebhook(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, r WebhookRequest) (*WebhookResponse, error) {
 	adapter, ok := g.adapters[channel]
 	if !ok {
@@ -184,6 +201,15 @@ func (g *Gateway) getOrCreateSession(ctx context.Context, companyID uuid.UUID, c
 		return nil, err
 	}
 	return session, nil
+}
+
+func (g *Gateway) adapterBySecretKind(kind domain.SecretKind) Adapter {
+	for _, adapter := range g.adapters {
+		if adapter.SecretKind() == kind {
+			return adapter
+		}
+	}
+	return nil
 }
 
 func channelEnabled(raw json.RawMessage, channel domain.ChatChannel) bool {

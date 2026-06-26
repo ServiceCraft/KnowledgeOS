@@ -32,6 +32,37 @@ func (a *Adapter) Channel() domain.ChatChannel { return domain.ChatChannelMAX }
 
 func (a *Adapter) SecretKind() domain.SecretKind { return domain.SecretKindMAX }
 
+func (a *Adapter) RegisterWebhook(ctx context.Context, cfg channels.ChannelConfig, webhookURL string) (bool, error) {
+	registrationURL := metadataString(cfg.Metadata, "webhook_registration_url")
+	secret := metadataString(cfg.Metadata, "webhook_secret", "secret")
+	if registrationURL == "" || secret == "" || strings.TrimSpace(cfg.Token) == "" || strings.TrimSpace(webhookURL) == "" {
+		return false, nil
+	}
+	payload := map[string]interface{}{
+		"url":    webhookURL,
+		"secret": secret,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return false, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, registrationURL, bytes.NewReader(body))
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return false, statusError(http.StatusBadGateway, "max webhook registration failed")
+	}
+	return true, nil
+}
+
 func (a *Adapter) ParseInbound(r channels.WebhookRequest, cfg channels.ChannelConfig) (*channels.InboundMessage, *channels.WebhookResponse, error) {
 	secret := metadataString(cfg.Metadata, "webhook_secret", "secret")
 	if secret == "" {

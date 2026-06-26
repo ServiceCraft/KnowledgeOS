@@ -31,6 +31,19 @@ func (a *Adapter) Channel() domain.ChatChannel { return domain.ChatChannelTelegr
 
 func (a *Adapter) SecretKind() domain.SecretKind { return domain.SecretKindTelegram }
 
+func (a *Adapter) RegisterWebhook(ctx context.Context, cfg channels.ChannelConfig, webhookURL string) (bool, error) {
+	secret := metadataString(cfg.Metadata, "webhook_secret", "secret_token")
+	if secret == "" || strings.TrimSpace(cfg.Token) == "" || strings.TrimSpace(webhookURL) == "" {
+		return false, nil
+	}
+	return true, a.call(ctx, cfg.Token, "setWebhook", map[string]interface{}{
+		"url":                  webhookURL,
+		"secret_token":         secret,
+		"allowed_updates":      []string{"message"},
+		"drop_pending_updates": false,
+	})
+}
+
 func (a *Adapter) ParseInbound(r channels.WebhookRequest, cfg channels.ChannelConfig) (*channels.InboundMessage, *channels.WebhookResponse, error) {
 	secret := metadataString(cfg.Metadata, "webhook_secret", "secret_token")
 	if secret == "" {

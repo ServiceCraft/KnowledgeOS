@@ -53,3 +53,22 @@ VK Callback API:
   `enabled_modules.channels.{telegram|max|vk} = true`.
 - Если session уже не в состоянии `bot`, webhook подтверждается, но бот не
   отвечает: это оставляет место для handoff-модуля.
+
+## Автоматическая регистрация webhook
+
+После сохранения channel secret через `PUT /admin/bot/secrets/{kind}` backend
+пытается автоматически зарегистрировать webhook, если запрос пришёл через
+публичный HTTPS host и для канала хватает metadata.
+
+Telegram регистрируется через Bot API `setWebhook` автоматически, если заданы:
+
+```json
+{
+  "webhook_secret": "secret-token-for-X-Telegram-Bot-Api-Secret-Token"
+}
+```
+
+MAX и VK API отличаются по способу регистрации. Для них backend делает
+автоматическую регистрацию только если в metadata указан
+`webhook_registration_url`; на этот endpoint отправляется HTTPS POST с URL
+webhook и секретом канала.
