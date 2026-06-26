@@ -19,4 +19,6 @@ export const pricingApi = {
     client.patch(`/pricing/${id}`, data).then((r) => r.data.data as PricingNode),
   delete: (id: string) =>
     client.delete(`/pricing/${id}`),
+  move: (id: string, parentId: string | null) =>
+    client.post(`/pricing/${id}/move`, { parent_id: parentId }).then((r) => r.data.data),
 };

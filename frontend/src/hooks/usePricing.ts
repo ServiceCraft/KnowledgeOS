@@ -34,6 +34,15 @@ export function useUpdatePricingNode() {
   });
 }
 
+export function useMovePricingNode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, parentId }: { id: string; parentId: string | null }) =>
+      pricingApi.move(id, parentId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.pricing.all }),
+  });
+}
+
 export function useDeletePricingNode() {
   const qc = useQueryClient();
   return useMutation({

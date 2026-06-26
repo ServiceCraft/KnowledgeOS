@@ -21,6 +21,7 @@ import {
   Download,
   MessageSquareQuote,
   Bot,
+  Settings,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { hasMinRole } from '@/lib/roles';
@@ -38,6 +39,7 @@ const toolLinks = [
 
 const botLinks = [
   { to: '/bot/playground', label: 'Плейграунд', icon: Bot },
+  { to: '/settings/bot', label: 'Настройки бота', icon: Settings, minRole: 'admin' as const },
 ];
 
 const settingsLinks = [
@@ -97,7 +99,9 @@ export function AppSidebar() {
           <SidebarGroupLabel>Бот</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {botLinks.map((link) => (
+              {botLinks
+                .filter((link) => !('minRole' in link) || hasMinRole(role, link.minRole!))
+                .map((link) => (
                 <SidebarMenuItem key={link.to}>
                   <SidebarMenuButton render={<Link to={link.to} />} isActive={isActive(link.to)}>
                     <link.icon className="h-4 w-4" />

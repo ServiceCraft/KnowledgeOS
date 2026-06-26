@@ -32,6 +32,7 @@ const routeLabels: Record<string, string> = {
   pricing: 'Прайс',
   search: 'Поиск',
   settings: 'Настройки',
+  bot: 'Бот',
   users: 'Пользователи',
   sync: 'Синхронизация',
   export: 'Экспорт',

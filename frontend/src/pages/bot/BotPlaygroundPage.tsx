@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Loader2, MessageSquare, Plus, Send, ShieldAlert, ShieldCheck, Square, User } from 'lucide-react';
+import {
+  Bot,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  MessageSquare,
+  Plus,
+  Send,
+  ShieldAlert,
+  ShieldCheck,
+  Square,
+  User,
+} from 'lucide-react';
 import { botChatApi, type ChatStreamEvent } from '@/api/botChat';
 import { useChatSession, useChatSessions, useCreateChatSession } from '@/hooks/useBotChat';
 import type { ChatMessage, ChatSource } from '@/types';
@@ -15,7 +27,8 @@ import { useQueryClient } from '@tanstack/react-query';
 
 export function BotPlaygroundPage() {
   const qc = useQueryClient();
-  const sessionsQuery = useChatSessions();
+  const [sessionsPage, setSessionsPage] = useState(1);
+  const sessionsQuery = useChatSessions(sessionsPage);
   const createSession = useCreateChatSession();
   const [selectedSessionId, setSelectedSessionId] = useState<string>();
   const [draft, setDraft] = useState('');
@@ -25,10 +38,13 @@ export function BotPlaygroundPage() {
   const [error, setError] = useState<string>();
   const [isStreaming, setIsStreaming] = useState(false);
   const [lastUsage, setLastUsage] = useState<ChatStreamEvent['usage']>();
+  const [showSources, setShowSources] = useState(false);
   const abortRef = useRef<AbortController | undefined>(undefined);
 
   const sessionQuery = useChatSession(selectedSessionId);
   const sessions = useMemo(() => sessionsQuery.data?.data ?? [], [sessionsQuery.data?.data]);
+  const sessionsTotal = sessionsQuery.data?.total ?? 0;
+  const sessionsTotalPages = Math.ceil(sessionsTotal / 30) || 1;
 
   useEffect(() => {
     if (!selectedSessionId && sessions.length > 0) {
@@ -75,6 +91,7 @@ export function BotPlaygroundPage() {
     setError(undefined);
     setStreamingText('');
     setStreamSources([]);
+    setShowSources(false);
     setLastUsage(undefined);
     const sessionId = await ensureSession();
     const optimistic: ChatMessage = {
@@ -119,7 +136,7 @@ export function BotPlaygroundPage() {
         },
         controller.signal
       );
-      qc.invalidateQueries({ queryKey: queryKeys.botChat.sessions });
+      qc.invalidateQueries({ queryKey: queryKeys.botChat.all });
       qc.invalidateQueries({ queryKey: queryKeys.botChat.detail(sessionId) });
     } catch (err) {
       if (controller.signal.aborted) {
@@ -169,6 +186,29 @@ export function BotPlaygroundPage() {
               {sessions.length === 0 && (
                 <p className="px-1 text-sm text-muted-foreground">Создайте первую сессию для теста бота.</p>
               )}
+              {sessionsTotalPages > 1 && (
+                <div className="flex items-center justify-between pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={sessionsPage <= 1}
+                    onClick={() => setSessionsPage((p) => p - 1)}
+                  >
+                    Назад
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {sessionsPage} / {sessionsTotalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={sessionsPage >= sessionsTotalPages}
+                    onClick={() => setSessionsPage((p) => p + 1)}
+                  >
+                    Далее
+                  </Button>
+                </div>
+              )}
             </div>
           </ScrollArea>
         </CardContent>
@@ -210,20 +250,33 @@ export function BotPlaygroundPage() {
           </ScrollArea>
 
           {visibleSources.length > 0 && (
-            <div className="rounded-lg border p-3">
-              <div className="mb-2 flex items-center justify-between text-sm font-medium">
-                <span>Источники ответа</span>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                  onClick={() => setShowSources((v) => !v)}
+                >
+                  {showSources ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  {showSources ? 'Скрыть источники' : `Показать источники (${visibleSources.length})`}
+                </Button>
                 {lastUsage && (
-                  <span className="text-xs font-normal text-muted-foreground">
-                    Токены: {lastUsage.prompt_tokens}+{lastUsage.completion_tokens}={lastUsage.total_tokens}
+                  <span className="text-xs text-muted-foreground">
+                    {lastUsage.prompt_tokens}+{lastUsage.completion_tokens}={lastUsage.total_tokens} ток.
                   </span>
                 )}
               </div>
-              <div className="space-y-2">
-                {visibleSources.map((source) => (
-                  <SourceRow key={source.source_id} source={source} />
-                ))}
-              </div>
+              {showSources && (
+                <ScrollArea className="max-h-40 rounded-md border bg-muted/20 p-2">
+                  <div className="space-y-2 pr-2">
+                    {visibleSources.map((source) => (
+                      <SourceRow key={source.source_id} source={source} />
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
             </div>
           )}
 

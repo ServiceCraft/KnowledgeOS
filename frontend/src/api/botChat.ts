@@ -38,8 +38,8 @@ export const botChatApi = {
   createSession: (data: CreateChatSessionRequest = {}) =>
     client.post<DataResponse<ChatSession>>(`${base}/sessions`, data).then((r) => r.data.data),
 
-  listSessions: () =>
-    client.get<ListResponse<ChatSession>>(`${base}/sessions`).then((r) => r.data),
+  listSessions: (params?: { page?: number; limit?: number }) =>
+    client.get<ListResponse<ChatSession>>(`${base}/sessions`, { params }).then((r) => r.data),
 
   getSession: (id: string) =>
     client.get<DataResponse<ChatSessionWithMessages>>(`${base}/sessions/${id}`).then((r) => r.data.data),

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,6 +35,7 @@ const TIER_LABELS: Record<string, string> = {
 };
 
 export function CompaniesPage() {
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const { data, isLoading, isError } = useCompaniesList({ page, limit: 20 });
   const createCompany = useCreateCompany();
@@ -169,6 +171,7 @@ export function CompaniesPage() {
         page={page}
         limit={20}
         onPageChange={setPage}
+        onRowClick={(item) => navigate(`/admin/companies/${item.id}`)}
       />
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>

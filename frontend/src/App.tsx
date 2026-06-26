@@ -20,7 +20,9 @@ import { SearchPage } from '@/pages/search/SearchPage';
 import { UsersPage } from '@/pages/settings/UsersPage';
 import { SyncPage } from '@/pages/settings/SyncPage';
 import { ExportPage } from '@/pages/settings/ExportPage';
+import { BotAdminPage } from '@/pages/settings/BotAdminPage';
 import { CompaniesPage } from '@/pages/admin/CompaniesPage';
+import { CompanyDetailPage } from '@/pages/admin/CompanyDetailPage';
 import { BotPlaygroundPage } from '@/pages/bot/BotPlaygroundPage';
 
 const queryClient = new QueryClient({
@@ -71,10 +73,12 @@ export default function App() {
                 <Route element={<ProtectedRoute minimumRole="admin" />}>
                   <Route path="/settings/users" element={<UsersPage />} />
                   <Route path="/settings/sync" element={<SyncPage />} />
+                  <Route path="/settings/bot" element={<BotAdminPage />} />
                 </Route>
                 <Route element={<ProtectedRoute minimumRole="superadmin" />}>
                   <Route path="/settings/export" element={<ExportPage />} />
                   <Route path="/admin/companies" element={<CompaniesPage />} />
+                  <Route path="/admin/companies/:id" element={<CompanyDetailPage />} />
                 </Route>
               </Route>
             </Route>

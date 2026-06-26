@@ -4,11 +4,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus } from 'lucide-react';
 import { PricingTree } from '@/components/pricing/PricingTree';
 import { PricingNodeForm } from '@/components/pricing/PricingNodeForm';
+import { PricingMoveDialog } from '@/components/pricing/PricingMoveDialog';
+import { PricingNodeSheet } from '@/components/pricing/PricingNodeSheet';
 import { SearchInput } from '@/components/shared/SearchInput';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
-import { usePricingList, useCreatePricingNode, useUpdatePricingNode, useDeletePricingNode } from '@/hooks/usePricing';
+import {
+  usePricingList,
+  useCreatePricingNode,
+  useUpdatePricingNode,
+  useDeletePricingNode,
+  useMovePricingNode,
+} from '@/hooks/usePricing';
 import { usePermissions } from '@/hooks/usePermissions';
 import type { PricingNode } from '@/types';
 import { toast } from 'sonner';
@@ -19,12 +27,15 @@ export function PricingPage() {
   const createNode = useCreatePricingNode();
   const updateNode = useUpdatePricingNode();
   const deleteNode = useDeletePricingNode();
+  const moveNode = useMovePricingNode();
 
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingNode, setEditingNode] = useState<PricingNode | null>(null);
   const [parentId, setParentId] = useState<string | undefined>();
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [moveNode_, setMoveNode] = useState<PricingNode | null>(null);
+  const [viewNode, setViewNode] = useState<PricingNode | null>(null);
 
   const nodes = data?.data ?? [];
 
@@ -71,6 +82,20 @@ export function PricingPage() {
     });
   };
 
+  const handleMove = (parentId: string | null) => {
+    if (!moveNode_) return;
+    moveNode.mutate(
+      { id: moveNode_.id, parentId },
+      {
+        onSuccess: () => {
+          setMoveNode(null);
+          toast.success('Узел перемещён');
+        },
+        onError: () => toast.error('Не удалось переместить узел'),
+      }
+    );
+  };
+
   if (isLoading) return <LoadingState />;
   if (isError) return <ErrorState message="Не удалось загрузить данные прайса." />;
 
@@ -104,6 +129,8 @@ export function PricingPage() {
             onEdit={handleEdit}
             onDelete={(id) => setDeleteId(id)}
             onAddChild={handleAddChild}
+            onMove={canWrite ? setMoveNode : undefined}
+            onView={setViewNode}
           />
         </CardContent>
       </Card>
@@ -116,6 +143,21 @@ export function PricingPage() {
         initialData={editingNode}
         parentId={parentId}
         nodes={nodes}
+      />
+
+      <PricingMoveDialog
+        open={!!moveNode_}
+        onOpenChange={(open) => !open && setMoveNode(null)}
+        node={moveNode_}
+        nodes={nodes}
+        onConfirm={handleMove}
+        loading={moveNode.isPending}
+      />
+
+      <PricingNodeSheet
+        node={viewNode}
+        open={!!viewNode}
+        onOpenChange={(open) => !open && setViewNode(null)}
       />
 
       <ConfirmDialog

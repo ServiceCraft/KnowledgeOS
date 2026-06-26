@@ -1,5 +1,5 @@
 import client from './client';
-import type { Theme, PaginatedResponse } from '@/types';
+import type { Theme, PaginatedResponse, QAPair } from '@/types';
 
 export interface ThemeFilter {
   query?: string;
@@ -18,4 +18,6 @@ export const themesApi = {
     client.patch(`/themes/${id}`, data).then((r) => r.data.data as Theme),
   delete: (id: string) =>
     client.delete(`/themes/${id}`),
+  listQA: (id: string, params?: { page?: number; limit?: number }) =>
+    client.get<PaginatedResponse<QAPair>>(`/themes/${id}/qa`, { params }).then((r) => r.data),
 };

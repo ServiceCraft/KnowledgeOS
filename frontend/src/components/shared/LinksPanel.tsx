@@ -2,6 +2,13 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Link2, Trash2, Plus, ExternalLink } from 'lucide-react';
 import { useLinksList, useCreateLink, useDeleteLink } from '@/hooks/useLinks';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -14,6 +21,14 @@ interface LinksPanelProps {
   entityId: string;
 }
 
+type LinkMode = 'external' | 'internal';
+
+const ENTITY_TYPE_LABELS: Record<string, string> = {
+  qa: 'Q&A',
+  article: 'Статья',
+  pricing: 'Прайс',
+};
+
 export function LinksPanel({ entityType, entityId }: LinksPanelProps) {
   const { canWrite } = usePermissions();
   const { data, isLoading } = useLinksList(entityType, entityId);
@@ -21,22 +36,53 @@ export function LinksPanel({ entityType, entityId }: LinksPanelProps) {
   const deleteLink = useDeleteLink(entityType, entityId);
 
   const [showForm, setShowForm] = useState(false);
+  const [linkMode, setLinkMode] = useState<LinkMode>('external');
   const [url, setUrl] = useState('');
   const [label, setLabel] = useState('');
+  const [targetType, setTargetType] = useState('qa');
+  const [targetId, setTargetId] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  const resetForm = () => {
+    setUrl('');
+    setLabel('');
+    setTargetId('');
+    setLinkMode('external');
+    setShowForm(false);
+  };
+
   const handleCreate = () => {
-    if (!url.trim() && !label.trim()) return;
+    if (linkMode === 'external') {
+      if (!url.trim() && !label.trim()) return;
+      createLink.mutate(
+        { url: url || undefined, label: label || undefined },
+        {
+          onSuccess: () => {
+            resetForm();
+            toast.success('Ссылка добавлена');
+          },
+          onError: () => toast.error('Не удалось добавить ссылку'),
+        }
+      );
+      return;
+    }
+
+    if (!targetId.trim()) {
+      toast.error('Укажите ID целевой сущности');
+      return;
+    }
     createLink.mutate(
-      { url: url || undefined, label: label || undefined },
+      {
+        label: label || undefined,
+        target_type: targetType,
+        target_id: targetId.trim(),
+      },
       {
         onSuccess: () => {
-          setUrl('');
-          setLabel('');
-          setShowForm(false);
-          toast.success('Ссылка добавлена');
+          resetForm();
+          toast.success('Связь добавлена');
         },
-        onError: () => toast.error('Не удалось добавить ссылку'),
+        onError: () => toast.error('Не удалось добавить связь'),
       }
     );
   };
@@ -75,21 +121,50 @@ export function LinksPanel({ entityType, entityId }: LinksPanelProps) {
       <CardContent className="space-y-3">
         {showForm && (
           <div className="space-y-2 p-3 border rounded-md">
+            <Select value={linkMode} onValueChange={(v) => setLinkMode(v as LinkMode)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="external">Внешняя ссылка</SelectItem>
+                <SelectItem value="internal">Сущность БЗ</SelectItem>
+              </SelectContent>
+            </Select>
             <Input
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="Название"
             />
-            <Input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="URL (необязательно для внешних ссылок)"
-            />
+            {linkMode === 'external' ? (
+              <Input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://..."
+              />
+            ) : (
+              <>
+                <Select value={targetType} onValueChange={(v) => v && setTargetType(v)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="qa">Q&A</SelectItem>
+                    <SelectItem value="article">Статья</SelectItem>
+                    <SelectItem value="pricing">Прайс</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={targetId}
+                  onChange={(e) => setTargetId(e.target.value)}
+                  placeholder="UUID сущности"
+                />
+              </>
+            )}
             <div className="flex gap-2">
               <Button size="sm" onClick={handleCreate} disabled={createLink.isPending}>
                 Сохранить
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setShowForm(false)}>
+              <Button size="sm" variant="outline" onClick={resetForm}>
                 Отмена
               </Button>
             </div>
@@ -109,8 +184,12 @@ export function LinksPanel({ entityType, entityId }: LinksPanelProps) {
                   <ExternalLink className="h-3 w-3 shrink-0" />
                   {link.label || link.url}
                 </a>
+              ) : link.target_type && link.target_id ? (
+                <span className="text-sm truncate">
+                  {link.label || `${ENTITY_TYPE_LABELS[link.target_type] ?? link.target_type}: ${link.target_id}`}
+                </span>
               ) : (
-                <span className="text-sm truncate">{link.label || 'Внутренняя ссылка'}</span>
+                <span className="text-sm truncate">{link.label || 'Ссылка'}</span>
               )}
             </div>
             {canWrite && (

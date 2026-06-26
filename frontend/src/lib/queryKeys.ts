@@ -16,6 +16,7 @@ export const queryKeys = {
     all: ['themes'] as const,
     list: (filters?: ThemeFilter) => ['themes', 'list', filters] as const,
     detail: (id: string) => ['themes', id] as const,
+    qa: (id: string, page?: number) => ['themes', id, 'qa', page] as const,
   },
   pricing: {
     all: ['pricing'] as const,
@@ -61,7 +62,14 @@ export const queryKeys = {
   },
   botChat: {
     all: ['botChat'] as const,
-    sessions: ['botChat', 'sessions'] as const,
+    sessions: (page?: number) => ['botChat', 'sessions', page] as const,
     detail: (id: string) => ['botChat', 'sessions', id] as const,
+  },
+  botAdmin: {
+    settings: ['botAdmin', 'settings'] as const,
+    secrets: ['botAdmin', 'secrets'] as const,
+  },
+  rag: {
+    status: ['rag', 'status'] as const,
   },
 };

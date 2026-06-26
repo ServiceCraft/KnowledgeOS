@@ -4,25 +4,25 @@ overview: Инвентаризация API и возможностей бэке�
 todos:
   - id: fix-theme-url
     content: "P1: Парсинг ?theme= в QAListPage при переходе с ThemesPage"
-    status: pending
+    status: completed
   - id: bot-admin-api-ui
     content: "P2: API + UI для /admin/bot/settings и /admin/bot/secrets"
-    status: pending
+    status: completed
   - id: rag-admin-api-ui
     content: "P2: API + UI для /admin/bot/rag/* (reindex, status, search)"
-    status: pending
+    status: completed
   - id: pricing-move
     content: "P3: pricingApi.move + UI перемещения узлов дерева"
-    status: pending
+    status: completed
   - id: pricing-panels
     content: "P3: CommentsPanel/LinksPanel для сущностей pricing"
-    status: pending
+    status: completed
   - id: internal-links
     content: "P3: Поддержка target_type/target_id в LinksPanel"
-    status: pending
+    status: completed
   - id: optional-polish
     content: "P4: getCompany detail page, chat sessions pagination, themes/{id}/qa client"
-    status: pending
+    status: completed
 isProject: false
 ---
 

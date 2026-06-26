@@ -236,3 +236,76 @@ export interface ChatExchange {
   message: ChatMessage;
   sources: ChatSource[];
 }
+
+export type BotProvider = 'yandex';
+export type BotModelTier = 'lite' | 'pro';
+export type SecretKind = 'llm' | 'telegram' | 'max' | 'vk' | 'bitrix24';
+
+export interface BotSettings {
+  company_id: string;
+  enabled: boolean;
+  provider: BotProvider;
+  model_tier: BotModelTier;
+  model?: string;
+  temperature: number;
+  max_tokens: number;
+  persona_name: string;
+  persona_tone: string;
+  persona_rules: string;
+  enabled_modules: Record<string, unknown>;
+  min_retrieval_score: number;
+  min_confidence: number;
+  allowed_theme_ids: string[];
+  escalate_on_low_confidence: boolean;
+  require_citations: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpdateBotSettingsRequest {
+  enabled?: boolean;
+  provider?: BotProvider;
+  model_tier?: BotModelTier;
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+  persona_name?: string;
+  persona_tone?: string;
+  persona_rules?: string;
+  enabled_modules?: Record<string, unknown>;
+  min_retrieval_score?: number;
+  min_confidence?: number;
+  allowed_theme_ids?: string[];
+  escalate_on_low_confidence?: boolean;
+  require_citations?: boolean;
+}
+
+export interface TenantSecretStatus {
+  kind: SecretKind;
+  is_set: boolean;
+  metadata: Record<string, unknown>;
+  updated_at?: string;
+}
+
+export interface RagIndexStatus {
+  embeddings: number;
+  jobs: Record<string, number>;
+}
+
+export interface RagCandidate {
+  source_id: string;
+  entity_type: string;
+  entity_id: string;
+  chunk_idx: number;
+  theme_id?: string;
+  title: string;
+  content: string;
+  snippet?: string;
+  score: number;
+}
+
+export interface RagSearchResult {
+  query: string;
+  rewritten_query?: string;
+  results: RagCandidate[];
+}

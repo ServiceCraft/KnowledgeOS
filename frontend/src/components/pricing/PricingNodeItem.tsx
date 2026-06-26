@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ChevronRight, Pencil, Trash2, Plus } from 'lucide-react';
+import { ChevronRight, Pencil, Trash2, Plus, FolderInput } from 'lucide-react';
 import type { PricingNode } from '@/types';
 
 const NODE_TYPE_LABELS: Record<string, string> = {
@@ -21,6 +21,8 @@ interface PricingNodeItemProps {
   onEdit: (node: PricingNode) => void;
   onDelete: (id: string) => void;
   onAddChild: (parentId: string) => void;
+  onMove?: (node: PricingNode) => void;
+  onView?: (node: PricingNode) => void;
   depth?: number;
 }
 
@@ -30,6 +32,8 @@ export function PricingNodeItem({
   onEdit,
   onDelete,
   onAddChild,
+  onMove,
+  onView,
   depth = 0,
 }: PricingNodeItemProps) {
   const [open, setOpen] = useState(true);
@@ -54,7 +58,15 @@ export function PricingNodeItem({
           <Badge variant="outline" className="text-xs">
             {NODE_TYPE_LABELS[node.node_type] ?? node.node_type}
           </Badge>
-          <span className="font-medium text-sm flex-1">{node.name}</span>
+          <span
+            className="font-medium text-sm flex-1 cursor-pointer hover:underline"
+            onClick={() => onView?.(node)}
+            onKeyDown={(e) => e.key === 'Enter' && onView?.(node)}
+            role="button"
+            tabIndex={0}
+          >
+            {node.name}
+          </span>
           {node.price != null && (
             <span className="text-sm text-muted-foreground font-mono">
               {node.price.toFixed(2)} ₽
@@ -63,6 +75,11 @@ export function PricingNodeItem({
 
           {canWrite && (
             <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+              {onMove && (
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onMove(node)}>
+                  <FolderInput className="h-3 w-3" />
+                </Button>
+              )}
               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onAddChild(node.id)}>
                 <Plus className="h-3 w-3" />
               </Button>
@@ -91,6 +108,8 @@ export function PricingNodeItem({
                 onEdit={onEdit}
                 onDelete={onDelete}
                 onAddChild={onAddChild}
+                onMove={onMove}
+                onView={onView}
                 depth={depth + 1}
               />
             ))}

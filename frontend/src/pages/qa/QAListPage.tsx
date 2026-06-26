@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -237,10 +237,11 @@ function QARow({ item, themeName, onNavigate, canWrite }: { item: QAPair; themeN
 
 export function QAListPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { canWrite } = usePermissions();
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
-  const [themeId, setThemeId] = useState<string>('');
+  const [themeId, setThemeId] = useState<string>(() => searchParams.get('theme') ?? '');
   const [isFaq, setIsFaq] = useState<string>('');
   const [sort, setSort] = useState<string>('-frequency');
   const [aiStatus, setAiStatus] = useState<string>('');
@@ -248,6 +249,14 @@ export function QAListPage() {
   const [newQuestion, setNewQuestion] = useState('');
   const [newAnswer, setNewAnswer] = useState('');
   const [newThemeId, setNewThemeId] = useState<string>('');
+
+  useEffect(() => {
+    const themeFromUrl = searchParams.get('theme');
+    if (themeFromUrl) {
+      setThemeId(themeFromUrl);
+      setPage(1);
+    }
+  }, [searchParams]);
 
   const limit = 20;
   const { data, isLoading, isError } = useQAList({

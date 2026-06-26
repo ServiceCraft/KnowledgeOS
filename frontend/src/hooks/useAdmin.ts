@@ -25,6 +25,23 @@ export function useCreateCompany() {
   });
 }
 
+export function useCompanyDetail(id: string) {
+  return useQuery({
+    queryKey: queryKeys.companies.detail(id),
+    queryFn: () => adminApi.getCompany(id),
+    enabled: !!id,
+  });
+}
+
+export function useCreateCompanyAdmin(companyId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { email: string; password: string }) =>
+      adminApi.createCompanyAdmin(companyId, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.companies.detail(companyId) }),
+  });
+}
+
 export function useUpdateCompany() {
   const qc = useQueryClient();
   return useMutation({

@@ -14,6 +14,8 @@ interface PricingTreeProps {
   onEdit: (node: PricingNode) => void;
   onDelete: (id: string) => void;
   onAddChild: (parentId: string) => void;
+  onMove?: (node: PricingNode) => void;
+  onView?: (node: PricingNode) => void;
 }
 
 function filterTree(roots: TreeNode[], q: string): TreeNode[] {
@@ -29,7 +31,7 @@ function filterTree(roots: TreeNode[], q: string): TreeNode[] {
   return roots.map(keep).filter(Boolean) as TreeNode[];
 }
 
-export function PricingTree({ nodes, query, canWrite = false, onEdit, onDelete, onAddChild }: PricingTreeProps) {
+export function PricingTree({ nodes, query, canWrite = false, onEdit, onDelete, onAddChild, onMove, onView }: PricingTreeProps) {
   const tree = useMemo(() => {
     const map = new Map<string, TreeNode>();
     const roots: TreeNode[] = [];
@@ -73,6 +75,8 @@ export function PricingTree({ nodes, query, canWrite = false, onEdit, onDelete, 
           onEdit={onEdit}
           onDelete={onDelete}
           onAddChild={onAddChild}
+          onMove={onMove}
+          onView={onView}
         />
       ))}
     </div>
