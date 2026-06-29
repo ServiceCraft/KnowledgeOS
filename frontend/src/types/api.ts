@@ -7,6 +7,15 @@ export interface PaginatedResponse<T> {
   limit?: number;
 }
 
+export interface ListResponse<T> {
+  data: T[];
+  total?: number;
+}
+
+export interface DataResponse<T> {
+  data: T;
+}
+
 export interface SearchResult {
   entity_type: string;
   entity_id: string;

@@ -13,6 +13,7 @@ import { Link2, Trash2, Plus, ExternalLink } from 'lucide-react';
 import { useLinksList, useCreateLink, useDeleteLink } from '@/hooks/useLinks';
 import { usePermissions } from '@/hooks/usePermissions';
 import { LoadingState } from './LoadingState';
+import { ErrorState } from './ErrorState';
 import { ConfirmDialog } from './ConfirmDialog';
 import { toast } from 'sonner';
 
@@ -31,7 +32,7 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
 
 export function LinksPanel({ entityType, entityId }: LinksPanelProps) {
   const { canWrite } = usePermissions();
-  const { data, isLoading } = useLinksList(entityType, entityId);
+  const { data, isLoading, isError } = useLinksList(entityType, entityId);
   const createLink = useCreateLink(entityType, entityId);
   const deleteLink = useDeleteLink(entityType, entityId);
 
@@ -99,6 +100,7 @@ export function LinksPanel({ entityType, entityId }: LinksPanelProps) {
   };
 
   if (isLoading) return <LoadingState />;
+  if (isError) return <ErrorState message="Не удалось загрузить связи." />;
 
   const links = data?.data ?? [];
 

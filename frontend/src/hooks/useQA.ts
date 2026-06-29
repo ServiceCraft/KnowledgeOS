@@ -24,7 +24,6 @@ export function useCreateQA() {
     mutationFn: qaApi.create,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.qa.all });
-      qc.refetchQueries({ queryKey: queryKeys.qa.all });
     },
   });
 }
@@ -36,7 +35,6 @@ export function useUpdateQA() {
       qaApi.update(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.qa.all });
-      qc.refetchQueries({ queryKey: queryKeys.qa.all });
     },
   });
 }
@@ -56,7 +54,6 @@ export function useReviewAIAnswer() {
       qaApi.reviewAIAnswer(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.qa.all });
-      qc.refetchQueries({ queryKey: queryKeys.qa.all });
     },
   });
 }

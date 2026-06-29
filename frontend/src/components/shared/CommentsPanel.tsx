@@ -8,6 +8,7 @@ import { useCommentsList, useCreateComment, useUpdateComment, useDeleteComment }
 import { useAuthStore } from '@/stores/authStore';
 import { usePermissions } from '@/hooks/usePermissions';
 import { LoadingState } from './LoadingState';
+import { ErrorState } from './ErrorState';
 import { ConfirmDialog } from './ConfirmDialog';
 import { toast } from 'sonner';
 
@@ -18,7 +19,7 @@ interface CommentsPanelProps {
 
 export function CommentsPanel({ entityType, entityId }: CommentsPanelProps) {
   const { canWrite } = usePermissions();
-  const { data, isLoading } = useCommentsList(entityType, entityId);
+  const { data, isLoading, isError } = useCommentsList(entityType, entityId);
   const createComment = useCreateComment(entityType, entityId);
   const updateComment = useUpdateComment(entityType, entityId);
   const deleteComment = useDeleteComment(entityType, entityId);
@@ -70,6 +71,7 @@ export function CommentsPanel({ entityType, entityId }: CommentsPanelProps) {
   };
 
   if (isLoading) return <LoadingState />;
+  if (isError) return <ErrorState message="Не удалось загрузить комментарии." />;
 
   const comments = data?.data ?? [];
 

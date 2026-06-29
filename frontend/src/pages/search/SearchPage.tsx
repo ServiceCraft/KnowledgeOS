@@ -26,7 +26,7 @@ export function SearchPage() {
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const types = typeFilter === 'all' ? undefined : [typeFilter];
-  const { data, isFetching } = useSearch({ query: debouncedQuery, types });
+  const { data, isFetching, isError } = useSearch({ query: debouncedQuery, types });
 
   const results = data?.data ?? [];
   const total = data?.total ?? 0;
@@ -87,7 +87,13 @@ export function SearchPage() {
             </div>
           )}
 
-          {hasQuery && !isFetching && results.length === 0 && (
+          {hasQuery && isError && (
+            <div className="py-8 text-center text-sm text-destructive">
+              Не удалось выполнить поиск. Попробуйте ещё раз.
+            </div>
+          )}
+
+          {hasQuery && !isFetching && results.length === 0 && !isError && (
             <CommandEmpty>
               Ничего не найдено по запросу "{debouncedQuery}"
             </CommandEmpty>

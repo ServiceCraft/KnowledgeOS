@@ -2,11 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { botHandoffApi, type HandoffSessionParams, type SendOperatorMessageRequest } from '@/api/botHandoff';
 import { queryKeys } from '@/lib/queryKeys';
 
+const QUEUE_POLL_MS = 5000;
+const METRICS_POLL_MS = 10000;
+const SESSION_POLL_MS = 5000;
+
 export function useHandoffSessions(params?: HandoffSessionParams) {
   return useQuery({
     queryKey: queryKeys.handoff.queue(params),
     queryFn: () => botHandoffApi.listSessions(params),
-    refetchInterval: 5000,
+    refetchInterval: QUEUE_POLL_MS,
   });
 }
 
@@ -14,7 +18,7 @@ export function useHandoffMetrics() {
   return useQuery({
     queryKey: queryKeys.handoff.metrics,
     queryFn: botHandoffApi.metrics,
-    refetchInterval: 5000,
+    refetchInterval: METRICS_POLL_MS,
   });
 }
 
@@ -23,7 +27,7 @@ export function useHandoffSession(id?: string) {
     queryKey: queryKeys.handoff.session(id ?? ''),
     queryFn: () => botHandoffApi.getSession(id!),
     enabled: !!id,
-    refetchInterval: id ? 4000 : false,
+    refetchInterval: id ? SESSION_POLL_MS : false,
   });
 }
 

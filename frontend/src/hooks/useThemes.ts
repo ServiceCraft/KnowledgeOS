@@ -10,22 +10,6 @@ export function useThemesList(filters?: ThemeFilter) {
   });
 }
 
-export function useThemeDetail(id: string) {
-  return useQuery({
-    queryKey: queryKeys.themes.detail(id),
-    queryFn: () => themesApi.getById(id),
-    enabled: !!id,
-  });
-}
-
-export function useThemeQA(themeId: string, page = 1) {
-  return useQuery({
-    queryKey: queryKeys.themes.qa(themeId, page),
-    queryFn: () => themesApi.listQA(themeId, { page, limit: 20 }),
-    enabled: !!themeId,
-  });
-}
-
 export function useCreateTheme() {
   const qc = useQueryClient();
   return useMutation({

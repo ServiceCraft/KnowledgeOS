@@ -6,19 +6,21 @@ import (
 	applog "github.com/knowledgeos/backend/internal/logger"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/auth"
 	"github.com/knowledgeos/backend/internal/domain"
 )
 
 type AuthService struct {
-	users    domain.UserRepository
-	syncRepo domain.SyncRepository
-	jwtMgr   *auth.JWTManager
+	users     domain.UserRepository
+	companies domain.CompanyRepository
+	syncRepo  domain.SyncRepository
+	jwtMgr    *auth.JWTManager
 }
 
 // NewAuthService executes the service.NewAuthService operation.
-func NewAuthService(users domain.UserRepository, syncRepo domain.SyncRepository, jwtMgr *auth.JWTManager) *AuthService {
-	return &AuthService{users: users, syncRepo: syncRepo, jwtMgr: jwtMgr}
+func NewAuthService(users domain.UserRepository, companies domain.CompanyRepository, syncRepo domain.SyncRepository, jwtMgr *auth.JWTManager) *AuthService {
+	return &AuthService{users: users, companies: companies, syncRepo: syncRepo, jwtMgr: jwtMgr}
 }
 
 type LoginRequest struct {
@@ -38,10 +40,10 @@ type LoginResponse struct {
 }
 
 type LoginUser struct {
-	ID        string  `json:"id"`
-	Email     string  `json:"email"`
-	Role      string  `json:"role"`
-	CompanyID *string `json:"company_id,omitempty"`
+	ID         string   `json:"id"`
+	Email      string   `json:"email"`
+	Role       string   `json:"role"`
+	CompanyIDs []string `json:"company_ids,omitempty"`
 }
 
 // Login executes the service.AuthService.Login operation.
@@ -74,14 +76,9 @@ func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*LoginRespon
 		return nil, err
 	}
 
-	lu := LoginUser{
-		ID:    user.ID.String(),
-		Email: user.Email,
-		Role:  string(user.Role),
-	}
-	if user.CompanyID != nil {
-		cid := user.CompanyID.String()
-		lu.CompanyID = &cid
+	lu, err := s.buildLoginUser(ctx, user)
+	if err != nil {
+		return nil, err
 	}
 
 	return &LoginResponse{
@@ -132,14 +129,9 @@ func (s *AuthService) Refresh(ctx context.Context, req RefreshRequest) (*LoginRe
 		return nil, err
 	}
 
-	lu := LoginUser{
-		ID:    user.ID.String(),
-		Email: user.Email,
-		Role:  string(user.Role),
-	}
-	if user.CompanyID != nil {
-		cid := user.CompanyID.String()
-		lu.CompanyID = &cid
+	lu, err := s.buildLoginUser(ctx, user)
+	if err != nil {
+		return nil, err
 	}
 
 	return &LoginResponse{
@@ -150,9 +142,38 @@ func (s *AuthService) Refresh(ctx context.Context, req RefreshRequest) (*LoginRe
 	}, nil
 }
 
+// ListAccessibleCompanies returns companies the caller may access.
+func (s *AuthService) ListAccessibleCompanies(ctx context.Context, userID uuid.UUID, role domain.Role) ([]domain.Company, error) {
+	applog.TraceCall(ctx, "service.AuthService.ListAccessibleCompanies")
+	if role == domain.RoleSuperadmin {
+		items, _, err := s.companies.List(ctx, domain.CompanyFilter{Page: 1, Limit: 1000})
+		return items, err
+	}
+	return s.users.ListCompaniesForUser(ctx, userID)
+}
+
 // Logout executes the service.AuthService.Logout operation.
 func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 	applog.TraceCall(ctx, "service.AuthService.Logout")
 	hash := auth.HashToken(refreshToken)
 	return s.syncRepo.RevokeRefreshToken(ctx, hash)
+}
+
+func (s *AuthService) buildLoginUser(ctx context.Context, user *domain.User) (LoginUser, error) {
+	lu := LoginUser{
+		ID:    user.ID.String(),
+		Email: user.Email,
+		Role:  string(user.Role),
+	}
+	if user.Role == domain.RoleSuperadmin {
+		return lu, nil
+	}
+	ids, err := s.users.GetCompanyIDs(ctx, user.ID)
+	if err != nil {
+		return LoginUser{}, err
+	}
+	for _, id := range ids {
+		lu.CompanyIDs = append(lu.CompanyIDs, id.String())
+	}
+	return lu, nil
 }

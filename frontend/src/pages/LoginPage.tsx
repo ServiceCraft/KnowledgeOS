@@ -6,16 +6,18 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BookOpen } from 'lucide-react';
 import { useLogin } from '@/hooks/useAuth';
+import { getPostAuthPath } from '@/lib/tenantContext';
 import { useAuthStore } from '@/stores/authStore';
 
 export function LoginPage() {
+  const user = useAuthStore((s) => s.user);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const login = useLogin();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  if (isAuthenticated) {
-    return <Navigate to="/kb" replace />;
+  if (isAuthenticated && user) {
+    return <Navigate to={getPostAuthPath(user)} replace />;
   }
 
   const handleSubmit = (e: React.FormEvent) => {

@@ -1,4 +1,11 @@
 import axios from 'axios';
+import {
+  AUTH_STORAGE_KEY,
+  buildAuthHeaders,
+  getAuthSnapshot,
+  tenantContextError,
+} from '@/lib/tenantContext';
+import { useAuthStore } from '@/stores/authStore';
 
 const client = axios.create({
   baseURL: '/api/v1',
@@ -13,30 +20,14 @@ let failedQueue: Array<{
 
 let onAuthFailure: (() => void) | null = null;
 
-export function tenantContextError(url?: string): Error | null {
-  try {
-    const raw = localStorage.getItem('auth-storage');
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    const role = parsed?.state?.user?.role;
-    const selectedCompanyId = parsed?.state?.selectedCompanyId;
-    if (role !== 'superadmin' || selectedCompanyId || !isTenantScopedUrl(url)) {
-      return null;
-    }
-    return new Error('company selection required');
-  } catch {
-    return null;
-  }
-}
+export { tenantContextError };
 
 export function setAuthFailureHandler(handler: () => void) {
   onAuthFailure = handler;
 }
 
 function handleAuthFailure() {
-  localStorage.removeItem('auth-tokens');
-  localStorage.removeItem('auth-user');
-  localStorage.removeItem('auth-storage');
+  localStorage.removeItem(AUTH_STORAGE_KEY);
   if (onAuthFailure) {
     onAuthFailure();
   }
@@ -54,37 +45,19 @@ function processQueue(error: unknown, token: string | null) {
 }
 
 client.interceptors.request.use((config) => {
-  try {
-    const tenantError = tenantContextError(config.url);
-    if (tenantError) {
-      return Promise.reject(tenantError);
-    }
-    const raw = localStorage.getItem('auth-storage');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      const token = parsed?.state?.tokens?.access_token;
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-      const role = parsed?.state?.user?.role;
-      const selectedCompanyId = parsed?.state?.selectedCompanyId;
-      if (role === 'superadmin' && selectedCompanyId) {
-        config.headers['X-Company-ID'] = selectedCompanyId;
-      }
-    }
-  } catch {
-    // ignore parse errors
+  const tenantError = tenantContextError(config.url);
+  if (tenantError) {
+    return Promise.reject(tenantError);
+  }
+  const headers = buildAuthHeaders();
+  if (headers.Authorization) {
+    config.headers.Authorization = headers.Authorization;
+  }
+  if (headers['X-Company-ID']) {
+    config.headers['X-Company-ID'] = headers['X-Company-ID'];
   }
   return config;
 });
-
-function isTenantScopedUrl(url?: string): boolean {
-  if (!url) return false;
-  const path = url.startsWith('/api/v1') ? url.slice('/api/v1'.length) || '/' : url;
-  if (path.startsWith('/auth/')) return false;
-  if (path === '/admin/companies' || path.startsWith('/admin/companies/')) return false;
-  return true;
-}
 
 client.interceptors.response.use(
   (response) => response,
@@ -107,15 +80,7 @@ client.interceptors.response.use(
     originalRequest._retry = true;
     isRefreshing = true;
 
-    let refreshToken: string | null = null;
-    try {
-      const raw = localStorage.getItem('auth-storage');
-      if (raw) {
-        refreshToken = JSON.parse(raw)?.state?.tokens?.refresh_token ?? null;
-      }
-    } catch {
-      // ignore
-    }
+    const refreshToken = getAuthSnapshot().tokens?.refresh_token ?? null;
 
     if (!refreshToken) {
       handleAuthFailure();
@@ -131,17 +96,7 @@ client.interceptors.response.use(
         access_token: payload.access_token,
         refresh_token: payload.refresh_token,
       };
-      // Update zustand persisted store
-      try {
-        const raw = localStorage.getItem('auth-storage');
-        if (raw) {
-          const stored = JSON.parse(raw);
-          stored.state.tokens = newTokens;
-          localStorage.setItem('auth-storage', JSON.stringify(stored));
-        }
-      } catch {
-        // ignore
-      }
+      useAuthStore.getState().setTokens(newTokens);
       processQueue(null, payload.access_token);
       originalRequest.headers.Authorization = `Bearer ${payload.access_token}`;
       return client(originalRequest);

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '@/api/auth';
+import { getPostAuthPath } from '@/lib/tenantContext';
 import { useAuthStore } from '@/stores/authStore';
 import type { LoginRequest } from '@/types/auth';
 
@@ -15,7 +16,7 @@ export function useLogin() {
         access_token: data.access_token,
         refresh_token: data.refresh_token,
       });
-      navigate(data.user.role === 'superadmin' ? '/admin/companies' : '/kb');
+      navigate(getPostAuthPath(data.user));
     },
   });
 }

@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { usersApi, type UserFilter, type CreateUserRequest, type UpdateUserRequest } from '@/api/users';
 import { queryKeys } from '@/lib/queryKeys';
 
@@ -6,6 +6,7 @@ export function useUsersList(filters?: UserFilter) {
   return useQuery({
     queryKey: queryKeys.users.list(filters),
     queryFn: () => usersApi.list(filters),
+    placeholderData: keepPreviousData,
   });
 }
 

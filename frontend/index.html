@@ -1,10 +1,39 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <meta name="color-scheme" content="light dark" />
+    <title>KnowledgeOS</title>
+    <script>
+      try {
+        if (JSON.parse(localStorage.getItem('ui-storage') || '{}')?.state?.darkMode) {
+          document.documentElement.classList.add('dark');
+        }
+      } catch {}
+    </script>
+    <style>
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        margin: 0;
+      }
+      html {
+        background-color: oklch(0.985 0 0);
+        color: oklch(0.145 0 0);
+      }
+      html.dark {
+        background-color: oklch(0.145 0 0);
+        color: oklch(0.985 0 0);
+      }
+      body,
+      #root {
+        background-color: inherit;
+        color: inherit;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

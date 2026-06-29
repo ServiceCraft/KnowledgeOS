@@ -82,7 +82,6 @@ func (s *AdminService) CreateCompanyAdmin(ctx context.Context, companyID uuid.UU
 	}
 
 	user := &domain.User{
-		CompanyID:    &companyID,
 		Email:        email,
 		PasswordHash: hash,
 		Role:         domain.RoleAdmin,
@@ -92,5 +91,9 @@ func (s *AdminService) CreateCompanyAdmin(ctx context.Context, companyID uuid.UU
 	if err := s.users.Create(ctx, user); err != nil {
 		return nil, err
 	}
+	if err := s.users.SetCompanyIDs(ctx, user.ID, []uuid.UUID{companyID}); err != nil {
+		return nil, err
+	}
+	user.CompanyIDs = []uuid.UUID{companyID}
 	return user, nil
 }

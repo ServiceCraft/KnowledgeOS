@@ -27,9 +27,8 @@ export function ThemesPage() {
   const navigate = useNavigate();
   const { canWrite } = usePermissions();
   const [query, setQuery] = useState('');
-  const [page] = useState(1);
 
-  const { data, isLoading, isError } = useThemesList({ query: query || undefined, page, limit: 50 });
+  const { data, isLoading, isError } = useThemesList({ query: query || undefined, limit: 50 });
   const createTheme = useCreateTheme();
   const updateTheme = useUpdateTheme();
   const deleteTheme = useDeleteTheme();

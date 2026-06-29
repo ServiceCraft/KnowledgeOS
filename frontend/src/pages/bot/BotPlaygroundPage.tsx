@@ -14,30 +14,26 @@ import {
 import { botChatApi } from '@/api/botChat';
 import { useChatSession, useChatSessions, useCreateChatSession } from '@/hooks/useBotChat';
 import { useEscalateHandoffSession } from '@/hooks/useBotHandoff';
-import type { ChatMessage, ChatSource, ChatState } from '@/types';
+import type { ChatMessage } from '@/types';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { formatMessageBody } from '@/lib/chatSources';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/lib/queryKeys';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
-import { queryKeys } from '@/lib/queryKeys';
-import { useQueryClient } from '@tanstack/react-query';
+import { collectSources, guardrailReasonLabel, mapChatStreamError, STATE_LABELS } from '@/lib/chatUi';
+import { ChatSourcesPanel } from '@/components/chat/ChatSourcesPanel';
+import { LoadingState } from '@/components/shared/LoadingState';
+import { ErrorState } from '@/components/shared/ErrorState';
 import { ChatAnswerContent } from '@/components/chat/ChatCitations';
 import { BotTypingIndicator } from '@/components/chat/BotTypingIndicator';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { MessageText } from '@/components/chat/MessageText';
-import { SourcePanelRow } from '@/components/chat/SourcePanelRow';
-import { formatMessageBody } from '@/lib/chatSources';
 import { toast } from 'sonner';
-
-const STATE_LABELS: Record<ChatState, string> = {
-  bot: 'Бот',
-  waiting_operator: 'Ожидает',
-  operator: 'У оператора',
-  closed: 'Закрыт',
-};
 
 export function BotPlaygroundPage() {
   const qc = useQueryClient();
@@ -63,7 +59,8 @@ export function BotPlaygroundPage() {
     container.scrollTo({ top: container.scrollHeight, behavior });
   }, []);
 
-  const sessionQuery = useChatSession(selectedSessionId);
+  const [sessionPollMs, setSessionPollMs] = useState<number | false>(false);
+  const sessionQuery = useChatSession(selectedSessionId, sessionPollMs);
   const selectedSession = sessionQuery.data?.session;
   const sessions = useMemo(() => sessionsQuery.data?.data ?? [], [sessionsQuery.data?.data]);
   const sessionsTotal = sessionsQuery.data?.total ?? 0;
@@ -106,20 +103,17 @@ export function BotPlaygroundPage() {
   }, [sessionQuery.data, selectedSessionId, isStreaming]);
 
   useEffect(() => {
-    if (!selectedSessionId || isStreaming) return;
+    if (isStreaming || !selectedSessionId) {
+      setSessionPollMs(false);
+      return;
+    }
     const messages = sessionQuery.data?.messages;
-    if (!messages?.length) return;
-    if (messages[messages.length - 1]?.role !== 'user') return;
-
-    const interval = window.setInterval(() => {
-      qc.invalidateQueries({ queryKey: queryKeys.botChat.detail(selectedSessionId) });
-    }, 2000);
-    const timeout = window.setTimeout(() => window.clearInterval(interval), 120000);
-    return () => {
-      window.clearInterval(interval);
-      window.clearTimeout(timeout);
-    };
-  }, [selectedSessionId, sessionQuery.data?.messages, isStreaming, qc]);
+    if (!messages?.length) {
+      setSessionPollMs(false);
+      return;
+    }
+    setSessionPollMs(messages[messages.length - 1]?.role === 'user' ? 2000 : false);
+  }, [isStreaming, selectedSessionId, sessionQuery.data?.messages]);
 
   useEffect(() => {
     if (localMessages.length === 0 && !showTypingIndicator) return;
@@ -233,6 +227,11 @@ export function BotPlaygroundPage() {
             Новая сессия
           </Button>
           <ScrollArea className="h-[calc(100vh-17rem)]">
+            {sessionsQuery.isLoading ? (
+              <LoadingState />
+            ) : sessionsQuery.isError ? (
+              <ErrorState message="Не удалось загрузить сессии." />
+            ) : (
             <div className="space-y-2 pr-2">
               {sessions.map((session) => (
                 <button
@@ -285,6 +284,7 @@ export function BotPlaygroundPage() {
                 </div>
               )}
             </div>
+            )}
           </ScrollArea>
         </CardContent>
       </Card>
@@ -377,35 +377,9 @@ export function BotPlaygroundPage() {
         </CardContent>
       </Card>
 
-      <Card className="hidden w-80 shrink-0 xl:flex xl:flex-col">
-        <CardHeader>
-          <CardTitle className="text-base">Источники</CardTitle>
-          <CardDescription>Материалы, использованные в ответах текущего диалога</CardDescription>
-        </CardHeader>
-        <CardContent className="min-h-0 flex-1 overflow-y-auto space-y-2">
-          {sources.map((source) => (
-            <SourcePanelRow key={source.source_id} source={source} />
-          ))}
-          {sources.length === 0 && (
-            <p className="text-sm text-muted-foreground">Источники появятся после ответа с RAG-контекстом.</p>
-          )}
-        </CardContent>
-      </Card>
+      <ChatSourcesPanel sources={sources} />
     </div>
   );
-}
-
-function collectSources(messages: ChatMessage[]): ChatSource[] {
-  const seen = new Set<string>();
-  const out: ChatSource[] = [];
-  for (const message of messages) {
-    for (const source of message.sources ?? []) {
-      if (seen.has(source.source_id)) continue;
-      seen.add(source.source_id);
-      out.push(source);
-    }
-  }
-  return out;
 }
 
 const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMessage }) {
@@ -448,33 +422,5 @@ function GuardrailVerdict({ message }: { message: ChatMessage }) {
       {message.refusal_reason && <span className="text-muted-foreground">{guardrailReasonLabel(message.refusal_reason)}</span>}
     </div>
   );
-}
-
-function mapChatStreamError(raw?: string): string {
-  const text = (raw ?? '').toLowerCase();
-  if (text.includes('chat session is closed') || text.includes('closed')) {
-    return 'Диалог закрыт. Создайте новую сессию.';
-  }
-  if (text.includes('not handled by bot') || text.includes('handled by operator')) {
-    return 'Диалог у оператора. Откройте очередь handoff.';
-  }
-  return raw ?? 'Ошибка генерации ответа';
-}
-
-function guardrailReasonLabel(reason: string): string {
-  switch (reason) {
-    case 'no_context':
-      return 'нет данных в базе знаний';
-    case 'low_confidence':
-      return 'низкая уверенность';
-    case 'missing_citation':
-      return 'нет подтверждающего источника';
-    case 'fabricated_citation':
-      return 'выдуманный источник';
-    case 'prompt_leak':
-      return 'попытка раскрыть инструкции';
-    default:
-      return reason;
-  }
 }
 

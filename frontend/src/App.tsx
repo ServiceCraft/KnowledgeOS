@@ -24,6 +24,7 @@ import { ExportPage } from '@/pages/settings/ExportPage';
 import { BotAdminPage } from '@/pages/settings/BotAdminPage';
 import { CompaniesPage } from '@/pages/admin/CompaniesPage';
 import { CompanyDetailPage } from '@/pages/admin/CompanyDetailPage';
+import { SelectCompanyPage } from '@/pages/SelectCompanyPage';
 import { BotPlaygroundPage } from '@/pages/bot/BotPlaygroundPage';
 import { HandoffPage } from '@/pages/bot/HandoffPage';
 
@@ -63,6 +64,7 @@ export default function App() {
                   <Route path="/admin/companies" element={<CompaniesPage />} />
                   <Route path="/admin/companies/:id" element={<CompanyDetailPage />} />
                 </Route>
+                <Route path="/select-company" element={<SelectCompanyPage />} />
                 <Route element={<CompanyContextRoute />}>
                   <Route path="/kb" element={<Navigate to="/kb/qa" replace />} />
                   <Route path="/kb/qa" element={<QAListPage />} />

@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Bot, CheckCircle2, Headphones, MessageSquare, RotateCcw, Send, User } from 'lucide-react';
-import type { ChatChannel, ChatMessage, ChatSession, ChatSource, ChatState } from '@/types';
+import type { ChatChannel, ChatMessage, ChatSession, ChatState } from '@/types';
+import { collectSources, guardrailReasonLabel, STATE_LABELS } from '@/lib/chatUi';
+import { ChatSourcesPanel } from '@/components/chat/ChatSourcesPanel';
+import { LoadingState } from '@/components/shared/LoadingState';
+import { ErrorState } from '@/components/shared/ErrorState';
 import {
   useClaimHandoffSession,
   useCloseHandoffSession,
@@ -19,16 +23,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { ChatAnswerContent } from '@/components/chat/ChatCitations';
 import { MessageText } from '@/components/chat/MessageText';
-import { SourcePanelRow } from '@/components/chat/SourcePanelRow';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-
-const STATE_LABELS: Record<ChatState, string> = {
-  bot: 'Бот',
-  waiting_operator: 'Ожидает',
-  operator: 'У оператора',
-  closed: 'Закрыт',
-};
 
 const FILTERS: Array<{ value: 'waiting' | 'mine' | 'active'; label: string }> = [
   { value: 'waiting', label: 'Ожидают' },
@@ -167,11 +163,13 @@ export function HandoffPage() {
                 onClick={() => setSelectedSessionId(session.id)}
               />
             ))}
-            {sessions.length === 0 && (
-              <p className="px-1 text-sm text-muted-foreground">
-                {sessionsQuery.isLoading ? 'Загрузка...' : 'Нет диалогов для выбранного фильтра.'}
-              </p>
-            )}
+            {sessionsQuery.isError ? (
+              <ErrorState message="Не удалось загрузить очередь диалогов." />
+            ) : sessionsQuery.isLoading ? (
+              <LoadingState />
+            ) : sessions.length === 0 ? (
+              <p className="px-1 text-sm text-muted-foreground">Нет диалогов для выбранного фильтра.</p>
+            ) : null}
           </div>
         </CardContent>
       </Card>
@@ -310,19 +308,14 @@ export function HandoffPage() {
           </CardContent>
         </Card>
 
-        <Card className="min-h-0 flex-1">
-          <CardHeader>
-            <CardTitle className="text-base">Источники диалога</CardTitle>
-            <CardDescription>Контекст, на который ссылался бот до эскалации</CardDescription>
-          </CardHeader>
-          <CardContent className="max-h-[calc(100vh-25rem)] overflow-y-auto space-y-2">
-            {sources.map((source) => (
-              <SourcePanelRow key={source.source_id} source={source} />
-            ))}
-            {sources.length === 0 && (
-              <p className="text-sm text-muted-foreground">В истории пока нет источников.</p>
-            )}
-          </CardContent>
+        <Card className="min-h-0 flex-1 border-0 shadow-none bg-transparent p-0">
+          <ChatSourcesPanel
+            sources={sources}
+            title="Источники диалога"
+            description="Контекст, на который ссылался бот до эскалации"
+            emptyMessage="В истории пока нет источников."
+            className="flex min-h-0 flex-1 flex-col"
+          />
         </Card>
       </div>
     </div>
@@ -336,19 +329,6 @@ function Metric({ label, value }: { label: string; value: number }) {
       <p className="text-xl font-semibold">{value}</p>
     </div>
   );
-}
-
-function collectSources(messages: ChatMessage[]): ChatSource[] {
-  const seen = new Set<string>();
-  const out: ChatSource[] = [];
-  for (const message of messages) {
-    for (const source of message.sources ?? []) {
-      if (seen.has(source.source_id)) continue;
-      seen.add(source.source_id);
-      out.push(source);
-    }
-  }
-  return out;
 }
 
 function SessionRow({ session, active, onClick }: { session: ChatSession; active: boolean; onClick: () => void }) {
@@ -414,19 +394,4 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       </div>
     </div>
   );
-}
-
-function guardrailReasonLabel(reason: string): string {
-  switch (reason) {
-    case 'explicit_request':
-      return 'клиент попросил оператора';
-    case 'no_context':
-      return 'нет данных в базе знаний';
-    case 'low_confidence':
-      return 'низкая уверенность';
-    case 'missing_citation':
-      return 'нет подтверждающего источника';
-    default:
-      return reason;
-  }
 }

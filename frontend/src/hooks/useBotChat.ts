@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { botChatApi, type CreateChatSessionRequest, type SendChatMessageRequest } from '@/api/botChat';
+import { botChatApi, type CreateChatSessionRequest } from '@/api/botChat';
 import { queryKeys } from '@/lib/queryKeys';
 
 export function useChatSessions(page = 1) {
@@ -9,11 +9,12 @@ export function useChatSessions(page = 1) {
   });
 }
 
-export function useChatSession(id?: string) {
+export function useChatSession(id?: string, refetchInterval: number | false = false) {
   return useQuery({
     queryKey: queryKeys.botChat.detail(id ?? ''),
     queryFn: () => botChatApi.getSession(id!),
     enabled: !!id,
+    refetchInterval,
   });
 }
 
@@ -22,17 +23,5 @@ export function useCreateChatSession() {
   return useMutation({
     mutationFn: (data?: CreateChatSessionRequest) => botChatApi.createSession(data),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.botChat.all }),
-  });
-}
-
-export function useSendChatMessage() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ sessionId, data }: { sessionId: string; data: SendChatMessageRequest }) =>
-      botChatApi.sendMessage(sessionId, data),
-    onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: queryKeys.botChat.all });
-      qc.invalidateQueries({ queryKey: queryKeys.botChat.detail(result.session.id) });
-    },
   });
 }

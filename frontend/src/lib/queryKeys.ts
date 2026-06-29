@@ -5,23 +5,14 @@ import type { ArticleFilter } from '@/api/articles';
 import type { SearchParams } from '@/api/search';
 import type { CompanyFilter } from '@/api/admin';
 import type { UserFilter } from '@/api/users';
-
-function tenantScopeKey() {
-  try {
-    const raw = localStorage.getItem('auth-storage');
-    const state = raw ? JSON.parse(raw)?.state : null;
-    if (state?.user?.role === 'superadmin') {
-      return state?.selectedCompanyId || 'no-company';
-    }
-    return state?.selectedCompanyId || state?.user?.company_id || 'no-company';
-  } catch {
-    return 'no-company';
-  }
-}
+import { tenantScopeKey } from '@/lib/tenantContext';
 
 const tenant = () => ['tenant', tenantScopeKey()] as const;
 
 export const queryKeys = {
+  auth: {
+    companies: ['auth', 'companies'] as const,
+  },
   qa: {
     get all() { return [...tenant(), 'qa'] as const; },
     list: (filters?: QAFilter) => [...tenant(), 'qa', 'list', filters] as const,
@@ -114,3 +105,7 @@ export const queryKeys = {
     get status() { return [...tenant(), 'rag', 'status'] as const; },
   },
 };
+
+export function isTenantScopedQueryKey(queryKey: readonly unknown[]): boolean {
+  return queryKey[0] === 'tenant';
+}

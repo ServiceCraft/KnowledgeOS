@@ -26,6 +26,7 @@ import {
   Building2,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
+import { isTenantReady } from '@/lib/tenantContext';
 import { hasMinRole } from '@/lib/roles';
 
 const kbLinks = [
@@ -56,7 +57,7 @@ export function AppSidebar() {
   const user = useAuthStore((s) => s.user);
   const selectedCompanyId = useAuthStore((s) => s.selectedCompanyId);
   const role = user?.role ?? 'viewer';
-  const tenantReady = role !== 'superadmin' || !!selectedCompanyId;
+  const tenantReady = isTenantReady(user, selectedCompanyId);
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
   const visibleSettingsLinks = settingsLinks.filter((link) => {

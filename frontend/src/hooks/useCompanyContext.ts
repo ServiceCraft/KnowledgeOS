@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { isTenantScopedQueryKey } from '@/lib/queryKeys';
 import { useAuthStore } from '@/stores/authStore';
 
 export function useSelectCompanyContext() {
@@ -7,6 +8,6 @@ export function useSelectCompanyContext() {
 
   return (companyId: string, companyName: string) => {
     setSelectedCompany(companyId, companyName);
-    qc.clear();
+    qc.removeQueries({ predicate: (query) => isTenantScopedQueryKey(query.queryKey) });
   };
 }

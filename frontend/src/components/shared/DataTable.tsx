@@ -26,6 +26,7 @@ interface DataTableProps<T> {
   onPageChange?: (page: number) => void;
   onRowClick?: (item: T) => void;
   getRowClassName?: (item: T) => string | undefined;
+  getRowKey?: (item: T, index: number) => string | number;
 }
 
 export function DataTable<T>({
@@ -37,6 +38,7 @@ export function DataTable<T>({
   onPageChange,
   onRowClick,
   getRowClassName,
+  getRowKey,
 }: DataTableProps<T>) {
   const totalPages = Math.ceil(total / limit) || 1;
 
@@ -63,7 +65,7 @@ export function DataTable<T>({
             ) : (
               data.map((item, i) => (
                 <TableRow
-                  key={i}
+                  key={getRowKey?.(item, i) ?? i}
                   className={cn(
                     onRowClick && 'cursor-pointer hover:bg-muted/50',
                     getRowClassName?.(item)

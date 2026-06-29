@@ -84,7 +84,7 @@ func main() {
 			IndexMaxAttempts:   cfg.RAGIndexMaxAttempts,
 		},
 	)
-	authSvc := service.NewAuthService(userStore, syncStore, jwtMgr)
+	authSvc := service.NewAuthService(userStore, companyStore, syncStore, jwtMgr)
 	qaSvc := service.NewQAService(qaStore, themeStore, ragIndexerSvc)
 	themeSvc := service.NewThemeService(themeStore, qaStore)
 	pricingSvc := service.NewPricingService(pricingStore, ragIndexerSvc)
@@ -158,7 +158,7 @@ func main() {
 	// The backup API key is read per-request so it can be rotated/revoked
 	// without restarting the process.
 	backupKey := func() string { return os.Getenv("BACKUP_API_KEY") }
-	router := handler.NewRouter(h, jwtMgr, syncRepo, backupKey)
+	router := handler.NewRouter(h, jwtMgr, syncRepo, userStore, backupKey)
 	ragIndexerSvc.StartWorker(context.Background())
 
 	log.Info().Str("addr", ":8080").Msg("knowledgeos api starting")
@@ -202,7 +202,6 @@ func bootstrap(cfg *config.Config, companies *store.CompanyStore, users *store.U
 		Email:        cfg.SuperadminEmail,
 		PasswordHash: hash,
 		Role:         domain.RoleSuperadmin,
-		CompanyID:    &company.ID,
 		IsActive:     true,
 	}
 	if err := users.Create(ctx, user); err != nil {

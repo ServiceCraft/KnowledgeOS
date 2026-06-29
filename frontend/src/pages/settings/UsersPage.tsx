@@ -18,36 +18,63 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2, KeyRound, ArrowUpDown, RefreshCw } from 'lucide-react';
+import { Plus, Pencil, Trash2, KeyRound, ArrowUpDown } from 'lucide-react';
 import { DataTable, type Column } from '@/components/shared/DataTable';
 import { SearchInput } from '@/components/shared/SearchInput';
-import { LoadingState } from '@/components/shared/LoadingState';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { useUsersList, useCreateUser, useUpdateUser, useDeleteUser } from '@/hooks/useUsers';
+import { useAccessibleCompanies } from '@/hooks/useAccessibleCompanies';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useAuthStore } from '@/stores/authStore';
 import { ROLE_LABELS, ALL_ROLES, roleLabel } from '@/lib/roles';
 import type { User, Role } from '@/types';
 import { toast } from 'sonner';
-import { AxiosError } from 'axios';
+import { PasswordFieldWithGenerate } from '@/components/users/PasswordFieldWithGenerate';
+import { apiError } from '@/lib/apiError';
 
 const PAGE_SIZE = 20;
 const MIN_PASSWORD = 8;
 
-function apiError(err: unknown, fallback: string): string {
-  const ax = err as AxiosError<{ error?: string }>;
-  return ax?.response?.data?.error ?? fallback;
-}
-
-function generatePassword(length = 16): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
-  const arr = new Uint32Array(length);
-  crypto.getRandomValues(arr);
-  return Array.from(arr, (n) => chars[n % chars.length]).join('');
+function UsersTableLoading() {
+  return (
+    <div className="rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>E-mail</TableHead>
+            <TableHead className="w-48">Компании</TableHead>
+            <TableHead className="w-44">Роль</TableHead>
+            <TableHead className="w-40">Создан</TableHead>
+            <TableHead className="w-28">Статус</TableHead>
+            <TableHead className="w-32" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <TableRow>
+            <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
+              Загрузка...
+            </TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    </div>
+  );
 }
 
 export function UsersPage() {
   const { isSuperadmin, userId } = usePermissions();
+  const selectedCompanyId = useAuthStore((s) => s.selectedCompanyId);
+  const { data: accessibleCompanies } = useAccessibleCompanies();
+  const companyNameById = Object.fromEntries((accessibleCompanies ?? []).map((c) => [c.id, c.name]));
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -73,6 +100,7 @@ export function UsersPage() {
   const [formPassword, setFormPassword] = useState('');
   const [formRole, setFormRole] = useState<Role>('viewer');
   const [formActive, setFormActive] = useState(true);
+  const [formCompanyIds, setFormCompanyIds] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Dangerous-action confirmations
@@ -92,6 +120,7 @@ export function UsersPage() {
     setFormPassword('');
     setFormRole('viewer');
     setFormActive(true);
+    setFormCompanyIds(selectedCompanyId ? [selectedCompanyId] : []);
     setFormError(null);
     setShowForm(true);
   };
@@ -102,8 +131,15 @@ export function UsersPage() {
     setFormPassword('');
     setFormRole(user.role);
     setFormActive(user.is_active);
+    setFormCompanyIds(user.company_ids ?? []);
     setFormError(null);
     setShowForm(true);
+  };
+
+  const toggleCompany = (companyId: string) => {
+    setFormCompanyIds((prev) =>
+      prev.includes(companyId) ? prev.filter((id) => id !== companyId) : [...prev, companyId]
+    );
   };
 
   const validateForm = (): string | null => {
@@ -112,6 +148,9 @@ export function UsersPage() {
     }
     if (!editingUser && formPassword.length < MIN_PASSWORD) {
       return `Пароль должен содержать не менее ${MIN_PASSWORD} символов`;
+    }
+    if (formRole !== 'superadmin' && formCompanyIds.length === 0) {
+      return 'Выберите хотя бы одну компанию';
     }
     return null;
   };
@@ -145,8 +184,8 @@ export function UsersPage() {
           id: editingUser.id,
           data: {
             email: formEmail.trim(),
-            // Don't send role changes for your own account (server forbids it).
             ...(isSelf ? {} : { role: formRole, is_active: formActive }),
+            ...(formRole !== 'superadmin' && !isSelf ? { company_ids: formCompanyIds } : {}),
           },
         },
         {
@@ -159,7 +198,13 @@ export function UsersPage() {
       );
     } else {
       createUser.mutate(
-        { email: formEmail.trim(), password: formPassword, role: formRole, is_active: formActive },
+        {
+          email: formEmail.trim(),
+          password: formPassword,
+          role: formRole,
+          is_active: formActive,
+          ...(formRole !== 'superadmin' ? { company_ids: formCompanyIds } : {}),
+        },
         {
           onSuccess: () => {
             setShowForm(false);
@@ -215,6 +260,22 @@ export function UsersPage() {
           {item.id === userId && <span className="ml-2 text-xs text-muted-foreground">(вы)</span>}
         </span>
       ),
+    },
+    {
+      key: 'companies',
+      header: 'Компании',
+      className: 'w-48',
+      render: (item) => {
+        if (item.role === 'superadmin') {
+          return <span className="text-sm text-muted-foreground">Все</span>;
+        }
+        const names = (item.company_ids ?? []).map((id) => companyNameById[id] ?? id.slice(0, 8));
+        return (
+          <span className="text-sm text-muted-foreground truncate" title={names.join(', ')}>
+            {names.length > 0 ? names.join(', ') : '—'}
+          </span>
+        );
+      },
     },
     {
       key: 'role',
@@ -297,11 +358,11 @@ export function UsersPage() {
     },
   ];
 
-  if (isLoading) return <LoadingState />;
   if (isError) return <ErrorState message="Не удалось загрузить пользователей." />;
 
   const editingSelf = editingUser?.id === userId;
   const submitting = createUser.isPending || updateUser.isPending;
+  const showInitialLoad = isLoading && !data;
 
   return (
     <div className="space-y-4">
@@ -348,14 +409,19 @@ export function UsersPage() {
         </Button>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={data?.data ?? []}
-        total={data?.total ?? 0}
-        page={page}
-        limit={PAGE_SIZE}
-        onPageChange={setPage}
-      />
+      {showInitialLoad ? (
+        <UsersTableLoading />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={data?.data ?? []}
+          total={data?.total ?? 0}
+          page={page}
+          limit={PAGE_SIZE}
+          onPageChange={setPage}
+          getRowKey={(user) => user.id}
+        />
+      )}
 
       {/* Create / edit dialog */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
@@ -376,25 +442,14 @@ export function UsersPage() {
             </div>
 
             {!editingUser && (
-              <div className="space-y-2">
-                <Label htmlFor="password">Начальный пароль</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="password"
-                    type="text"
-                    value={formPassword}
-                    onChange={(e) => setFormPassword(e.target.value)}
-                    required
-                    minLength={MIN_PASSWORD}
-                    autoComplete="new-password"
-                  />
-                  <Button type="button" variant="outline" onClick={() => setFormPassword(generatePassword())}>
-                    <RefreshCw className="h-4 w-4 mr-1" />
-                    Сгенерировать
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">Не менее {MIN_PASSWORD} символов.</p>
-              </div>
+              <PasswordFieldWithGenerate
+                id="password"
+                label="Начальный пароль"
+                value={formPassword}
+                onChange={setFormPassword}
+                minLength={MIN_PASSWORD}
+                hint={`Не менее ${MIN_PASSWORD} символов.`}
+              />
             )}
 
             <div className="space-y-2">
@@ -424,6 +479,29 @@ export function UsersPage() {
                 <p className="text-xs text-muted-foreground">Нельзя изменить собственную роль.</p>
               )}
             </div>
+
+            {formRole !== 'superadmin' && (
+              <div className="space-y-2">
+                <Label>Компании</Label>
+                <div className="max-h-40 space-y-2 overflow-y-auto rounded-md border p-3">
+                  {(accessibleCompanies ?? []).map((company) => (
+                    <label key={company.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border"
+                        checked={formCompanyIds.includes(company.id)}
+                        onChange={() => toggleCompany(company.id)}
+                        disabled={editingSelf}
+                      />
+                      <span>{company.name}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Пользователь получит доступ только к выбранным компаниям.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="status">Статус</Label>
@@ -478,21 +556,14 @@ export function UsersPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="flex gap-2">
-              <Input
-                type="text"
-                value={resetPassword}
-                placeholder="Новый пароль"
-                onChange={(e) => setResetPassword(e.target.value)}
-                minLength={MIN_PASSWORD}
-                autoComplete="new-password"
-              />
-              <Button type="button" variant="outline" onClick={() => setResetPassword(generatePassword())}>
-                <RefreshCw className="h-4 w-4 mr-1" />
-                Сгенерировать
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">Не менее {MIN_PASSWORD} символов.</p>
+            <PasswordFieldWithGenerate
+              id="reset-password"
+              label="Новый пароль"
+              value={resetPassword}
+              onChange={setResetPassword}
+              minLength={MIN_PASSWORD}
+              hint={`Не менее ${MIN_PASSWORD} символов.`}
+            />
             {resetError && <p className="text-sm text-destructive">{resetError}</p>}
           </div>
           <DialogFooter>

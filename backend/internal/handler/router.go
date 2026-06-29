@@ -35,7 +35,7 @@ type Handlers struct {
 var writeRoles = []domain.Role{domain.RoleEditor, domain.RoleAdmin, domain.RoleSuperadmin}
 
 // NewRouter executes the handler.NewRouter operation.
-func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncRepository, backupKey func() string) *chi.Mux {
+func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncRepository, users domain.UserRepository, backupKey func() string) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chiMiddleware.Recoverer)
@@ -53,6 +53,7 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.JWTAuth(jwtMgr))
 			r.Post("/auth/logout", h.Auth.Logout)
+			r.Get("/auth/companies", h.Auth.ListCompanies)
 
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole(domain.RoleSuperadmin))
@@ -69,7 +70,7 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 		// role (viewer included); writes are gated to editor and above.
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.JWTAuth(jwtMgr))
-			r.Use(middleware.Tenant)
+			r.Use(middleware.Tenant(users))
 
 			// --- Reads (viewer+) ---
 			r.Get("/qa", h.QA.List)

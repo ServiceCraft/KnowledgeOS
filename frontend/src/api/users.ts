@@ -14,6 +14,7 @@ export interface CreateUserRequest {
   password: string;
   role: Role;
   is_active?: boolean;
+  company_ids?: string[];
 }
 
 export interface UpdateUserRequest {
@@ -21,6 +22,7 @@ export interface UpdateUserRequest {
   password?: string;
   role?: Role;
   is_active?: boolean;
+  company_ids?: string[];
 }
 
 export const usersApi = {

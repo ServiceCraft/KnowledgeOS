@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Plus, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import { PaginationBar } from '@/components/shared/PaginationBar';
+import { Plus, FileText } from 'lucide-react';
 import { SearchInput } from '@/components/shared/SearchInput';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
@@ -83,15 +84,7 @@ export function ArticleListPage() {
           <p className="text-sm text-muted-foreground">
             {(page - 1) * limit + 1}–{Math.min(page * limit, total)} из {total}
           </p>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPage(page - 1)} disabled={page <= 1}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm tabular-nums">{page} / {totalPages}</span>
-            <Button variant="outline" size="sm" onClick={() => setPage(page + 1)} disabled={page >= totalPages}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+          <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       )}
     </div>

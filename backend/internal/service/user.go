@@ -62,17 +62,19 @@ type Actor struct {
 }
 
 type CreateUserRequest struct {
-	Email    string      `json:"email"`
-	Password string      `json:"password"`
-	Role     domain.Role `json:"role"`
-	IsActive *bool       `json:"is_active"`
+	Email      string      `json:"email"`
+	Password   string      `json:"password"`
+	Role       domain.Role `json:"role"`
+	IsActive   *bool       `json:"is_active"`
+	CompanyIDs []uuid.UUID `json:"company_ids"`
 }
 
 type UpdateUserRequest struct {
-	Email    *string      `json:"email"`
-	Password *string      `json:"password"`
-	Role     *domain.Role `json:"role"`
-	IsActive *bool        `json:"is_active"`
+	Email      *string      `json:"email"`
+	Password   *string      `json:"password"`
+	Role       *domain.Role `json:"role"`
+	IsActive   *bool        `json:"is_active"`
+	CompanyIDs *[]uuid.UUID `json:"company_ids"`
 }
 
 // List executes the service.UserService.List operation.
@@ -104,9 +106,13 @@ func (s *UserService) Create(ctx context.Context, actor Actor, req CreateUserReq
 	if !domain.ValidRole(req.Role) {
 		return nil, badRequest("invalid role")
 	}
-	// Only a superadmin may mint another superadmin.
 	if req.Role == domain.RoleSuperadmin && actor.Role != domain.RoleSuperadmin {
 		return nil, forbidden("only a superadmin can assign the superadmin role")
+	}
+
+	companyIDs, err := s.resolveCreateCompanyIDs(ctx, actor, req.Role, req.CompanyIDs)
+	if err != nil {
+		return nil, err
 	}
 
 	if _, err := s.users.GetByEmail(ctx, email); err == nil {
@@ -125,9 +131,7 @@ func (s *UserService) Create(ctx context.Context, actor Actor, req CreateUserReq
 		active = *req.IsActive
 	}
 
-	companyID := actor.CompanyID
 	user := &domain.User{
-		CompanyID:    &companyID,
 		Email:        email,
 		PasswordHash: hash,
 		Role:         req.Role,
@@ -138,6 +142,13 @@ func (s *UserService) Create(ctx context.Context, actor Actor, req CreateUserReq
 			return nil, conflict("a user with this email already exists")
 		}
 		return nil, err
+	}
+
+	if req.Role != domain.RoleSuperadmin {
+		if err := s.users.SetCompanyIDs(ctx, user.ID, companyIDs); err != nil {
+			return nil, err
+		}
+		user.CompanyIDs = companyIDs
 	}
 	return user, nil
 }
@@ -152,13 +163,10 @@ func (s *UserService) Update(ctx context.Context, actor Actor, id uuid.UUID, req
 
 	isSelf := target.ID == actor.ID
 
-	// Administrator and superadmin accounts can only be managed by a superadmin.
-	// An administrator may still edit their OWN account, but not other admins.
 	if !isSelf && actor.Role != domain.RoleSuperadmin && isPrivilegedRole(target.Role) {
 		return nil, forbidden("only a superadmin can modify an administrator account")
 	}
 
-	// Whether this change should terminate the target's existing sessions.
 	revokeSessions := false
 
 	if req.Role != nil && *req.Role != target.Role {
@@ -168,9 +176,18 @@ func (s *UserService) Update(ctx context.Context, actor Actor, id uuid.UUID, req
 		if isSelf {
 			return nil, forbidden("you cannot change your own role")
 		}
-		// Granting or revoking superadmin is reserved for superadmins.
 		if (*req.Role == domain.RoleSuperadmin || target.Role == domain.RoleSuperadmin) && actor.Role != domain.RoleSuperadmin {
 			return nil, forbidden("only a superadmin can grant or revoke the superadmin role")
+		}
+		if *req.Role == domain.RoleSuperadmin {
+			if err := s.users.SetCompanyIDs(ctx, target.ID, nil); err != nil {
+				return nil, err
+			}
+			target.CompanyIDs = nil
+		} else if target.Role == domain.RoleSuperadmin {
+			if req.CompanyIDs == nil || len(*req.CompanyIDs) == 0 {
+				return nil, badRequest("at least one company is required")
+			}
 		}
 		target.Role = *req.Role
 		revokeSessions = true
@@ -213,6 +230,18 @@ func (s *UserService) Update(ctx context.Context, actor Actor, id uuid.UUID, req
 		}
 	}
 
+	if req.CompanyIDs != nil && target.Role != domain.RoleSuperadmin {
+		merged, err := s.mergeCompanyIDs(ctx, actor, target.ID, *req.CompanyIDs)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.users.SetCompanyIDs(ctx, target.ID, merged); err != nil {
+			return nil, err
+		}
+		target.CompanyIDs = merged
+		revokeSessions = true
+	}
+
 	if err := s.users.Update(ctx, target); err != nil {
 		if isUniqueViolation(err) {
 			return nil, conflict("a user with this email already exists")
@@ -220,8 +249,6 @@ func (s *UserService) Update(ctx context.Context, actor Actor, id uuid.UUID, req
 		return nil, err
 	}
 
-	// Terminate outstanding sessions after a sensitive change (role, password,
-	// deactivation). Best-effort: the update is already committed.
 	if revokeSessions && s.tokens != nil {
 		_ = s.tokens.RevokeAllUserTokens(ctx, target.ID)
 	}
@@ -238,21 +265,16 @@ func (s *UserService) Delete(ctx context.Context, actor Actor, id uuid.UUID) err
 	if target.ID == actor.ID {
 		return forbidden("you cannot delete your own account")
 	}
-	// Deleting an administrator or superadmin is reserved for superadmins.
 	if actor.Role != domain.RoleSuperadmin && isPrivilegedRole(target.Role) {
 		return forbidden("only a superadmin can delete an administrator account")
 	}
 	return s.users.Delete(ctx, id)
 }
 
-// isPrivilegedRole reports whether a role (admin or superadmin) may only be
-// managed by a superadmin.
 func isPrivilegedRole(r domain.Role) bool {
 	return r == domain.RoleAdmin || r == domain.RoleSuperadmin
 }
 
-// loadInCompany fetches a user and enforces multi-tenant isolation: a user from
-// another company is reported as not found.
 func (s *UserService) loadInCompany(ctx context.Context, companyID, id uuid.UUID) (*domain.User, error) {
 	applog.TraceCall(ctx, "service.UserService.loadInCompany")
 	user, err := s.users.GetByID(ctx, id)
@@ -262,10 +284,113 @@ func (s *UserService) loadInCompany(ctx context.Context, companyID, id uuid.UUID
 		}
 		return nil, err
 	}
-	if user.CompanyID == nil || *user.CompanyID != companyID {
+	if user.Role == domain.RoleSuperadmin {
 		return nil, notFound("user not found")
 	}
+	ok, err := s.users.HasCompany(ctx, id, companyID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, notFound("user not found")
+	}
+	user.CompanyIDs, err = s.users.GetCompanyIDs(ctx, id)
+	if err != nil {
+		return nil, err
+	}
 	return user, nil
+}
+
+func (s *UserService) resolveCreateCompanyIDs(ctx context.Context, actor Actor, role domain.Role, requested []uuid.UUID) ([]uuid.UUID, error) {
+	if role == domain.RoleSuperadmin {
+		return nil, nil
+	}
+	if len(requested) == 0 {
+		return nil, badRequest("at least one company is required")
+	}
+	if err := s.validateActorCanAssign(ctx, actor, requested); err != nil {
+		return nil, err
+	}
+	return dedupeUUIDs(requested), nil
+}
+
+func (s *UserService) validateActorCanAssign(ctx context.Context, actor Actor, requested []uuid.UUID) error {
+	if actor.Role == domain.RoleSuperadmin {
+		return nil
+	}
+	actorCompanies, err := s.users.GetCompanyIDs(ctx, actor.ID)
+	if err != nil {
+		return err
+	}
+	allowed := uuidSet(actorCompanies)
+	for _, id := range requested {
+		if !allowed[id] {
+			return forbidden("you cannot assign one or more of the selected companies")
+		}
+	}
+	return nil
+}
+
+func (s *UserService) mergeCompanyIDs(ctx context.Context, actor Actor, targetUserID uuid.UUID, requested []uuid.UUID) ([]uuid.UUID, error) {
+	requested = dedupeUUIDs(requested)
+	if len(requested) == 0 {
+		return nil, badRequest("at least one company is required")
+	}
+
+	if actor.Role == domain.RoleSuperadmin {
+		return requested, nil
+	}
+
+	existing, err := s.users.GetCompanyIDs(ctx, targetUserID)
+	if err != nil {
+		return nil, err
+	}
+	actorCompanies, err := s.users.GetCompanyIDs(ctx, actor.ID)
+	if err != nil {
+		return nil, err
+	}
+	allowed := uuidSet(actorCompanies)
+
+	result := make([]uuid.UUID, 0, len(existing)+len(requested))
+	for _, id := range existing {
+		if !allowed[id] {
+			result = append(result, id)
+		}
+	}
+	for _, id := range requested {
+		if allowed[id] {
+			result = append(result, id)
+		}
+	}
+	result = dedupeUUIDs(result)
+	if len(result) == 0 {
+		return nil, badRequest("at least one company is required")
+	}
+	return result, nil
+}
+
+func uuidSet(ids []uuid.UUID) map[uuid.UUID]bool {
+	set := make(map[uuid.UUID]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
+}
+
+func dedupeUUIDs(ids []uuid.UUID) []uuid.UUID {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[uuid.UUID]bool, len(ids))
+	out := make([]uuid.UUID, 0, len(ids))
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
 }
 
 func isUniqueViolation(err error) bool {

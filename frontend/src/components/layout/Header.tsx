@@ -21,6 +21,7 @@ import { Moon, Sun, LogOut, Building2, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useLogout } from '@/hooks/useAuth';
+import { useAccessibleCompanies } from '@/hooks/useAccessibleCompanies';
 import { cn } from '@/lib/utils';
 
 const routeLabels: Record<string, string> = {
@@ -50,6 +51,17 @@ export function Header() {
   const selectedCompanyName = useAuthStore((s) => s.selectedCompanyName);
   const { darkMode, toggleDarkMode } = useUIStore();
   const logout = useLogout();
+  const hasMultipleCompanies = (user?.company_ids?.length ?? 0) > 1;
+  const showCompanyPicker = user?.role === 'superadmin' || hasMultipleCompanies;
+  const needsCompanyList =
+    showCompanyPicker || (!!selectedCompanyId && !selectedCompanyName);
+  const { data: accessibleCompanies } = useAccessibleCompanies({ enabled: needsCompanyList });
+  const companyPickerHref = user?.role === 'superadmin' ? '/admin/companies' : '/select-company';
+
+  const resolvedCompanyName =
+    selectedCompanyName ??
+    accessibleCompanies?.find((c) => c.id === selectedCompanyId)?.name ??
+    selectedCompanyId;
 
   const segments = location.pathname.split('/').filter(Boolean);
   const breadcrumbs = segments.map((seg, i) => ({
@@ -84,16 +96,16 @@ export function Header() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      {user?.role === 'superadmin' && (
+      {showCompanyPicker && (
         <Link
-          to="/admin/companies"
+          to={companyPickerHref}
           className={cn(
             'flex min-w-0 max-w-[min(100%,18rem)] shrink items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition',
             selectedCompanyId
               ? 'border-primary bg-primary/10 font-semibold text-primary shadow-sm ring-1 ring-primary/20 hover:bg-primary/15'
               : 'animate-pulse border-destructive/60 bg-destructive/10 font-medium text-destructive hover:bg-destructive/15'
           )}
-          title={selectedCompanyId ? (selectedCompanyName ?? selectedCompanyId) : 'Компания не выбрана — нажмите, чтобы выбрать'}
+          title={selectedCompanyId ? String(resolvedCompanyName) : 'Компания не выбрана — нажмите, чтобы выбрать'}
         >
           {selectedCompanyId ? (
             <Building2 className="h-4 w-4 shrink-0" aria-hidden />
@@ -104,7 +116,7 @@ export function Header() {
             {selectedCompanyId ? (
               <>
                 <span className="hidden sm:inline">Компания: </span>
-                {selectedCompanyName || selectedCompanyId}
+                {resolvedCompanyName}
               </>
             ) : (
               'Выберите компанию'

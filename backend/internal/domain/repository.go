@@ -181,6 +181,10 @@ type UserRepository interface {
 	Create(ctx context.Context, user *User) error
 	Update(ctx context.Context, user *User) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	GetCompanyIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+	SetCompanyIDs(ctx context.Context, userID uuid.UUID, companyIDs []uuid.UUID) error
+	HasCompany(ctx context.Context, userID, companyID uuid.UUID) (bool, error)
+	ListCompaniesForUser(ctx context.Context, userID uuid.UUID) ([]Company, error)
 }
 
 type SearchRepository interface {

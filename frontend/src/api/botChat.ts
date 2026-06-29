@@ -1,5 +1,7 @@
 import client, { tenantContextError } from './client';
+import { buildAuthHeaders } from '@/lib/tenantContext';
 import { normalizeChatExchange, normalizeChatMessage, normalizeChatSessionWithMessages } from './chatNormalize';
+import type { ListResponse, DataResponse } from '@/types/api';
 import type { ChatExchange, ChatMessage, ChatSession, ChatSessionWithMessages, ChatSource } from '@/types';
 
 export interface CreateChatSessionRequest {
@@ -22,15 +24,6 @@ export interface ChatStreamEvent {
     total_tokens: number;
   };
   error?: string;
-}
-
-interface ListResponse<T> {
-  data: T[];
-  total?: number;
-}
-
-interface DataResponse<T> {
-  data: T;
 }
 
 const base = '/admin/bot/chat';
@@ -67,7 +60,7 @@ export const botChatApi = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...authHeaders(),
+        ...buildAuthHeaders(),
       },
       body: JSON.stringify(data),
       signal,
@@ -106,21 +99,6 @@ function normalizeChatStreamEvent(event: ChatStreamEvent): ChatStreamEvent {
   };
 }
 
-function authHeaders(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem('auth-storage');
-    const state = raw ? JSON.parse(raw)?.state : null;
-    const token = state?.tokens?.access_token;
-    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-    if (state?.user?.role === 'superadmin' && state?.selectedCompanyId) {
-      headers['X-Company-ID'] = state.selectedCompanyId;
-    }
-    return headers;
-  } catch {
-    return {};
-  }
-}
-
 function parseSSE(raw: string): ChatStreamEvent | null {
   const dataLines = raw
     .split('\n')
@@ -134,10 +112,11 @@ function parseSSE(raw: string): ChatStreamEvent | null {
   }
 }
 
-function errorFromBody(text: string) {
+function errorFromBody(text: string): string | null {
   try {
-    return JSON.parse(text)?.error;
+    const parsed = JSON.parse(text) as { error?: string };
+    return parsed.error ?? null;
   } catch {
-    return text;
+    return text.trim() || null;
   }
 }

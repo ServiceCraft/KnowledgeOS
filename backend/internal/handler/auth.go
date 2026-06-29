@@ -4,6 +4,7 @@ import (
 	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 
+	"github.com/knowledgeos/backend/internal/middleware"
 	"github.com/knowledgeos/backend/internal/service"
 )
 
@@ -56,7 +57,18 @@ type logoutRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-// Logout executes the handler.AuthHandler.Logout operation.
+// ListCompanies returns companies accessible to the authenticated user.
+func (h *AuthHandler) ListCompanies(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.AuthHandler.ListCompanies")
+	userID := middleware.GetUserID(r.Context())
+	role := middleware.GetRole(r.Context())
+	items, err := h.svc.ListAccessibleCompanies(r.Context(), userID, role)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	JSONList(w, http.StatusOK, items, int64(len(items)))
+}
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	applog.TraceCall(r.Context(), "handler.AuthHandler.Logout")
 	var req logoutRequest

@@ -10,7 +10,7 @@ export interface User {
   id: string;
   created_at: string;
   updated_at: string;
-  company_id?: string;
+  company_ids?: string[];
   email: string;
   role: Role;
   is_active: boolean;

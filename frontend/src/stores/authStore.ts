@@ -8,12 +8,19 @@ interface AuthState {
   isAuthenticated: boolean;
   selectedCompanyId: string | null;
   selectedCompanyName: string | null;
+  _hasHydrated: boolean;
   login: (user: AuthUser, tokens: { access_token: string; refresh_token: string }) => void;
   logout: () => void;
   setTokens: (tokens: { access_token: string; refresh_token: string }) => void;
   setUser: (user: AuthUser) => void;
   setSelectedCompany: (companyId: string | null, companyName?: string | null) => void;
-  setSelectedCompanyId: (companyId: string | null) => void;
+  setHasHydrated: (value: boolean) => void;
+}
+
+function initialCompanyId(user: AuthUser): string | null {
+  if (user.role === 'superadmin') return null;
+  if (user.company_ids?.length === 1) return user.company_ids[0];
+  return null;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -24,12 +31,13 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       selectedCompanyId: null,
       selectedCompanyName: null,
+      _hasHydrated: false,
       login: (user, tokens) =>
         set({
           user,
           tokens,
           isAuthenticated: true,
-          selectedCompanyId: user.role === 'superadmin' ? null : user.company_id ?? null,
+          selectedCompanyId: initialCompanyId(user),
           selectedCompanyName: null,
         }),
       logout: () =>
@@ -44,7 +52,7 @@ export const useAuthStore = create<AuthState>()(
       setUser: (user) => set({ user }),
       setSelectedCompany: (companyId, companyName = null) =>
         set({ selectedCompanyId: companyId, selectedCompanyName: companyName }),
-      setSelectedCompanyId: (companyId) => set({ selectedCompanyId: companyId, selectedCompanyName: null }),
+      setHasHydrated: (value) => set({ _hasHydrated: value }),
     }),
     {
       name: 'auth-storage',

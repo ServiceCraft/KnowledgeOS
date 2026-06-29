@@ -4,7 +4,7 @@ export interface AuthUser {
   id: string;
   email: string;
   role: Role;
-  company_id?: string;
+  company_ids?: string[];
 }
 
 export interface TokenPair {

@@ -9,14 +9,6 @@ export function usePricingList(filters?: PricingFilter) {
   });
 }
 
-export function usePricingDetail(id: string) {
-  return useQuery({
-    queryKey: queryKeys.pricing.detail(id),
-    queryFn: () => pricingApi.getById(id),
-    enabled: !!id,
-  });
-}
-
 export function useCreatePricingNode() {
   const qc = useQueryClient();
   return useMutation({
