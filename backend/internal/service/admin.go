@@ -40,7 +40,7 @@ func (s *AdminService) CreateCompany(ctx context.Context, company *domain.Compan
 		return errors.New("name is required")
 	}
 	if err := s.companies.Create(ctx, company); err != nil {
-		return err
+		return applog.TraceErr(ctx, "create company failed", err)
 	}
 	return s.syncRepo.InitSequence(ctx, company.ID)
 }

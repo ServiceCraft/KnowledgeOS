@@ -51,7 +51,7 @@ func (s *KBEmbeddingStore) UpsertChunks(ctx context.Context, companyID uuid.UUID
 				updated_at = now()
 		`, companyID, chunk.EntityType, chunk.EntityID, chunk.ChunkIdx, chunk.ThemeID, chunk.Title,
 			chunk.Content, chunk.ContentHash, embedding, chunk.Model, chunk.Dim).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "kb embedding: upsert chunk", err)
 		}
 	}
 	return nil

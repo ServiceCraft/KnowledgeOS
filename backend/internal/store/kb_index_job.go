@@ -60,7 +60,7 @@ func (s *KBIndexJobStore) ClaimPending(ctx context.Context, limit int) ([]domain
 			LIMIT ?
 			FOR UPDATE SKIP LOCKED
 		`, limit).Scan(&ids).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "kb index job: select pending ids", err)
 		}
 		if len(ids) == 0 {
 			return nil
@@ -72,7 +72,7 @@ func (s *KBIndexJobStore) ClaimPending(ctx context.Context, limit int) ([]domain
 				"attempts":   gorm.Expr("attempts + 1"),
 				"updated_at": gorm.Expr("now()"),
 			}).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "kb index job: mark processing", err)
 		}
 		return tx.Where("id IN ?", ids).Order("created_at ASC").Find(&jobs).Error
 	})

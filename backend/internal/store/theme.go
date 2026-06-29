@@ -55,7 +55,7 @@ func (s *ThemeStore) Create(ctx context.Context, companyID uuid.UUID, theme *dom
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "theme: bump sync sequence", err)
 		}
 		theme.SyncVersion = seq
 		theme.SyncOrigin = s.origin
@@ -70,7 +70,7 @@ func (s *ThemeStore) Update(ctx context.Context, companyID uuid.UUID, theme *dom
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "theme: bump sync sequence", err)
 		}
 		theme.SyncVersion = seq
 		theme.SyncOrigin = s.origin
@@ -84,7 +84,7 @@ func (s *ThemeStore) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UU
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "theme: bump sync sequence", err)
 		}
 		return tx.Model(&domain.Theme{}).Scopes(tenantScope(companyID)).Where("id = ?", id).
 			Updates(map[string]interface{}{"sync_version": seq, "sync_origin": s.origin, "deleted_at": gorm.Expr("now()")}).Error

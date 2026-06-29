@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -128,12 +129,12 @@ func (a *Adapter) SendMessage(ctx context.Context, cfg channels.ChannelConfig, m
 	form.Set("message", msg.Text)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.apiURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "vk: build request failed", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "vk: api request failed", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {

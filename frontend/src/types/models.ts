@@ -230,6 +230,15 @@ export interface ChatSessionWithMessages {
   messages: ChatMessage[];
 }
 
+export interface ChatSessionMetrics {
+  total: number;
+  bot: number;
+  waiting_operator: number;
+  operator: number;
+  closed: number;
+  by_channel: Partial<Record<ChatChannel, number>>;
+}
+
 export interface ChatExchange {
   session: ChatSession;
   user: ChatMessage;

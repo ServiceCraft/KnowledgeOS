@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+
 	applog "github.com/knowledgeos/backend/internal/logger"
 	"time"
 
@@ -37,6 +38,21 @@ func (s *ChatStore) ListSessions(ctx context.Context, companyID uuid.UUID, filte
 	applog.TraceCall(ctx, "store.ChatStore.ListSessions")
 	var items []domain.ChatSession
 	q := s.db.WithContext(ctx).Model(&domain.ChatSession{}).Scopes(tenantScope(companyID))
+	if filter.State != nil {
+		q = q.Where("state = ?", *filter.State)
+	}
+	if filter.Active {
+		q = q.Where("state IN ?", []domain.ChatState{domain.ChatStateWaitingOperator, domain.ChatStateOperator})
+	}
+	if filter.OperatorID != nil {
+		q = q.Where("operator_id = ?", *filter.OperatorID)
+	}
+	if filter.Channel != nil {
+		q = q.Where("channel = ?", *filter.Channel)
+	}
+	if filter.VisibleTo != nil {
+		q = q.Where("(state = ? OR operator_id = ?)", domain.ChatStateWaitingOperator, *filter.VisibleTo)
+	}
 
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
@@ -48,6 +64,57 @@ func (s *ChatStore) ListSessions(ctx context.Context, companyID uuid.UUID, filte
 		return nil, 0, err
 	}
 	return items, total, nil
+}
+
+func (s *ChatStore) SessionMetrics(ctx context.Context, companyID uuid.UUID, visibleTo *uuid.UUID) (*domain.ChatSessionMetrics, error) {
+	applog.TraceCall(ctx, "store.ChatStore.SessionMetrics")
+	base := s.db.WithContext(ctx).Model(&domain.ChatSession{}).Scopes(tenantScope(companyID))
+	if visibleTo != nil {
+		base = base.Where("(state = ? OR operator_id = ?)", domain.ChatStateWaitingOperator, *visibleTo)
+	}
+
+	out := &domain.ChatSessionMetrics{ByChannel: map[domain.ChatChannel]int64{}}
+	type stateRow struct {
+		State domain.ChatState
+		Count int64
+	}
+	var stateRows []stateRow
+	if err := base.Session(&gorm.Session{}).
+		Select("state, count(*) as count").
+		Group("state").
+		Scan(&stateRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range stateRows {
+		out.Total += row.Count
+		switch row.State {
+		case domain.ChatStateBot:
+			out.Bot = row.Count
+		case domain.ChatStateWaitingOperator:
+			out.WaitingOperator = row.Count
+		case domain.ChatStateOperator:
+			out.Operator = row.Count
+		case domain.ChatStateClosed:
+			out.Closed = row.Count
+		}
+	}
+
+	type channelRow struct {
+		Channel domain.ChatChannel
+		Count   int64
+	}
+	var channelRows []channelRow
+	if err := base.Session(&gorm.Session{}).
+		Where("state IN ?", []domain.ChatState{domain.ChatStateWaitingOperator, domain.ChatStateOperator}).
+		Select("channel, count(*) as count").
+		Group("channel").
+		Scan(&channelRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range channelRows {
+		out.ByChannel[row.Channel] = row.Count
+	}
+	return out, nil
 }
 
 // GetSession executes the store.ChatStore.GetSession operation.
@@ -94,6 +161,39 @@ func (s *ChatStore) UpdateSession(ctx context.Context, companyID uuid.UUID, sess
 		}).Error
 }
 
+// TransitionSession atomically changes a session state when its current state
+// is one of the allowed source states.
+func (s *ChatStore) TransitionSession(ctx context.Context, companyID, sessionID uuid.UUID, from []domain.ChatState, to domain.ChatState, operatorID *uuid.UUID) (*domain.ChatSession, error) {
+	applog.TraceCall(ctx, "store.ChatStore.TransitionSession")
+	if len(from) == 0 {
+		from = []domain.ChatState{domain.ChatStateBot, domain.ChatStateWaitingOperator, domain.ChatStateOperator}
+	}
+	var session domain.ChatSession
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{
+			"state":       to,
+			"operator_id": operatorID,
+		}
+		result := tx.Model(&domain.ChatSession{}).
+			Where("company_id = ? AND id = ? AND state IN ?", companyID, sessionID, from).
+			Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.
+			Scopes(tenantScope(companyID)).
+			Where("id = ?", sessionID).
+			First(&session).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
 // AppendMessage executes the store.ChatStore.AppendMessage operation.
 func (s *ChatStore) AppendMessage(ctx context.Context, companyID uuid.UUID, message *domain.ChatMessage) error {
 	applog.TraceCall(ctx, "store.ChatStore.AppendMessage")
@@ -112,7 +212,7 @@ func (s *ChatStore) AppendMessage(ctx context.Context, companyID uuid.UUID, mess
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(message).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "chat: insert message", err)
 		}
 		now := time.Now()
 		updates := map[string]interface{}{"last_message_at": now}

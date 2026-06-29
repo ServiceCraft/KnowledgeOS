@@ -60,6 +60,9 @@ func (s *BotSettingsService) Get(ctx context.Context, companyID uuid.UUID) (*dom
 	}
 	settings = DefaultBotSettings(companyID)
 	if err := s.settings.Upsert(ctx, companyID, settings); err != nil {
+		if isBotSettingsCompanyFK(err) {
+			return nil, badRequest("company not found")
+		}
 		applog.From(ctx).Error().Err(err).Str("company_id", companyID.String()).Msg("bot default settings create failed")
 		return nil, err
 	}
@@ -161,6 +164,9 @@ func (s *BotSettingsService) Update(ctx context.Context, companyID uuid.UUID, re
 	}
 
 	if err := s.settings.Upsert(ctx, companyID, current); err != nil {
+		if isBotSettingsCompanyFK(err) {
+			return nil, badRequest("company not found")
+		}
 		applog.From(ctx).Error().Err(err).Str("company_id", companyID.String()).Msg("bot settings update failed")
 		return nil, err
 	}
@@ -250,4 +256,8 @@ func normalizeJSONObject(raw json.RawMessage) (json.RawMessage, error) {
 		return nil, err
 	}
 	return json.RawMessage(out), nil
+}
+
+func isBotSettingsCompanyFK(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "bot_settings_company_id_fkey")
 }

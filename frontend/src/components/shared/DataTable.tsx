@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export interface Column<T> {
   key: string;
@@ -24,6 +25,7 @@ interface DataTableProps<T> {
   limit?: number;
   onPageChange?: (page: number) => void;
   onRowClick?: (item: T) => void;
+  getRowClassName?: (item: T) => string | undefined;
 }
 
 export function DataTable<T>({
@@ -34,6 +36,7 @@ export function DataTable<T>({
   limit = 20,
   onPageChange,
   onRowClick,
+  getRowClassName,
 }: DataTableProps<T>) {
   const totalPages = Math.ceil(total / limit) || 1;
 
@@ -61,7 +64,10 @@ export function DataTable<T>({
               data.map((item, i) => (
                 <TableRow
                   key={i}
-                  className={onRowClick ? 'cursor-pointer hover:bg-muted/50' : ''}
+                  className={cn(
+                    onRowClick && 'cursor-pointer hover:bg-muted/50',
+                    getRowClassName?.(item)
+                  )}
                   onClick={() => onRowClick?.(item)}
                 >
                   {columns.map((col) => (

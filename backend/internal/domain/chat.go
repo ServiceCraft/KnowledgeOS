@@ -105,13 +105,27 @@ type ChatSource struct {
 }
 
 type ChatSessionFilter struct {
-	Page  int
-	Limit int
+	Page       int
+	Limit      int
+	State      *ChatState
+	OperatorID *uuid.UUID
+	Channel    *ChatChannel
+	Active     bool
+	VisibleTo  *uuid.UUID
 }
 
 type ChatSessionWithMessages struct {
 	Session  *ChatSession  `json:"session"`
 	Messages []ChatMessage `json:"messages"`
+}
+
+type ChatSessionMetrics struct {
+	Total           int64                 `json:"total"`
+	Bot             int64                 `json:"bot"`
+	WaitingOperator int64                 `json:"waiting_operator"`
+	Operator        int64                 `json:"operator"`
+	Closed          int64                 `json:"closed"`
+	ByChannel       map[ChatChannel]int64 `json:"by_channel"`
 }
 
 type ChatRepository interface {

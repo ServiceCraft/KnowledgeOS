@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot,
+  Headphones,
   Loader2,
   MessageSquare,
   Plus,
@@ -12,7 +13,9 @@ import {
 } from 'lucide-react';
 import { botChatApi } from '@/api/botChat';
 import { useChatSession, useChatSessions, useCreateChatSession } from '@/hooks/useBotChat';
-import type { ChatMessage } from '@/types';
+import { useEscalateHandoffSession } from '@/hooks/useBotHandoff';
+import type { ChatMessage, ChatSource, ChatState } from '@/types';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,13 +28,23 @@ import { ChatAnswerContent } from '@/components/chat/ChatCitations';
 import { BotTypingIndicator } from '@/components/chat/BotTypingIndicator';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { MessageText } from '@/components/chat/MessageText';
+import { SourcePanelRow } from '@/components/chat/SourcePanelRow';
 import { formatMessageBody } from '@/lib/chatSources';
+import { toast } from 'sonner';
+
+const STATE_LABELS: Record<ChatState, string> = {
+  bot: 'Бот',
+  waiting_operator: 'Ожидает',
+  operator: 'У оператора',
+  closed: 'Закрыт',
+};
 
 export function BotPlaygroundPage() {
   const qc = useQueryClient();
   const [sessionsPage, setSessionsPage] = useState(1);
   const sessionsQuery = useChatSessions(sessionsPage);
   const createSession = useCreateChatSession();
+  const escalateSession = useEscalateHandoffSession();
   const [selectedSessionId, setSelectedSessionId] = useState<string>();
   const [draft, setDraft] = useState('');
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
@@ -51,10 +64,21 @@ export function BotPlaygroundPage() {
   }, []);
 
   const sessionQuery = useChatSession(selectedSessionId);
+  const selectedSession = sessionQuery.data?.session;
   const sessions = useMemo(() => sessionsQuery.data?.data ?? [], [sessionsQuery.data?.data]);
   const sessionsTotal = sessionsQuery.data?.total ?? 0;
   const sessionsTotalPages = Math.ceil(sessionsTotal / 30) || 1;
   const showTypingIndicator = isStreaming && localMessages[localMessages.length - 1]?.role === 'user';
+  const sources = useMemo(() => collectSources(localMessages), [localMessages]);
+  const canChat = selectedSession?.state === 'bot';
+  const sessionState = selectedSession?.state;
+  const composerPlaceholder = !selectedSession
+    ? 'Выберите или создайте сессию'
+    : canChat
+      ? 'Введите сообщение. Ctrl/⌘ + Enter отправляет.'
+      : sessionState === 'closed'
+        ? 'Диалог закрыт — создайте новую сессию'
+        : 'Диалог у оператора — откройте Handoff';
 
   useEffect(() => {
     if (!selectedSessionId && sessions.length > 0) {
@@ -71,11 +95,31 @@ export function BotPlaygroundPage() {
   useEffect(() => {
     const data = sessionQuery.data;
     if (!data || data.session.id !== selectedSessionId) return;
-    if (loadedSessionRef.current === selectedSessionId) return;
-    loadedSessionRef.current = selectedSessionId;
+    if (isStreaming) return;
+
+    const isInitialLoad = loadedSessionRef.current !== selectedSessionId;
+    if (isInitialLoad) {
+      loadedSessionRef.current = selectedSessionId;
+      pendingInitialScrollRef.current = true;
+    }
     setLocalMessages(data.messages);
-    pendingInitialScrollRef.current = true;
-  }, [sessionQuery.data, selectedSessionId]);
+  }, [sessionQuery.data, selectedSessionId, isStreaming]);
+
+  useEffect(() => {
+    if (!selectedSessionId || isStreaming) return;
+    const messages = sessionQuery.data?.messages;
+    if (!messages?.length) return;
+    if (messages[messages.length - 1]?.role !== 'user') return;
+
+    const interval = window.setInterval(() => {
+      qc.invalidateQueries({ queryKey: queryKeys.botChat.detail(selectedSessionId) });
+    }, 2000);
+    const timeout = window.setTimeout(() => window.clearInterval(interval), 120000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [selectedSessionId, sessionQuery.data?.messages, isStreaming, qc]);
 
   useEffect(() => {
     if (localMessages.length === 0 && !showTypingIndicator) return;
@@ -108,9 +152,26 @@ export function BotPlaygroundPage() {
     abortRef.current?.abort();
   }
 
+  function escalateSelectedSession() {
+    if (!selectedSession || selectedSession.state !== 'bot') return;
+    escalateSession.mutate(
+      { id: selectedSession.id, reason: 'manual_playground' },
+      {
+        onSuccess: () => {
+          toast.success('Диалог передан оператору');
+          qc.invalidateQueries({ queryKey: queryKeys.botChat.sessions(sessionsPage) });
+          if (selectedSession) {
+            qc.invalidateQueries({ queryKey: queryKeys.botChat.detail(selectedSession.id) });
+          }
+        },
+        onError: () => toast.error('Не удалось передать диалог оператору'),
+      }
+    );
+  }
+
   async function sendMessage() {
     const content = draft.trim();
-    if (!content || isStreaming) return;
+    if (!content || isStreaming || !canChat) return;
     setDraft('');
     setError(undefined);
     const sessionId = await ensureSession();
@@ -140,7 +201,7 @@ export function BotPlaygroundPage() {
             setLocalMessages((items) => [...items, event.message!]);
           }
           if (event.type === 'error') {
-            setError(event.error ?? 'Ошибка генерации ответа');
+            setError(mapChatStreamError(event.error));
           }
         },
         controller.signal
@@ -151,7 +212,7 @@ export function BotPlaygroundPage() {
       if (controller.signal.aborted) {
         setError(undefined);
       } else {
-        setError(err instanceof Error ? err.message : 'Ошибка генерации ответа');
+        setError(mapChatStreamError(err instanceof Error ? err.message : 'Ошибка генерации ответа'));
       }
     } finally {
       setIsStreaming(false);
@@ -186,6 +247,11 @@ export function BotPlaygroundPage() {
                   <div className="flex items-center gap-2">
                     <MessageSquare className="h-4 w-4 shrink-0" />
                     <span className="truncate font-medium">{session.title || 'Новая сессия'}</span>
+                    {session.state !== 'bot' && (
+                      <Badge variant="secondary" className="ml-auto shrink-0 text-[10px]">
+                        {STATE_LABELS[session.state]}
+                      </Badge>
+                    )}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {session.last_message_at ? new Date(session.last_message_at).toLocaleString() : 'Без сообщений'}
@@ -225,10 +291,43 @@ export function BotPlaygroundPage() {
 
       <Card className="min-w-0 flex-1">
         <CardHeader>
-          <CardTitle>Чат с ботом</CardTitle>
-          <CardDescription>Ответ строится через RAG и сохраняется в истории с источниками.</CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Чат с ботом</CardTitle>
+              <CardDescription>Ответ строится через RAG и сохраняется в истории с источниками.</CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={escalateSelectedSession}
+              disabled={!selectedSession || selectedSession.state !== 'bot' || isStreaming || escalateSession.isPending}
+            >
+              <Headphones className="h-4 w-4" />
+              Передать оператору
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="flex h-full min-h-0 flex-col gap-3">
+          {sessionState === 'closed' && (
+            <Alert>
+              <AlertTitle>Диалог закрыт</AlertTitle>
+              <AlertDescription>
+                Эта сессия завершена. Нажмите «Новая сессия», чтобы продолжить тестирование бота.
+              </AlertDescription>
+            </Alert>
+          )}
+          {(sessionState === 'waiting_operator' || sessionState === 'operator') && (
+            <Alert>
+              <AlertTitle>Диалог у оператора</AlertTitle>
+              <AlertDescription>
+                Бот не отвечает, пока сессия в handoff. Откройте{' '}
+                <Link to="/bot/handoff" className="font-medium underline underline-offset-2">
+                  очередь операторов
+                </Link>
+                .
+              </AlertDescription>
+            </Alert>
+          )}
           {error && (
             <Alert variant="destructive">
               <AlertTitle>Бот не ответил</AlertTitle>
@@ -259,8 +358,8 @@ export function BotPlaygroundPage() {
               value={draft}
               onChange={setDraft}
               onSubmit={sendMessage}
-              disabled={isStreaming}
-              placeholder="Введите сообщение. Ctrl/⌘ + Enter отправляет."
+              disabled={isStreaming || !canChat}
+              placeholder={composerPlaceholder}
               className="flex-1"
             />
             {isStreaming ? (
@@ -269,7 +368,7 @@ export function BotPlaygroundPage() {
                 Стоп
               </Button>
             ) : (
-              <Button onClick={sendMessage} disabled={!draft.trim()}>
+              <Button onClick={sendMessage} disabled={!draft.trim() || !canChat}>
                 <Send className="h-4 w-4" />
                 Отправить
               </Button>
@@ -277,8 +376,36 @@ export function BotPlaygroundPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Card className="hidden w-80 shrink-0 xl:flex xl:flex-col">
+        <CardHeader>
+          <CardTitle className="text-base">Источники</CardTitle>
+          <CardDescription>Материалы, использованные в ответах текущего диалога</CardDescription>
+        </CardHeader>
+        <CardContent className="min-h-0 flex-1 overflow-y-auto space-y-2">
+          {sources.map((source) => (
+            <SourcePanelRow key={source.source_id} source={source} />
+          ))}
+          {sources.length === 0 && (
+            <p className="text-sm text-muted-foreground">Источники появятся после ответа с RAG-контекстом.</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
+}
+
+function collectSources(messages: ChatMessage[]): ChatSource[] {
+  const seen = new Set<string>();
+  const out: ChatSource[] = [];
+  for (const message of messages) {
+    for (const source of message.sources ?? []) {
+      if (seen.has(source.source_id)) continue;
+      seen.add(source.source_id);
+      out.push(source);
+    }
+  }
+  return out;
 }
 
 const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMessage }) {
@@ -321,6 +448,17 @@ function GuardrailVerdict({ message }: { message: ChatMessage }) {
       {message.refusal_reason && <span className="text-muted-foreground">{guardrailReasonLabel(message.refusal_reason)}</span>}
     </div>
   );
+}
+
+function mapChatStreamError(raw?: string): string {
+  const text = (raw ?? '').toLowerCase();
+  if (text.includes('chat session is closed') || text.includes('closed')) {
+    return 'Диалог закрыт. Создайте новую сессию.';
+  }
+  if (text.includes('not handled by bot') || text.includes('handled by operator')) {
+    return 'Диалог у оператора. Откройте очередь handoff.';
+  }
+  return raw ?? 'Ошибка генерации ответа';
 }
 
 function guardrailReasonLabel(reason: string): string {

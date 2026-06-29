@@ -18,9 +18,10 @@ info:
     - ошибка: `{ "error": "message" }`.
 
     Protected JWT-методы работают в tenant-контексте. Для обычного пользователя
-    компания берётся из JWT. Пользователь с ролью `superadmin` может передать
-    заголовок `X-Company-ID`, чтобы выполнить tenant-scoped метод от имени
-    конкретной компании.
+    компания берётся из JWT. Пользователь с ролью `superadmin` обязан передать
+    заголовок `X-Company-ID` для tenant-scoped методов; без выбранной компании
+    backend возвращает `403`. Глобальные методы `/admin/companies*` доступны
+    superadmin без tenant-контекста.
 servers:
   - url: http://localhost:8080/api/v1
     description: Локальный backend
@@ -1440,6 +1441,195 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /admin/bot/handoff/sessions:
+    get:
+      tags: [Bot Handoff]
+      operationId: listHandoffSessions
+      summary: Получить очередь handoff-сессий
+      description: |
+        Возвращает сессии для очереди операторов. `viewer` может видеть очередь
+        и свои назначенные диалоги; `admin`/`superadmin` могут управлять всеми.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - name: limit
+          in: query
+          schema: { type: integer, default: 30 }
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [bot, waiting_operator, operator, closed]
+        - name: operator_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: channel
+          in: query
+          schema:
+            type: string
+            enum: [playground, api, telegram, max, vk]
+        - name: active
+          in: query
+          description: Если true, возвращает только активные handoff-состояния `waiting_operator` и `operator`.
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Список сессий.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionListEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/bot/handoff/sessions/metrics:
+    get:
+      tags: [Bot Handoff]
+      operationId: getHandoffMetrics
+      summary: Получить метрики handoff-сессий
+      description: Возвращает агрегаты по состояниям и активным каналам с теми же правилами видимости, что и очередь.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Метрики handoff.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionMetricsEnvelope'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/bot/handoff/sessions/{id}:
+    get:
+      tags: [Bot Handoff]
+      operationId: getHandoffSession
+      summary: Получить handoff-сессию с историей
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Сессия и сообщения.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionWithMessagesEnvelope'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/bot/handoff/sessions/{id}/claim:
+    post:
+      tags: [Bot Handoff]
+      operationId: claimHandoffSession
+      summary: Взять диалог оператором
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Сессия назначена текущему оператору.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionEnvelope'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /admin/bot/handoff/sessions/{id}/messages:
+    post:
+      tags: [Bot Handoff]
+      operationId: sendHandoffOperatorMessage
+      summary: Отправить сообщение от оператора
+      description: Сохраняет `role=operator` и отправляет сообщение во внешний канал, если сессия привязана к Telegram/MAX/VK.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendChatMessageRequest'
+      responses:
+        '201':
+          description: Сохраненное сообщение оператора.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessageEnvelope'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /admin/bot/handoff/sessions/{id}/release:
+    post:
+      tags: [Bot Handoff]
+      operationId: releaseHandoffSession
+      summary: Вернуть диалог боту
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Сессия возвращена в состояние `bot`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionEnvelope'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /admin/bot/handoff/sessions/{id}/close:
+    post:
+      tags: [Bot Handoff]
+      operationId: closeHandoffSession
+      summary: Закрыть диалог
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Сессия закрыта.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionEnvelope'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /admin/bot/handoff/sessions/{id}/escalate:
+    post:
+      tags: [Bot Handoff]
+      operationId: escalateHandoffSession
+      summary: Ручная эскалация диалога
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EscalateSessionRequest'
+      responses:
+        '200':
+          description: Сессия переведена в `waiting_operator`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionEnvelope'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /admin/bot/chat/sessions/{id}/messages/stream:
     post:
       tags: [Bot Chat]
@@ -1509,7 +1699,8 @@ paths:
       operationId: importKnowledgeBase
       summary: Импортировать базу знаний
       description: |
-        Импортирует переносимый JSON export в компанию текущего superadmin.
+        Импортирует переносимый JSON export в выбранную через `X-Company-ID`
+        компанию.
         Backend переназначает `company_id`, очищает created/updated by и
         дедуплицирует часть сущностей.
       security:
@@ -2336,6 +2527,12 @@ components:
       required: [content]
       properties:
         content: { type: string, minLength: 1 }
+    EscalateSessionRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Машинная причина ручной эскалации.
     ChatSession:
       allOf:
         - $ref: '#/components/schemas/BaseModel'
@@ -2349,6 +2546,20 @@ components:
             operator_id: { type: string, format: uuid }
             title: { type: string }
             last_message_at: { type: string, format: date-time }
+    ChatSessionMetrics:
+      type: object
+      required: [total, bot, waiting_operator, operator, closed, by_channel]
+      properties:
+        total: { type: integer, format: int64 }
+        bot: { type: integer, format: int64 }
+        waiting_operator: { type: integer, format: int64 }
+        operator: { type: integer, format: int64 }
+        closed: { type: integer, format: int64 }
+        by_channel:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
     ChatSource:
       type: object
       required: [source_id, entity_type, entity_id, chunk_idx, title, content, score]
@@ -2651,6 +2862,11 @@ components:
       required: [data]
       properties:
         data: { $ref: '#/components/schemas/ChatSession' }
+    ChatMessageEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ChatMessage' }
     ChatSessionListEnvelope:
       type: object
       required: [data, total]
@@ -2659,6 +2875,11 @@ components:
           type: array
           items: { $ref: '#/components/schemas/ChatSession' }
         total: { type: integer, format: int64 }
+    ChatSessionMetricsEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/ChatSessionMetrics' }
     ChatSessionWithMessagesEnvelope:
       type: object
       required: [data]

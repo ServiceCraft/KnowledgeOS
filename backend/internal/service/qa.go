@@ -49,7 +49,7 @@ func (s *QAService) Create(ctx context.Context, companyID uuid.UUID, qa *domain.
 		}
 	}
 	if err := s.qa.Create(ctx, companyID, qa); err != nil {
-		return err
+		return applog.TraceErr(ctx, "create qa pair failed", err)
 	}
 	s.scheduleUpsert(ctx, companyID, qa.ID)
 	return nil
@@ -62,7 +62,7 @@ func (s *QAService) Update(ctx context.Context, companyID uuid.UUID, qa *domain.
 		return errors.New("qa pair not found")
 	}
 	if err := s.qa.Update(ctx, companyID, qa); err != nil {
-		return err
+		return applog.TraceErr(ctx, "update qa pair failed", err)
 	}
 	s.scheduleUpsert(ctx, companyID, qa.ID)
 	return nil
@@ -75,7 +75,7 @@ func (s *QAService) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUI
 		return errors.New("qa pair not found")
 	}
 	if err := s.qa.Delete(ctx, companyID, id); err != nil {
-		return err
+		return applog.TraceErr(ctx, "delete qa pair failed", err)
 	}
 	s.scheduleDelete(ctx, companyID, id)
 	return nil

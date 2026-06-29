@@ -16,6 +16,8 @@ import { ArrowLeft, Plus } from 'lucide-react';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useCompanyDetail, useCreateCompanyAdmin } from '@/hooks/useAdmin';
+import { useSelectCompanyContext } from '@/hooks/useCompanyContext';
+import { useAuthStore } from '@/stores/authStore';
 import { toast } from 'sonner';
 
 export function CompanyDetailPage() {
@@ -23,6 +25,8 @@ export function CompanyDetailPage() {
   const navigate = useNavigate();
   const { data: company, isLoading, isError } = useCompanyDetail(id!);
   const createAdmin = useCreateCompanyAdmin(id!);
+  const selectedCompanyId = useAuthStore((s) => s.selectedCompanyId);
+  const selectCompany = useSelectCompanyContext();
 
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
@@ -54,6 +58,16 @@ export function CompanyDetailPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <h1 className="text-2xl font-semibold flex-1">{company.name}</h1>
+        <Button
+          variant={selectedCompanyId === company.id ? 'default' : 'outline'}
+          onClick={() => {
+            selectCompany(company.id, company.name);
+            toast.success(`Выбрана компания: ${company.name}`);
+            navigate('/kb');
+          }}
+        >
+          {selectedCompanyId === company.id ? 'Компания выбрана' : 'Выбрать для работы'}
+        </Button>
       </div>
 
       <Card>

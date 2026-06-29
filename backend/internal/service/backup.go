@@ -307,11 +307,11 @@ func tarGzDir(srcDir, outPath string) (int, error) {
 	if statErr == nil && info.IsDir() {
 		err = filepath.Walk(srcDir, func(path string, fi os.FileInfo, err error) error {
 			if err != nil {
-				return err
+				return applog.TraceErr(context.Background(), "backup: walk code directory failed", err)
 			}
 			rel, err := filepath.Rel(srcDir, path)
 			if err != nil {
-				return err
+				return applog.TraceErr(context.Background(), "backup: resolve relative path failed", err)
 			}
 			if rel == "." {
 				return nil
@@ -332,19 +332,19 @@ func tarGzDir(srcDir, outPath string) (int, error) {
 			}
 			hdr, err := tar.FileInfoHeader(fi, "")
 			if err != nil {
-				return err
+				return applog.TraceErr(context.Background(), "backup: build tar header failed", err)
 			}
 			hdr.Name = filepath.ToSlash(rel)
 			if err := tw.WriteHeader(hdr); err != nil {
-				return err
+				return applog.TraceErr(context.Background(), "backup: write tar header failed", err)
 			}
 			f, err := os.Open(path)
 			if err != nil {
-				return err
+				return applog.TraceErr(context.Background(), "backup: open file for tar failed", err)
 			}
 			defer f.Close()
 			if _, err := io.Copy(tw, f); err != nil {
-				return err
+				return applog.TraceErr(context.Background(), "backup: write file to tar failed", err)
 			}
 			fileCount++
 			return nil
@@ -378,13 +378,13 @@ func buildArchive(outPath string, files []string) error {
 		if err := addFileToTar(tw, f, filepath.Base(f)); err != nil {
 			tw.Close()
 			gz.Close()
-			return err
+			return applog.TraceErr(context.Background(), "backup: add file to archive failed", err)
 		}
 	}
 
 	if err := tw.Close(); err != nil {
 		gz.Close()
-		return err
+		return applog.TraceErr(context.Background(), "backup: close tar writer failed", err)
 	}
 	return gz.Close()
 }
@@ -392,23 +392,23 @@ func buildArchive(outPath string, files []string) error {
 func addFileToTar(tw *tar.Writer, path, name string) error {
 	fi, err := os.Stat(path)
 	if err != nil {
-		return err
+		return applog.TraceErr(context.Background(), "backup: stat file failed", err)
 	}
 	hdr, err := tar.FileInfoHeader(fi, "")
 	if err != nil {
-		return err
+		return applog.TraceErr(context.Background(), "backup: build tar header failed", err)
 	}
 	hdr.Name = name
 	if err := tw.WriteHeader(hdr); err != nil {
-		return err
+		return applog.TraceErr(context.Background(), "backup: write tar header failed", err)
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return err
+		return applog.TraceErr(context.Background(), "backup: open file failed", err)
 	}
 	defer f.Close()
 	_, err = io.Copy(tw, f)
-	return err
+	return applog.TraceErr(context.Background(), "backup: write file to tar failed", err)
 }
 
 func fileStat(path string) (int64, string, error) {
@@ -428,7 +428,7 @@ func fileStat(path string) (int64, string, error) {
 func writeJSON(path string, v interface{}) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return err
+		return applog.TraceErr(context.Background(), "backup: marshal json failed", err)
 	}
 	return os.WriteFile(path, b, 0o600)
 }

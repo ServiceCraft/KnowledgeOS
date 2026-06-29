@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -140,7 +141,7 @@ func (a *Adapter) SendMessage(ctx context.Context, cfg channels.ChannelConfig, m
 	}
 	u, err := url.Parse(endpoint)
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "max: parse send url failed", err)
 	}
 	q := u.Query()
 	if q.Get("access_token") == "" {
@@ -153,16 +154,16 @@ func (a *Adapter) SendMessage(ctx context.Context, cfg channels.ChannelConfig, m
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "max: marshal request failed", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "max: build request failed", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "max: api request failed", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {

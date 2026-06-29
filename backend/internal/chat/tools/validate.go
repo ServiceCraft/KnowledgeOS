@@ -2,10 +2,13 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
+
+	applog "github.com/knowledgeos/backend/internal/logger"
 )
 
 // jsonSchema is the subset of JSON Schema understood by the tool framework. It
@@ -69,7 +72,7 @@ func (s *jsonSchema) validate(path string, value interface{}) error {
 			}
 			if child, present := obj[name]; present {
 				if err := prop.validate(path+"."+name, child); err != nil {
-					return err
+					return applog.TraceErr(context.Background(), "tool args: validate object property failed", err)
 				}
 			}
 		}
@@ -81,7 +84,7 @@ func (s *jsonSchema) validate(path string, value interface{}) error {
 		if s.Items != nil {
 			for i, item := range arr {
 				if err := s.Items.validate(path+"["+strconv.Itoa(i)+"]", item); err != nil {
-					return err
+					return applog.TraceErr(context.Background(), "tool args: validate array item failed", err)
 				}
 			}
 		}
@@ -94,7 +97,7 @@ func (s *jsonSchema) validate(path string, value interface{}) error {
 			return fmt.Errorf("%s must be at least %d characters", path, *s.MinLength)
 		}
 		if err := s.checkEnum(path, str); err != nil {
-			return err
+			return applog.TraceErr(context.Background(), "tool args: validate enum failed", err)
 		}
 	case "integer":
 		n, ok := toFloat(value)
@@ -105,7 +108,7 @@ func (s *jsonSchema) validate(path string, value interface{}) error {
 			return fmt.Errorf("%s must be an integer", path)
 		}
 		if err := s.checkBounds(path, n); err != nil {
-			return err
+			return applog.TraceErr(context.Background(), "tool args: validate integer bounds failed", err)
 		}
 	case "number":
 		n, ok := toFloat(value)
@@ -113,7 +116,7 @@ func (s *jsonSchema) validate(path string, value interface{}) error {
 			return fmt.Errorf("%s must be a number", path)
 		}
 		if err := s.checkBounds(path, n); err != nil {
-			return err
+			return applog.TraceErr(context.Background(), "tool args: validate number bounds failed", err)
 		}
 	case "boolean":
 		if _, ok := value.(bool); !ok {

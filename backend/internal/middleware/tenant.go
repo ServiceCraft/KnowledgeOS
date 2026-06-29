@@ -19,16 +19,18 @@ func Tenant(next http.Handler) http.Handler {
 
 		if claims.Role == domain.RoleSuperadmin {
 			headerID := r.Header.Get("X-Company-ID")
-			if headerID != "" {
-				id, err := uuid.Parse(headerID)
-				if err != nil {
-					respond.Error(w, http.StatusBadRequest, "invalid X-Company-ID")
-					return
-				}
-				ctx := SetCompanyID(r.Context(), id)
-				next.ServeHTTP(w, r.WithContext(ctx))
+			if headerID == "" {
+				respond.Error(w, http.StatusForbidden, "company selection required")
 				return
 			}
+			id, err := uuid.Parse(headerID)
+			if err != nil {
+				respond.Error(w, http.StatusBadRequest, "invalid X-Company-ID")
+				return
+			}
+			ctx := SetCompanyID(r.Context(), id)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
 		}
 
 		if claims.CompanyID == nil {

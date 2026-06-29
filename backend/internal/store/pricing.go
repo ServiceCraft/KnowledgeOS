@@ -58,7 +58,7 @@ func (s *PricingStore) Create(ctx context.Context, companyID uuid.UUID, node *do
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "pricing: bump sync sequence", err)
 		}
 		node.SyncVersion = seq
 		node.SyncOrigin = s.origin
@@ -73,7 +73,7 @@ func (s *PricingStore) Update(ctx context.Context, companyID uuid.UUID, node *do
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "pricing: bump sync sequence", err)
 		}
 		node.SyncVersion = seq
 		node.SyncOrigin = s.origin
@@ -87,7 +87,7 @@ func (s *PricingStore) Delete(ctx context.Context, companyID uuid.UUID, id uuid.
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "pricing: bump sync sequence", err)
 		}
 		return tx.Model(&domain.PricingNode{}).Scopes(tenantScope(companyID)).Where("id = ?", id).
 			Updates(map[string]interface{}{"sync_version": seq, "sync_origin": s.origin, "deleted_at": gorm.Expr("now()")}).Error

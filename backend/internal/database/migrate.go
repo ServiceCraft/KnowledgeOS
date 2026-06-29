@@ -1,11 +1,13 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
@@ -49,7 +51,7 @@ func RunMigrations(db *gorm.DB, migrationsDir string) error {
 			return tx.Exec("INSERT INTO schema_migrations (filename) VALUES (?)", f).Error
 		})
 		if err != nil {
-			return err
+			return applog.TraceErr(context.Background(), "migration failed", err)
 		}
 		log.Info().Str("migration", f).Msg("migration applied")
 	}

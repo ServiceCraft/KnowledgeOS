@@ -6,49 +6,64 @@ import type { SearchParams } from '@/api/search';
 import type { CompanyFilter } from '@/api/admin';
 import type { UserFilter } from '@/api/users';
 
+function tenantScopeKey() {
+  try {
+    const raw = localStorage.getItem('auth-storage');
+    const state = raw ? JSON.parse(raw)?.state : null;
+    if (state?.user?.role === 'superadmin') {
+      return state?.selectedCompanyId || 'no-company';
+    }
+    return state?.selectedCompanyId || state?.user?.company_id || 'no-company';
+  } catch {
+    return 'no-company';
+  }
+}
+
+const tenant = () => ['tenant', tenantScopeKey()] as const;
+
 export const queryKeys = {
   qa: {
-    all: ['qa'] as const,
-    list: (filters?: QAFilter) => ['qa', 'list', filters] as const,
-    detail: (id: string) => ['qa', id] as const,
+    get all() { return [...tenant(), 'qa'] as const; },
+    list: (filters?: QAFilter) => [...tenant(), 'qa', 'list', filters] as const,
+    detail: (id: string) => [...tenant(), 'qa', id] as const,
   },
   themes: {
-    all: ['themes'] as const,
-    list: (filters?: ThemeFilter) => ['themes', 'list', filters] as const,
-    detail: (id: string) => ['themes', id] as const,
-    qa: (id: string, page?: number) => ['themes', id, 'qa', page] as const,
+    get all() { return [...tenant(), 'themes'] as const; },
+    list: (filters?: ThemeFilter) => [...tenant(), 'themes', 'list', filters] as const,
+    detail: (id: string) => [...tenant(), 'themes', id] as const,
+    qa: (id: string, page?: number) => [...tenant(), 'themes', id, 'qa', page] as const,
   },
   pricing: {
-    all: ['pricing'] as const,
-    list: (filters?: PricingFilter) => ['pricing', 'list', filters] as const,
-    detail: (id: string) => ['pricing', id] as const,
+    get all() { return [...tenant(), 'pricing'] as const; },
+    list: (filters?: PricingFilter) => [...tenant(), 'pricing', 'list', filters] as const,
+    detail: (id: string) => [...tenant(), 'pricing', id] as const,
   },
   articles: {
-    all: ['articles'] as const,
-    list: (filters?: ArticleFilter) => ['articles', 'list', filters] as const,
-    detail: (id: string) => ['articles', id] as const,
+    get all() { return [...tenant(), 'articles'] as const; },
+    list: (filters?: ArticleFilter) => [...tenant(), 'articles', 'list', filters] as const,
+    detail: (id: string) => [...tenant(), 'articles', id] as const,
   },
   comments: {
-    all: ['comments'] as const,
+    get all() { return [...tenant(), 'comments'] as const; },
     list: (entityType: string, entityId: string) =>
-      ['comments', entityType, entityId] as const,
+      [...tenant(), 'comments', entityType, entityId] as const,
   },
   links: {
-    all: ['links'] as const,
+    get all() { return [...tenant(), 'links'] as const; },
     list: (sourceType: string, sourceId: string) =>
-      ['links', sourceType, sourceId] as const,
+      [...tenant(), 'links', sourceType, sourceId] as const,
   },
   search: {
-    all: ['search'] as const,
-    results: (params: SearchParams) => ['search', params] as const,
+    get all() { return [...tenant(), 'search'] as const; },
+    results: (params: SearchParams) => [...tenant(), 'search', params] as const,
   },
   sync: {
-    status: ['sync', 'status'] as const,
+    get status() { return [...tenant(), 'sync', 'status'] as const; },
   },
   users: {
-    all: ['users'] as const,
-    list: (filters?: UserFilter) => ['users', 'list', filters] as const,
-    detail: (id: string) => ['users', id] as const,
+    get all() { return [...tenant(), 'users'] as const; },
+    list: (filters?: UserFilter) => [...tenant(), 'users', 'list', filters] as const,
+    detail: (id: string) => [...tenant(), 'users', id] as const,
   },
   companies: {
     all: ['companies'] as const,
@@ -56,21 +71,46 @@ export const queryKeys = {
     detail: (id: string) => ['companies', id] as const,
   },
   calls: {
-    all: ['calls'] as const,
-    detail: (id: string) => ['calls', id] as const,
-    mentionsForQA: (qaId: string) => ['calls', 'mentions', 'qa', qaId] as const,
+    get all() { return [...tenant(), 'calls'] as const; },
+    detail: (id: string) => [...tenant(), 'calls', id] as const,
+    mentionsForQA: (qaId: string) => [...tenant(), 'calls', 'mentions', 'qa', qaId] as const,
   },
   botChat: {
-    all: ['botChat'] as const,
-    sessions: (page?: number) => ['botChat', 'sessions', page] as const,
-    detail: (id: string) => ['botChat', 'sessions', id] as const,
+    get all() { return [...tenant(), 'botChat'] as const; },
+    sessions: (page?: number) => [...tenant(), 'botChat', 'sessions', page] as const,
+    detail: (id: string) => [...tenant(), 'botChat', 'sessions', id] as const,
+  },
+  handoff: {
+    get all() { return [...tenant(), 'handoff'] as const; },
+    queue: (params?: {
+      page?: number;
+      limit?: number;
+      state?: string;
+      operator_id?: string;
+      channel?: string;
+      active?: boolean;
+    }) =>
+      [
+        ...tenant(),
+        'handoff',
+        'queue',
+        params?.page ?? 1,
+        params?.limit ?? 30,
+        params?.state ?? '',
+        params?.operator_id ?? '',
+        params?.channel ?? '',
+        params?.active ?? false,
+      ] as const,
+    session: (id: string) => [...tenant(), 'handoff', 'sessions', id] as const,
+    get metrics() { return [...tenant(), 'handoff', 'metrics'] as const; },
+    mySessions: (operatorId?: string) => [...tenant(), 'handoff', 'my', operatorId] as const,
   },
   botAdmin: {
-    settings: ['botAdmin', 'settings'] as const,
-    secrets: ['botAdmin', 'secrets'] as const,
-    channels: ['botAdmin', 'channels'] as const,
+    get settings() { return [...tenant(), 'botAdmin', 'settings'] as const; },
+    get secrets() { return [...tenant(), 'botAdmin', 'secrets'] as const; },
+    get channels() { return [...tenant(), 'botAdmin', 'channels'] as const; },
   },
   rag: {
-    status: ['rag', 'status'] as const,
+    get status() { return [...tenant(), 'rag', 'status'] as const; },
   },
 };

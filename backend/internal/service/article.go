@@ -42,7 +42,7 @@ func (s *ArticleService) Create(ctx context.Context, companyID uuid.UUID, articl
 		return errors.New("title is required")
 	}
 	if err := s.articles.Create(ctx, companyID, article); err != nil {
-		return err
+		return applog.TraceErr(ctx, "create article failed", err)
 	}
 	s.scheduleUpsert(ctx, companyID, article.ID)
 	return nil
@@ -55,7 +55,7 @@ func (s *ArticleService) Update(ctx context.Context, companyID uuid.UUID, articl
 		return errors.New("article not found")
 	}
 	if err := s.articles.Update(ctx, companyID, article); err != nil {
-		return err
+		return applog.TraceErr(ctx, "update article failed", err)
 	}
 	s.scheduleUpsert(ctx, companyID, article.ID)
 	return nil
@@ -68,7 +68,7 @@ func (s *ArticleService) Delete(ctx context.Context, companyID uuid.UUID, id uui
 		return errors.New("article not found")
 	}
 	if err := s.articles.Delete(ctx, companyID, id); err != nil {
-		return err
+		return applog.TraceErr(ctx, "delete article failed", err)
 	}
 	s.scheduleDelete(ctx, companyID, id)
 	return nil

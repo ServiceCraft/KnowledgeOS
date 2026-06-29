@@ -12,5 +12,6 @@ export { adminApi } from './admin';
 export { usersApi } from './users';
 export { callsApi } from './calls';
 export { botChatApi } from './botChat';
+export { botHandoffApi } from './botHandoff';
 export { botAdminApi } from './botAdmin';
 export { ragApi } from './rag';

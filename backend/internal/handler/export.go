@@ -35,14 +35,7 @@ func (h *ExportHandler) Export(w http.ResponseWriter, r *http.Request) {
 // Import executes the handler.ExportHandler.Import operation.
 func (h *ExportHandler) Import(w http.ResponseWriter, r *http.Request) {
 	applog.TraceCall(r.Context(), "handler.ExportHandler.Import")
-	// Resolve company_id from DB (not JWT) to handle stale tokens
-	userID := middleware.GetUserID(r.Context())
-	user, err := h.users.GetByID(r.Context(), userID)
-	if err != nil || user.CompanyID == nil {
-		Error(w, http.StatusUnauthorized, "could not resolve company for current user")
-		return
-	}
-	companyID := *user.CompanyID
+	companyID := middleware.GetCompanyID(r.Context())
 
 	var data service.ImportData
 	if err := Decode(r, &data); err != nil {

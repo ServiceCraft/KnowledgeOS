@@ -1,4 +1,4 @@
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -17,10 +17,11 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
-import { Moon, Sun, LogOut } from 'lucide-react';
+import { Moon, Sun, LogOut, Building2, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useLogout } from '@/hooks/useAuth';
+import { cn } from '@/lib/utils';
 
 const routeLabels: Record<string, string> = {
   kb: 'База знаний',
@@ -33,6 +34,8 @@ const routeLabels: Record<string, string> = {
   search: 'Поиск',
   settings: 'Настройки',
   bot: 'Бот',
+  playground: 'Плейграунд',
+  handoff: 'Диалоги / Эскалации',
   users: 'Пользователи',
   sync: 'Синхронизация',
   export: 'Экспорт',
@@ -43,6 +46,8 @@ const routeLabels: Record<string, string> = {
 export function Header() {
   const location = useLocation();
   const user = useAuthStore((s) => s.user);
+  const selectedCompanyId = useAuthStore((s) => s.selectedCompanyId);
+  const selectedCompanyName = useAuthStore((s) => s.selectedCompanyName);
   const { darkMode, toggleDarkMode } = useUIStore();
   const logout = useLogout();
 
@@ -78,6 +83,35 @@ export function Header() {
           ))}
         </BreadcrumbList>
       </Breadcrumb>
+
+      {user?.role === 'superadmin' && (
+        <Link
+          to="/admin/companies"
+          className={cn(
+            'flex min-w-0 max-w-[min(100%,18rem)] shrink items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition',
+            selectedCompanyId
+              ? 'border-primary bg-primary/10 font-semibold text-primary shadow-sm ring-1 ring-primary/20 hover:bg-primary/15'
+              : 'animate-pulse border-destructive/60 bg-destructive/10 font-medium text-destructive hover:bg-destructive/15'
+          )}
+          title={selectedCompanyId ? (selectedCompanyName ?? selectedCompanyId) : 'Компания не выбрана — нажмите, чтобы выбрать'}
+        >
+          {selectedCompanyId ? (
+            <Building2 className="h-4 w-4 shrink-0" aria-hidden />
+          ) : (
+            <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
+          )}
+          <span className="truncate">
+            {selectedCompanyId ? (
+              <>
+                <span className="hidden sm:inline">Компания: </span>
+                {selectedCompanyName || selectedCompanyId}
+              </>
+            ) : (
+              'Выберите компанию'
+            )}
+          </span>
+        </Link>
+      )}
 
       <DropdownMenu>
         <DropdownMenuTrigger className="flex items-center gap-2 rounded-full focus:outline-none focus:ring-2 focus:ring-ring">

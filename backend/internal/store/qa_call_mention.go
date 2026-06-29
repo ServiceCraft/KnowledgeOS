@@ -46,7 +46,7 @@ func (s *QACallMentionStore) Create(ctx context.Context, companyID uuid.UUID, m 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "qa call mention: bump sync sequence", err)
 		}
 		m.SyncVersion = seq
 		m.SyncOrigin = s.origin
@@ -61,7 +61,7 @@ func (s *QACallMentionStore) Delete(ctx context.Context, companyID uuid.UUID, id
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "qa call mention: bump sync sequence", err)
 		}
 		return tx.Model(&domain.QAPairCallMention{}).Scopes(tenantScope(companyID)).Where("id = ?", id).
 			Updates(map[string]interface{}{"sync_version": seq, "sync_origin": s.origin, "deleted_at": gorm.Expr("now()")}).Error

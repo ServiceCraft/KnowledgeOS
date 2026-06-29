@@ -138,6 +138,81 @@ func TestChatServiceStreamMessagePersistsFinalAssistantMessage(t *testing.T) {
 	}
 }
 
+func TestChatServiceSendMessageRejectsClosedSession(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	sessionID := uuid.New()
+	repo := newFakeChatRepo(companyID, sessionID)
+	repo.sessions[sessionID].State = domain.ChatStateClosed
+	svc := NewChatService(
+		repo,
+		&fakeChatSettings{settings: &domain.BotSettings{Enabled: true}},
+		&fakeChatRetriever{},
+		&fakeChatLLMFactory{provider: &fakeChatProvider{}},
+		nil,
+		false,
+	)
+
+	_, err := svc.SendMessage(ctx, companyID, sessionID, SendChatMessageRequest{Content: "вопрос"})
+	if err == nil || HTTPStatus(err) != 409 {
+		t.Fatalf("SendMessage() status = %d, err = %v, want 409", HTTPStatus(err), err)
+	}
+	if err.Error() != "chat session is closed" {
+		t.Fatalf("SendMessage() error = %q, want closed session message", err.Error())
+	}
+	if len(repo.messages[sessionID]) != 0 {
+		t.Fatalf("messages stored = %d, want 0", len(repo.messages[sessionID]))
+	}
+}
+
+func TestChatServiceSendMessageRejectsOperatorSession(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	sessionID := uuid.New()
+	repo := newFakeChatRepo(companyID, sessionID)
+	repo.sessions[sessionID].State = domain.ChatStateOperator
+	svc := NewChatService(
+		repo,
+		&fakeChatSettings{settings: &domain.BotSettings{Enabled: true}},
+		&fakeChatRetriever{},
+		&fakeChatLLMFactory{provider: &fakeChatProvider{}},
+		nil,
+		false,
+	)
+
+	_, err := svc.SendMessage(ctx, companyID, sessionID, SendChatMessageRequest{Content: "вопрос"})
+	if err == nil || HTTPStatus(err) != 409 {
+		t.Fatalf("SendMessage() status = %d, err = %v, want 409", HTTPStatus(err), err)
+	}
+	if err.Error() != "chat session is not handled by bot" {
+		t.Fatalf("SendMessage() error = %q, want not handled by bot", err.Error())
+	}
+}
+
+func TestChatServiceStreamMessageRejectsClosedSession(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	sessionID := uuid.New()
+	repo := newFakeChatRepo(companyID, sessionID)
+	repo.sessions[sessionID].State = domain.ChatStateClosed
+	svc := NewChatService(
+		repo,
+		&fakeChatSettings{settings: &domain.BotSettings{Enabled: true}},
+		&fakeChatRetriever{},
+		&fakeChatLLMFactory{provider: &fakeChatProvider{}},
+		nil,
+		false,
+	)
+
+	err := svc.StreamMessage(ctx, companyID, sessionID, SendChatMessageRequest{Content: "вопрос"}, nil)
+	if err == nil || HTTPStatus(err) != 409 {
+		t.Fatalf("StreamMessage() status = %d, err = %v, want 409", HTTPStatus(err), err)
+	}
+	if err.Error() != "chat session is closed" {
+		t.Fatalf("StreamMessage() error = %q, want closed session message", err.Error())
+	}
+}
+
 func TestChatServiceToolLoopExecutesToolAndReturnsFinalAnswer(t *testing.T) {
 	ctx := context.Background()
 	companyID := uuid.New()
@@ -216,6 +291,155 @@ func TestChatServiceToolLoopExecutesToolAndReturnsFinalAnswer(t *testing.T) {
 	}
 	if !foundToolMsg {
 		t.Fatalf("second LLM request missing tool message: %+v", provider.requests[1].Messages)
+	}
+}
+
+func TestChatServiceEmptyToolAnswerEscalatesWithHandoff(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	sessionID := uuid.New()
+	repo := newFakeChatRepo(companyID, sessionID)
+	registry := tools.NewRegistry(&fakeTool{
+		name:   "search_knowledge",
+		schema: `{"type":"object","properties":{"query":{"type":"string","minLength":1}},"required":["query"]}`,
+		result: tools.Result{Content: `{"results":[]}`},
+	})
+	provider := &fakeChatProvider{response: &llm.ChatResponse{
+		Message: llm.ToolMessage{Role: llm.RoleAssistant, Content: "Информации об адресе нет в базе знаний"},
+	}}
+	svc := NewChatService(
+		repo,
+		&fakeChatSettings{settings: &domain.BotSettings{
+			Enabled: true, PersonaName: "Админ", PersonaTone: "friendly", MaxTokens: 256,
+			EnabledModules: json.RawMessage(`{"handoff":true,"handoff_fallback_text":"Передаю оператору"}`),
+		}},
+		&fakeChatRetriever{},
+		&fakeChatLLMFactory{provider: provider},
+		registry,
+		false,
+	)
+	svc.SetHandoffEscalator(&fakeChatHandoffEscalator{enabled: true})
+
+	exchange, err := svc.SendMessage(ctx, companyID, sessionID, SendChatMessageRequest{Content: "какой адрес?"})
+	if err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+	if exchange.Message.GuardrailAction != domain.GuardrailActionEscalate {
+		t.Fatalf("guardrail action = %s, want escalate", exchange.Message.GuardrailAction)
+	}
+	if exchange.Message.RefusalReason != "no_context" {
+		t.Fatalf("refusal reason = %s, want no_context", exchange.Message.RefusalReason)
+	}
+	if exchange.Message.Content != "Передаю оператору" {
+		t.Fatalf("content = %q, want escalation text", exchange.Message.Content)
+	}
+}
+
+func TestChatServiceOperatorHistoryAddedToContext(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	sessionID := uuid.New()
+	operatorMsgID := uuid.New()
+	repo := newFakeChatRepo(companyID, sessionID)
+	repo.messages[sessionID] = []domain.ChatMessage{
+		{BaseModel: domain.BaseModel{ID: uuid.New()}, SessionID: sessionID, Role: domain.ChatRoleUser, Content: "какой адрес?"},
+		{BaseModel: domain.BaseModel{ID: operatorMsgID}, SessionID: sessionID, Role: domain.ChatRoleOperator, Content: "Адрес: ул. Ленина, 1"},
+	}
+	provider := &fakeChatProvider{response: &llm.ChatResponse{
+		Message: llm.ToolMessage{Role: llm.RoleAssistant, Content: "Адрес: ул. Ленина, 1 [operator:" + operatorMsgID.String() + "]"},
+	}}
+	svc := NewChatService(
+		repo,
+		&fakeChatSettings{settings: &domain.BotSettings{Enabled: true, PersonaName: "Админ", PersonaTone: "friendly", MaxTokens: 256}},
+		&fakeChatRetriever{},
+		&fakeChatLLMFactory{provider: provider},
+		nil,
+		false,
+	)
+
+	exchange, err := svc.SendMessage(ctx, companyID, sessionID, SendChatMessageRequest{Content: "напомни адрес"})
+	if err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+	if len(provider.lastRequest.Messages) == 0 {
+		t.Fatalf("LLM was not called")
+	}
+	system := provider.lastRequest.Messages[0].Content
+	if !strings.Contains(system, "ул. Ленина, 1") {
+		t.Fatalf("operator answer missing from context: %q", system)
+	}
+	if !strings.Contains(system, "operator:"+operatorMsgID.String()) {
+		t.Fatalf("operator source_id missing from context: %q", system)
+	}
+	if exchange.Message.GuardrailAction != domain.GuardrailActionAnswer {
+		t.Fatalf("guardrail action = %s, want answer", exchange.Message.GuardrailAction)
+	}
+}
+
+func TestChatServiceRecoversOperatorAnswerWhenModelRefuses(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	sessionID := uuid.New()
+	operatorMsgID := uuid.New()
+	repo := newFakeChatRepo(companyID, sessionID)
+	repo.messages[sessionID] = []domain.ChatMessage{
+		{BaseModel: domain.BaseModel{ID: operatorMsgID}, SessionID: sessionID, Role: domain.ChatRoleOperator, Content: "Адрес: ул. Ленина, 1"},
+	}
+	provider := &fakeChatProvider{response: &llm.ChatResponse{
+		Message: llm.ToolMessage{Role: llm.RoleAssistant, Content: "Информации об адресе нет в базе знаний"},
+	}}
+	svc := NewChatService(
+		repo,
+		&fakeChatSettings{settings: &domain.BotSettings{Enabled: true, PersonaName: "Админ", PersonaTone: "friendly", MaxTokens: 256}},
+		&fakeChatRetriever{},
+		&fakeChatLLMFactory{provider: provider},
+		tools.NewRegistry(tools.NewRequestHandoffTool()),
+		false,
+	)
+
+	exchange, err := svc.SendMessage(ctx, companyID, sessionID, SendChatMessageRequest{Content: "какой адрес?"})
+	if err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+	if exchange.Message.GuardrailAction != domain.GuardrailActionAnswer {
+		t.Fatalf("guardrail action = %s, want answer", exchange.Message.GuardrailAction)
+	}
+	if !strings.Contains(exchange.Message.Content, "ул. Ленина, 1") {
+		t.Fatalf("content = %q, want recovered operator answer", exchange.Message.Content)
+	}
+}
+
+func TestChatServiceNoKnowledgeEscalatesDespiteIrrelevantRAG(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	sessionID := uuid.New()
+	entityID := uuid.New()
+	repo := newFakeChatRepo(companyID, sessionID)
+	provider := &fakeChatProvider{response: &llm.ChatResponse{
+		Message: llm.ToolMessage{Role: llm.RoleAssistant, Content: "Информации об адресе нет в базе знаний"},
+	}}
+	svc := NewChatService(
+		repo,
+		&fakeChatSettings{settings: &domain.BotSettings{
+			Enabled: true, PersonaName: "Админ", PersonaTone: "friendly", MaxTokens: 256,
+			EnabledModules: json.RawMessage(`{"handoff":true,"handoff_fallback_text":"Передаю оператору"}`),
+		}},
+		&fakeChatRetriever{results: []domain.RAGCandidate{{
+			SourceID: "qa:" + entityID.String() + ":0", EntityType: domain.KBEntityQA, EntityID: entityID,
+			Title: "Другое", Content: "Не про адрес", Score: 0.8,
+		}}},
+		&fakeChatLLMFactory{provider: provider},
+		tools.NewRegistry(tools.NewRequestHandoffTool()),
+		false,
+	)
+	svc.SetHandoffEscalator(&fakeChatHandoffEscalator{enabled: true})
+
+	exchange, err := svc.SendMessage(ctx, companyID, sessionID, SendChatMessageRequest{Content: "какой адрес?"})
+	if err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+	if exchange.Message.GuardrailAction != domain.GuardrailActionEscalate {
+		t.Fatalf("guardrail action = %s, want escalate", exchange.Message.GuardrailAction)
 	}
 }
 
@@ -355,6 +579,7 @@ func TestChatServiceLowConfidenceEscalates(t *testing.T) {
 		nil,
 		false,
 	)
+	svc.SetHandoffEscalator(&fakeChatHandoffEscalator{enabled: true})
 
 	exchange, err := svc.SendMessage(ctx, companyID, sessionID, SendChatMessageRequest{Content: "вопрос"})
 	if err != nil {
@@ -544,6 +769,18 @@ func (s *fakeChatSettings) Get(_ context.Context, companyID uuid.UUID) (*domain.
 	copy := *s.settings
 	copy.CompanyID = companyID
 	return &copy, nil
+}
+
+type fakeChatHandoffEscalator struct {
+	enabled bool
+}
+
+func (h *fakeChatHandoffEscalator) Enabled(context.Context, uuid.UUID) bool {
+	return h.enabled
+}
+
+func (h *fakeChatHandoffEscalator) Escalate(_ context.Context, companyID, sessionID uuid.UUID, _ string) (*domain.ChatSession, error) {
+	return &domain.ChatSession{CompanyID: companyID, BaseModel: domain.BaseModel{ID: sessionID}, State: domain.ChatStateWaitingOperator}, nil
 }
 
 type fakeChatRetriever struct {

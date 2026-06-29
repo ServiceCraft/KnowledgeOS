@@ -1,6 +1,6 @@
 import type { ChatMessage, ChatSource } from '@/types';
 
-const CITATION_RE = /\[([^\[\]\n]+)\]/g;
+const CITATION_RE = /\[([^[\]\n]+)\]/g;
 const USED_SOURCES_FOOTER_RE = /использованн/i;
 
 function looksLikeSourceId(token: string): boolean {
@@ -20,9 +20,17 @@ export function buildSourceUrl(entityType: string, entityId: string): string | u
   }
 }
 
-export function sourcesById(sources: ChatSource[]): Map<string, ChatSource> {
+export function asChatSources(sources: unknown): ChatSource[] {
+  return Array.isArray(sources) ? (sources as ChatSource[]) : [];
+}
+
+export function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+export function sourcesById(sources: unknown): Map<string, ChatSource> {
   const map = new Map<string, ChatSource>();
-  for (const source of sources) {
+  for (const source of asChatSources(sources)) {
     map.set(source.source_id, source);
   }
   return map;
@@ -44,19 +52,20 @@ export function extractCitationIds(content: string): string[] {
 }
 
 export function resolveCitedSourceIds(content: string, citedSourceIds?: string[]): string[] {
-  if (citedSourceIds && citedSourceIds.length > 0) {
-    return citedSourceIds;
+  const normalized = asStringArray(citedSourceIds);
+  if (normalized.length > 0) {
+    return normalized;
   }
   return extractCitationIds(content);
 }
 
 export function resolveCitedSources(
   content: string,
-  sources: ChatSource[],
-  citedSourceIds?: string[]
+  sources: unknown,
+  citedSourceIds?: unknown
 ): ChatSource[] {
   const byId = sourcesById(sources);
-  const ids = resolveCitedSourceIds(content, citedSourceIds);
+  const ids = resolveCitedSourceIds(content, asStringArray(citedSourceIds));
   const out: ChatSource[] = [];
   const seen = new Set<string>();
   for (const id of ids) {

@@ -47,7 +47,7 @@ func (s *PricingService) Create(ctx context.Context, companyID uuid.UUID, node *
 		}
 	}
 	if err := s.pricing.Create(ctx, companyID, node); err != nil {
-		return err
+		return applog.TraceErr(ctx, "create pricing node failed", err)
 	}
 	s.scheduleUpsert(ctx, companyID, node.ID)
 	return nil
@@ -60,7 +60,7 @@ func (s *PricingService) Update(ctx context.Context, companyID uuid.UUID, node *
 		return errors.New("pricing node not found")
 	}
 	if err := s.pricing.Update(ctx, companyID, node); err != nil {
-		return err
+		return applog.TraceErr(ctx, "update pricing node failed", err)
 	}
 	s.scheduleUpsert(ctx, companyID, node.ID)
 	return nil
@@ -73,7 +73,7 @@ func (s *PricingService) Delete(ctx context.Context, companyID uuid.UUID, id uui
 		return errors.New("pricing node not found")
 	}
 	if err := s.pricing.Delete(ctx, companyID, id); err != nil {
-		return err
+		return applog.TraceErr(ctx, "delete pricing node failed", err)
 	}
 	s.scheduleDelete(ctx, companyID, id)
 	return nil
@@ -95,13 +95,13 @@ func (s *PricingService) Move(ctx context.Context, companyID uuid.UUID, id uuid.
 			return errors.New("new parent not found")
 		}
 		if err := s.checkCycle(ctx, companyID, id, *newParentID); err != nil {
-			return err
+			return applog.TraceErr(ctx, "pricing move: cycle check failed", err)
 		}
 	}
 
 	node.ParentID = newParentID
 	if err := s.pricing.Update(ctx, companyID, node); err != nil {
-		return err
+		return applog.TraceErr(ctx, "pricing move: update failed", err)
 	}
 	s.scheduleUpsert(ctx, companyID, node.ID)
 	return nil

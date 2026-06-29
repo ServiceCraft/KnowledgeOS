@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '@/api/auth';
 import { useAuthStore } from '@/stores/authStore';
@@ -15,7 +15,7 @@ export function useLogin() {
         access_token: data.access_token,
         refresh_token: data.refresh_token,
       });
-      navigate('/kb');
+      navigate(data.user.role === 'superadmin' ? '/admin/companies' : '/kb');
     },
   });
 }
@@ -24,11 +24,13 @@ export function useLogout() {
   const logout = useAuthStore((s) => s.logout);
   const tokens = useAuthStore((s) => s.tokens);
   const navigate = useNavigate();
+  const qc = useQueryClient();
 
   return useMutation({
     mutationFn: () => authApi.logout(tokens?.refresh_token ?? ''),
     onSettled: () => {
       logout();
+      qc.clear();
       navigate('/login');
     },
   });

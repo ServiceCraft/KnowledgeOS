@@ -13,6 +13,22 @@ let failedQueue: Array<{
 
 let onAuthFailure: (() => void) | null = null;
 
+export function tenantContextError(url?: string): Error | null {
+  try {
+    const raw = localStorage.getItem('auth-storage');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const role = parsed?.state?.user?.role;
+    const selectedCompanyId = parsed?.state?.selectedCompanyId;
+    if (role !== 'superadmin' || selectedCompanyId || !isTenantScopedUrl(url)) {
+      return null;
+    }
+    return new Error('company selection required');
+  } catch {
+    return null;
+  }
+}
+
 export function setAuthFailureHandler(handler: () => void) {
   onAuthFailure = handler;
 }
@@ -39,6 +55,10 @@ function processQueue(error: unknown, token: string | null) {
 
 client.interceptors.request.use((config) => {
   try {
+    const tenantError = tenantContextError(config.url);
+    if (tenantError) {
+      return Promise.reject(tenantError);
+    }
     const raw = localStorage.getItem('auth-storage');
     if (raw) {
       const parsed = JSON.parse(raw);
@@ -46,12 +66,25 @@ client.interceptors.request.use((config) => {
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
+      const role = parsed?.state?.user?.role;
+      const selectedCompanyId = parsed?.state?.selectedCompanyId;
+      if (role === 'superadmin' && selectedCompanyId) {
+        config.headers['X-Company-ID'] = selectedCompanyId;
+      }
     }
   } catch {
     // ignore parse errors
   }
   return config;
 });
+
+function isTenantScopedUrl(url?: string): boolean {
+  if (!url) return false;
+  const path = url.startsWith('/api/v1') ? url.slice('/api/v1'.length) || '/' : url;
+  if (path.startsWith('/auth/')) return false;
+  if (path === '/admin/companies' || path.startsWith('/admin/companies/')) return false;
+  return true;
+}
 
 client.interceptors.response.use(
   (response) => response,

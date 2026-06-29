@@ -26,6 +26,7 @@ type Handlers struct {
 	Bot      *BotHandler
 	RAG      *RAGHandler
 	Chat     *ChatHandler
+	Handoff  *HandoffHandler
 	Channels *ChannelWebhookHandler
 }
 
@@ -47,13 +48,28 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 		r.Post("/auth/refresh", h.Auth.Refresh)
 		r.Post("/webhooks/{channel}/{company_id}", h.Channels.Handle)
 
-		// Protected (JWT + tenant). All reads available to any authenticated
+		// Protected global routes. These do not need tenant context; superadmins
+		// must explicitly select a company before entering tenant-scoped routes.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.JWTAuth(jwtMgr))
+			r.Post("/auth/logout", h.Auth.Logout)
+
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRole(domain.RoleSuperadmin))
+				r.Get("/admin/companies", h.Admin.ListCompanies)
+				r.Post("/admin/companies", h.Admin.CreateCompany)
+				r.Get("/admin/companies/{id}", h.Admin.GetCompany)
+				r.Patch("/admin/companies/{id}", h.Admin.UpdateCompany)
+				r.Delete("/admin/companies/{id}", h.Admin.DeleteCompany)
+				r.Post("/admin/companies/{id}/admin", h.Admin.CreateCompanyAdmin)
+			})
+		})
+
+		// Protected tenant routes. All reads available to any authenticated
 		// role (viewer included); writes are gated to editor and above.
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.JWTAuth(jwtMgr))
 			r.Use(middleware.Tenant)
-
-			r.Post("/auth/logout", h.Auth.Logout)
 
 			// --- Reads (viewer+) ---
 			r.Get("/qa", h.QA.List)
@@ -153,6 +169,20 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 				r.Post("/sessions/{id}/messages/stream", h.Chat.StreamMessage)
 			})
 
+			// Handoff queue — viewer is the operator persona here; write access
+			// is constrained by the handler/service to assigned chat sessions.
+			r.Route("/admin/bot/handoff", func(r chi.Router) {
+				r.Use(middleware.RequireRole(domain.RoleViewer, domain.RoleAdmin, domain.RoleSuperadmin))
+				r.Get("/sessions", h.Handoff.ListSessions)
+				r.Get("/sessions/metrics", h.Handoff.Metrics)
+				r.Get("/sessions/{id}", h.Handoff.GetSession)
+				r.Post("/sessions/{id}/claim", h.Handoff.Claim)
+				r.Post("/sessions/{id}/messages", h.Handoff.SendMessage)
+				r.Post("/sessions/{id}/release", h.Handoff.Release)
+				r.Post("/sessions/{id}/close", h.Handoff.Close)
+				r.Post("/sessions/{id}/escalate", h.Handoff.Escalate)
+			})
+
 			// Import/Export of the knowledge base — superadmin only.
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole(domain.RoleSuperadmin))
@@ -160,16 +190,6 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 				r.Post("/import", h.Export.Import)
 			})
 
-			// Company administration — superadmin only.
-			r.Group(func(r chi.Router) {
-				r.Use(middleware.RequireRole(domain.RoleSuperadmin))
-				r.Get("/admin/companies", h.Admin.ListCompanies)
-				r.Post("/admin/companies", h.Admin.CreateCompany)
-				r.Get("/admin/companies/{id}", h.Admin.GetCompany)
-				r.Patch("/admin/companies/{id}", h.Admin.UpdateCompany)
-				r.Delete("/admin/companies/{id}", h.Admin.DeleteCompany)
-				r.Post("/admin/companies/{id}/admin", h.Admin.CreateCompanyAdmin)
-			})
 		})
 
 		// Sync routes (API Key auth)

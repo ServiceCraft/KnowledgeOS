@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 	"strconv"
 	"strings"
@@ -102,16 +103,16 @@ func (a *Adapter) SendMessage(ctx context.Context, cfg channels.ChannelConfig, m
 func (a *Adapter) call(ctx context.Context, token, method string, payload map[string]interface{}) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "telegram: marshal request failed", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("https://api.telegram.org/bot%s/%s", token, method), bytes.NewReader(body))
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "telegram: build request failed", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "telegram: api request failed", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {

@@ -124,7 +124,7 @@ func (s *TenantSecretService) Delete(ctx context.Context, companyID uuid.UUID, k
 			Str("company_id", companyID.String()).
 			Str("kind", string(kind)).
 			Msg("tenant secret delete failed")
-		return err
+		return applog.TraceErr(ctx, "delete tenant secret failed", err)
 	}
 	applog.From(ctx).Debug().
 		Str("company_id", companyID.String()).

@@ -55,6 +55,45 @@ func TestGatewayHandleWebhookSkipsDisabledChannel(t *testing.T) {
 	}
 }
 
+func TestGatewayHandleWebhookRecordsInboundDuringHandoff(t *testing.T) {
+	companyID := uuid.New()
+	externalID := "external-1"
+	sessionID := uuid.New()
+	repo := &fakeRepo{sessions: map[uuid.UUID]*domain.ChatSession{
+		sessionID: {
+			BaseModel:      domain.BaseModel{ID: sessionID},
+			CompanyID:      companyID,
+			Channel:        domain.ChatChannelTelegram,
+			ExternalChatID: &externalID,
+			State:          domain.ChatStateOperator,
+		},
+	}}
+	chat := &fakeChat{reply: "Ответ"}
+	handoff := &fakeHandoff{}
+	gateway := NewGateway(
+		repo,
+		chat,
+		&fakeSettings{enabledModules: json.RawMessage(`{"channels":{"telegram":true}}`)},
+		&fakeSecrets{},
+		&fakeAdapter{channel: domain.ChatChannelTelegram, kind: domain.SecretKindTelegram},
+	)
+	gateway.SetHandoff(handoff)
+
+	resp, err := gateway.HandleWebhook(context.Background(), companyID, domain.ChatChannelTelegram, WebhookRequest{})
+	if err != nil {
+		t.Fatalf("HandleWebhook returned error: %v", err)
+	}
+	if resp == nil || resp.Status != http.StatusOK {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+	if chat.calls != 0 {
+		t.Fatalf("bot was called during handoff")
+	}
+	if handoff.text != "Привет" || handoff.sessionID != sessionID {
+		t.Fatalf("handoff inbound = session %s text %q", handoff.sessionID, handoff.text)
+	}
+}
+
 type fakeAdapter struct {
 	channel domain.ChatChannel
 	kind    domain.SecretKind
@@ -77,12 +116,25 @@ func (a *fakeAdapter) SendMessage(_ context.Context, _ ChannelConfig, msg Outbou
 
 type fakeChat struct {
 	reply string
+	calls int
 }
 
 func (c *fakeChat) SendMessage(_ context.Context, companyID, sessionID uuid.UUID, req service.SendChatMessageRequest) (*service.ChatExchange, error) {
+	c.calls++
 	return &service.ChatExchange{
 		Message: &domain.ChatMessage{CompanyID: companyID, SessionID: sessionID, Role: domain.ChatRoleAssistant, Content: c.reply},
 	}, nil
+}
+
+type fakeHandoff struct {
+	sessionID uuid.UUID
+	text      string
+}
+
+func (h *fakeHandoff) RecordInbound(_ context.Context, _ uuid.UUID, session *domain.ChatSession, content string) (*domain.ChatMessage, error) {
+	h.sessionID = session.ID
+	h.text = content
+	return &domain.ChatMessage{SessionID: session.ID, Role: domain.ChatRoleUser, Content: content}, nil
 }
 
 type fakeSettings struct {

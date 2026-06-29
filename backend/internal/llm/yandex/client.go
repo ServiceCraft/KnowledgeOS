@@ -18,9 +18,11 @@ import (
 )
 
 const (
-	defaultEndpoint = "https://ai.api.cloud.yandex.net/v1"
-	authTypeIAM     = "iam"
-	authTypeAPIKey  = "api_key"
+	defaultEndpoint      = "https://ai.api.cloud.yandex.net/v1"
+	authTypeIAM          = "iam"
+	authTypeAPIKey       = "api_key"
+	maxLoggedBodyBytes   = 8192
+	maxResponseBodyBytes = 16 << 20 // 16 MiB safety cap when buffering non-stream responses
 )
 
 type Config struct {
@@ -197,9 +199,26 @@ func (c *Client) embed(ctx context.Context, model string, texts []string) ([][]f
 		Str("model", model).
 		Int("texts", len(texts)).
 		Msg("yandex embeddings request started")
+
+	vectors := make([][]float32, len(texts))
+	for i, text := range texts {
+		vector, err := c.embedOne(ctx, model, text)
+		if err != nil {
+			return nil, err
+		}
+		vectors[i] = vector
+	}
+	applog.From(ctx).Debug().
+		Str("model", model).
+		Int("vectors", len(vectors)).
+		Msg("yandex embeddings request completed")
+	return vectors, nil
+}
+
+func (c *Client) embedOne(ctx context.Context, model, text string) ([]float32, error) {
 	req := openAIEmbeddingRequest{
 		Model: model,
-		Input: texts,
+		Input: []string{text},
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -215,18 +234,22 @@ func (c *Client) embed(ctx context.Context, model string, texts []string) ([][]f
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, fmt.Errorf("decode embedding response: %w", err)
 	}
-	vectors := make([][]float32, len(out.Data))
-	for _, item := range out.Data {
-		if item.Index < 0 || item.Index >= len(vectors) {
-			return nil, fmt.Errorf("embedding index out of range: %d", item.Index)
-		}
-		vectors[item.Index] = item.Embedding
+	if len(out.Data) == 0 {
+		return nil, errors.New("embedding response has no vectors")
 	}
-	applog.From(ctx).Debug().
-		Str("model", model).
-		Int("vectors", len(vectors)).
-		Msg("yandex embeddings request completed")
-	return vectors, nil
+	for _, item := range out.Data {
+		if item.Index != 0 {
+			continue
+		}
+		if len(item.Embedding) == 0 {
+			return nil, errors.New("embedding response has empty vector")
+		}
+		return item.Embedding, nil
+	}
+	if out.Data[0].Index != 0 {
+		return nil, fmt.Errorf("embedding index out of range: %d", out.Data[0].Index)
+	}
+	return nil, errors.New("embedding response has no vectors")
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body []byte, stream bool) (*http.Response, error) {
@@ -239,6 +262,13 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, strea
 				return nil, err
 			}
 		}
+		applog.From(ctx).Debug().
+			Str("method", method).
+			Str("path", path).
+			Int("attempt", attempt+1).
+			Str("request_body", truncateForLog(body)).
+			Msg("yandex http request")
+
 		httpReq, err := http.NewRequestWithContext(ctx, method, c.cfg.Endpoint+path, bytes.NewReader(body))
 		if err != nil {
 			return nil, fmt.Errorf("create yandex request: %w", err)
@@ -273,29 +303,73 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, strea
 			continue
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			if stream {
+				applog.From(ctx).Debug().
+					Str("method", method).
+					Str("path", path).
+					Int("status", resp.StatusCode).
+					Int("attempt", attempt+1).
+					Str("response_body", "<stream>").
+					Msg("yandex http request succeeded")
+				return resp, nil
+			}
+			respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes))
+			_ = resp.Body.Close()
+			if readErr != nil {
+				return nil, fmt.Errorf("read yandex response: %w", readErr)
+			}
 			applog.From(ctx).Debug().
 				Str("method", method).
 				Str("path", path).
 				Int("status", resp.StatusCode).
 				Int("attempt", attempt+1).
+				Str("response_body", truncateForLog(respBody)).
 				Msg("yandex http request succeeded")
+			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			return resp, nil
 		}
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-		lastErr = fmt.Errorf("yandex request failed with status %d", resp.StatusCode)
-		applog.From(ctx).Debug().
+
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxLoggedBodyBytes+1))
+		_ = resp.Body.Close()
+		respLog := truncateForLog(respBody)
+		lastErr = yandexHTTPError(resp.StatusCode, respLog)
+		log := applog.From(ctx)
+		event := log.Debug()
+		if !retryableStatus(resp.StatusCode) {
+			event = log.Error().Err(lastErr)
+		}
+		event.
 			Str("method", method).
 			Str("path", path).
 			Int("status", resp.StatusCode).
 			Int("attempt", attempt+1).
 			Bool("retryable", retryableStatus(resp.StatusCode)).
+			Str("request_body", truncateForLog(body)).
+			Str("response_body", respLog).
 			Msg("yandex http request returned non-success status")
 		if !retryableStatus(resp.StatusCode) {
 			return nil, lastErr
 		}
 	}
 	return nil, lastErr
+}
+
+func truncateForLog(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	if len(body) > maxLoggedBodyBytes {
+		return string(body[:maxLoggedBodyBytes]) + "...(truncated)"
+	}
+	return string(body)
+}
+
+func yandexHTTPError(status int, responseBody string) error {
+	responseBody = strings.TrimSpace(responseBody)
+	if responseBody == "" {
+		return fmt.Errorf("yandex request failed with status %d", status)
+	}
+	return fmt.Errorf("yandex request failed with status %d: %s", status, responseBody)
 }
 
 func firstNonEmpty(values ...string) string {

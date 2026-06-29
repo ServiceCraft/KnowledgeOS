@@ -55,13 +55,13 @@ func (s *LinkService) validateEntity(ctx context.Context, companyID uuid.UUID, e
 	switch entityType {
 	case "qa":
 		_, err := s.qa.GetByID(ctx, companyID, entityID)
-		return err
+		return applog.TraceErr(ctx, "link: resolve qa entity", err)
 	case "article":
 		_, err := s.articles.GetByID(ctx, companyID, entityID)
-		return err
+		return applog.TraceErr(ctx, "link: resolve article entity", err)
 	case "pricing":
 		_, err := s.pricing.GetByID(ctx, companyID, entityID)
-		return err
+		return applog.TraceErr(ctx, "link: resolve pricing entity", err)
 	}
 	return errors.New("invalid entity type")
 }

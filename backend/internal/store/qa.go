@@ -78,7 +78,7 @@ func (s *QAStore) Create(ctx context.Context, companyID uuid.UUID, qa *domain.QA
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "qa: bump sync sequence", err)
 		}
 		qa.SyncVersion = seq
 		qa.SyncOrigin = s.origin
@@ -93,7 +93,7 @@ func (s *QAStore) Update(ctx context.Context, companyID uuid.UUID, qa *domain.QA
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "qa: bump sync sequence", err)
 		}
 		qa.SyncVersion = seq
 		qa.SyncOrigin = s.origin
@@ -109,7 +109,7 @@ func (s *QAStore) Delete(ctx context.Context, companyID uuid.UUID, id uuid.UUID)
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "qa: bump sync sequence", err)
 		}
 		return tx.Model(&domain.QAPair{}).Scopes(tenantScope(companyID)).Where("id = ?", id).
 			Updates(map[string]interface{}{"sync_version": seq, "sync_origin": s.origin, "deleted_at": gorm.Expr("now()")}).Error

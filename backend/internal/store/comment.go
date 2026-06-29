@@ -52,7 +52,7 @@ func (s *CommentStore) Create(ctx context.Context, companyID uuid.UUID, comment 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "comment: bump sync sequence", err)
 		}
 		comment.SyncVersion = seq
 		comment.SyncOrigin = s.origin
@@ -67,7 +67,7 @@ func (s *CommentStore) Update(ctx context.Context, companyID uuid.UUID, comment 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "comment: bump sync sequence", err)
 		}
 		comment.SyncVersion = seq
 		comment.SyncOrigin = s.origin
@@ -81,7 +81,7 @@ func (s *CommentStore) Delete(ctx context.Context, companyID uuid.UUID, id uuid.
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var seq int64
 		if err := tx.Raw("UPDATE sync_sequence SET current_seq = current_seq + 1 WHERE company_id = ? RETURNING current_seq", companyID).Scan(&seq).Error; err != nil {
-			return err
+			return applog.TraceErr(ctx, "comment: bump sync sequence", err)
 		}
 		return tx.Model(&domain.Comment{}).Scopes(tenantScope(companyID)).Where("id = ?", id).
 			Updates(map[string]interface{}{"sync_version": seq, "sync_origin": s.origin, "deleted_at": gorm.Expr("now()")}).Error

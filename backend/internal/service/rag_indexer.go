@@ -105,7 +105,7 @@ func (s *RAGIndexerService) StartWorker(ctx context.Context) {
 }
 
 func (s *RAGIndexerService) worker(ctx context.Context) {
-	applog.TraceCall(ctx, "service.RAGIndexerService.worker")
+	applog.TraceCall(ctx, "servi ce.RAGIndexerService.worker")
 	ticker := time.NewTicker(s.cfg.WorkerPollInterval)
 	defer ticker.Stop()
 	for {
@@ -155,7 +155,7 @@ func (s *RAGIndexerService) ProcessJob(ctx context.Context, job domain.KBIndexJo
 		err := s.embeddings.DeleteEntity(ctx, job.CompanyID, job.EntityType, job.EntityID)
 		if err != nil {
 			log.Error().Err(err).Msg("rag index delete failed")
-			return err
+			return applog.TraceErr(ctx, "rag index: delete embeddings failed", err)
 		}
 		log.Debug().Msg("rag index delete completed")
 		return nil
@@ -167,11 +167,11 @@ func (s *RAGIndexerService) ProcessJob(ctx context.Context, job domain.KBIndexJo
 			return s.embeddings.DeleteEntity(ctx, job.CompanyID, job.EntityType, job.EntityID)
 		}
 		log.Error().Err(err).Msg("rag index build chunks failed")
-		return err
+		return applog.TraceErr(ctx, "rag index: build chunks failed", err)
 	}
 	if err := s.embedAndUpsert(ctx, job.CompanyID, job.EntityType, job.EntityID, chunks); err != nil {
 		log.Error().Err(err).Int("chunks", len(chunks)).Msg("rag index upsert failed")
-		return err
+		return applog.TraceErr(ctx, "rag index: upsert embeddings failed", err)
 	}
 	log.Debug().Int("chunks", len(chunks)).Msg("rag index job completed")
 	return nil
@@ -182,33 +182,33 @@ func (s *RAGIndexerService) ReindexCompany(ctx context.Context, companyID uuid.U
 	applog.TraceCall(ctx, "service.RAGIndexerService.ReindexCompany")
 	applog.From(ctx).Info().Str("company_id", companyID.String()).Msg("rag company reindex requested")
 	if err := s.embeddings.DeleteCompany(ctx, companyID); err != nil {
-		return err
+		return applog.TraceErr(ctx, "rag reindex: delete company embeddings failed", err)
 	}
 	articles, _, err := s.articles.List(ctx, companyID, domain.ArticleFilter{Limit: 10000})
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "rag reindex: list articles failed", err)
 	}
 	for _, article := range articles {
 		if err := s.ScheduleUpsert(ctx, companyID, domain.KBEntityArticle, article.ID); err != nil {
-			return err
+			return applog.TraceErr(ctx, "rag reindex: schedule article upsert failed", err)
 		}
 	}
 	qaPairs, _, err := s.qa.List(ctx, companyID, domain.QAPairFilter{Limit: 10000})
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "rag reindex: list qa pairs failed", err)
 	}
 	for _, qa := range qaPairs {
 		if err := s.ScheduleUpsert(ctx, companyID, domain.KBEntityQA, qa.ID); err != nil {
-			return err
+			return applog.TraceErr(ctx, "rag reindex: schedule qa upsert failed", err)
 		}
 	}
 	nodes, _, err := s.pricing.List(ctx, companyID, domain.PricingNodeFilter{Limit: 10000})
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "rag reindex: list pricing nodes failed", err)
 	}
 	for _, node := range nodes {
 		if err := s.ScheduleUpsert(ctx, companyID, domain.KBEntityPricing, node.ID); err != nil {
-			return err
+			return applog.TraceErr(ctx, "rag reindex: schedule pricing upsert failed", err)
 		}
 	}
 	return nil
@@ -286,7 +286,7 @@ func (s *RAGIndexerService) embedAndUpsert(ctx context.Context, companyID uuid.U
 	}
 	existing, err := s.embeddings.ListByEntity(ctx, companyID, entityType, entityID)
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "rag index: list entity embeddings failed", err)
 	}
 	existingHash := map[int]string{}
 	for _, item := range existing {
@@ -305,7 +305,7 @@ func (s *RAGIndexerService) embedAndUpsert(ctx context.Context, companyID uuid.U
 		texts = append(texts, chunk.EmbeddingText)
 	}
 	if err := s.embeddings.DeleteChunksExcept(ctx, companyID, entityType, entityID, keep); err != nil {
-		return err
+		return applog.TraceErr(ctx, "rag index: delete stale chunks failed", err)
 	}
 	if len(changed) == 0 {
 		applog.From(ctx).Debug().
@@ -318,11 +318,11 @@ func (s *RAGIndexerService) embedAndUpsert(ctx context.Context, companyID uuid.U
 	}
 	_, embedder, err := s.llmFactory.ForCompany(ctx, companyID)
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "rag index: resolve embedder failed", err)
 	}
 	vectors, err := embedder.EmbedDocs(ctx, texts)
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "rag index: embed documents failed", err)
 	}
 	if len(vectors) != len(changed) {
 		return fmt.Errorf("embedding count mismatch: got %d want %d", len(vectors), len(changed))

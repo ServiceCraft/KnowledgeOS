@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	applog "github.com/knowledgeos/backend/internal/logger"
@@ -109,21 +110,26 @@ func (h *ChatHandler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 
+	ctx := r.Context()
+	companyID := middleware.GetCompanyID(ctx)
+	// Keep generating and persisting even if the browser tab closes mid-stream.
+	streamCtx := context.WithoutCancel(ctx)
 	emit := func(event service.ChatStreamEvent) error {
 		if event.Type == "" {
 			event.Type = "message"
 		}
 		data, err := json.Marshal(event)
 		if err != nil {
-			return err
+			return applog.TraceErr(ctx, "chat sse: marshal event failed", err)
 		}
 		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, data); err != nil {
-			return err
+			applog.From(ctx).Debug().Err(err).Msg("chat sse: client disconnected")
+			return nil
 		}
 		flusher.Flush()
 		return nil
 	}
-	if err := h.svc.StreamMessage(r.Context(), middleware.GetCompanyID(r.Context()), sessionID, req, emit); err != nil {
+	if err := h.svc.StreamMessage(streamCtx, companyID, sessionID, req, emit); err != nil {
 		_ = emit(service.ChatStreamEvent{Type: "error", Error: err.Error()})
 		_ = emit(service.ChatStreamEvent{Type: "done"})
 	}

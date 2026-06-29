@@ -45,6 +45,18 @@ func TraceCall(ctx context.Context, function string) {
 	From(ctx).Debug().Str("function", function).Msg("function called")
 }
 
+// TraceErr logs a returning error with caller, then returns err unchanged.
+func TraceErr(ctx context.Context, msg string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	From(ctx).Error().Err(err).Caller(1).Msg(msg)
+	return err
+}
+
 // With executes the logger.With operation.
 func With(ctx context.Context, logger zerolog.Logger) context.Context {
 	return logger.WithContext(ctx)

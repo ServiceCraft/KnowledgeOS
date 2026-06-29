@@ -97,6 +97,7 @@ func main() {
 		tools.NewSearchKnowledgeTool(retrieverSvc, cfg.RAGHybridTopK),
 		tools.NewGetPricingTool(pricingSvc),
 		tools.NewGetServiceInfoTool(articleSvc, qaSvc, pricingSvc),
+		tools.NewRequestHandoffTool(),
 	)
 	chatSvc := service.NewChatService(chatStore, botSettingsSvc, retrieverSvc, llmFactory, chatTools, cfg.BotChatDebugLog)
 	channelGateway := channels.NewGateway(
@@ -108,6 +109,9 @@ func main() {
 		channelmax.New(nil),
 		vk.New(nil),
 	)
+	handoffSvc := service.NewHandoffService(chatStore, botSettingsSvc, channelGateway, channelGateway)
+	chatSvc.SetHandoffEscalator(handoffSvc)
+	channelGateway.SetHandoff(handoffSvc)
 	exportSvc := service.NewExportService(db, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore, callStore, mentionStore)
 	syncSvc := service.NewSyncService(syncStore, themeStore, qaStore, pricingStore, articleStore, commentStore, linkStore)
 	callSvc := service.NewCallService(callStore, mentionStore, qaStore)
@@ -146,6 +150,7 @@ func main() {
 		Bot:      handler.NewBotHandlerWithChannels(botSettingsSvc, tenantSecretSvc, channelGateway),
 		RAG:      handler.NewRAGHandler(ragIndexerSvc, retrieverSvc),
 		Chat:     handler.NewChatHandler(chatSvc),
+		Handoff:  handler.NewHandoffHandler(handoffSvc),
 		Channels: handler.NewChannelWebhookHandler(channelGateway),
 	}
 

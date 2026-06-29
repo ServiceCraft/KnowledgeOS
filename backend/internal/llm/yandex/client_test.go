@@ -199,10 +199,17 @@ func TestClientEmbeddings(t *testing.T) {
 		}
 		switch req.Model {
 		case "doc-model":
-			if len(req.Input) != 2 {
+			if len(req.Input) != 1 {
 				t.Fatalf("doc input = %+v", req.Input)
 			}
-			w.Write([]byte(`{"data":[{"index":1,"embedding":[0.2,0.3]},{"index":0,"embedding":[0.1,0.2]}]}`))
+			switch req.Input[0] {
+			case "a":
+				w.Write([]byte(`{"data":[{"index":0,"embedding":[0.1,0.2]}]}`))
+			case "b":
+				w.Write([]byte(`{"data":[{"index":0,"embedding":[0.2,0.3]}]}`))
+			default:
+				t.Fatalf("unexpected doc input = %q", req.Input[0])
+			}
 		case "query-model":
 			w.Write([]byte(`{"data":[{"index":0,"embedding":[0.9,0.8]}]}`))
 		default:

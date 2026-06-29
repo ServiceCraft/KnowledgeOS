@@ -1,4 +1,5 @@
-import client from './client';
+import client, { tenantContextError } from './client';
+import { normalizeChatExchange, normalizeChatMessage, normalizeChatSessionWithMessages } from './chatNormalize';
 import type { ChatExchange, ChatMessage, ChatSession, ChatSessionWithMessages, ChatSource } from '@/types';
 
 export interface CreateChatSessionRequest {
@@ -42,10 +43,14 @@ export const botChatApi = {
     client.get<ListResponse<ChatSession>>(`${base}/sessions`, { params }).then((r) => r.data),
 
   getSession: (id: string) =>
-    client.get<DataResponse<ChatSessionWithMessages>>(`${base}/sessions/${id}`).then((r) => r.data.data),
+    client
+      .get<DataResponse<ChatSessionWithMessages>>(`${base}/sessions/${id}`)
+      .then((r) => normalizeChatSessionWithMessages(r.data.data)),
 
   sendMessage: (sessionId: string, data: SendChatMessageRequest) =>
-    client.post<DataResponse<ChatExchange>>(`${base}/sessions/${sessionId}/messages`, data).then((r) => r.data.data),
+    client
+      .post<DataResponse<ChatExchange>>(`${base}/sessions/${sessionId}/messages`, data)
+      .then((r) => normalizeChatExchange(r.data.data)),
 
   streamMessage: async (
     sessionId: string,
@@ -53,11 +58,16 @@ export const botChatApi = {
     onEvent: (event: ChatStreamEvent) => void,
     signal?: AbortSignal
   ) => {
-    const response = await fetch(`/api/v1${base}/sessions/${sessionId}/messages/stream`, {
+    const url = `${base}/sessions/${sessionId}/messages/stream`;
+    const tenantError = tenantContextError(url);
+    if (tenantError) {
+      throw tenantError;
+    }
+    const response = await fetch(`/api/v1${url}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...authHeader(),
+        ...authHeaders(),
       },
       body: JSON.stringify(data),
       signal,
@@ -78,21 +88,34 @@ export const botChatApi = {
       buffer = parts.pop() ?? '';
       for (const part of parts) {
         const event = parseSSE(part);
-        if (event) onEvent(event);
+        if (event) onEvent(normalizeChatStreamEvent(event));
       }
     }
     if (buffer.trim()) {
       const event = parseSSE(buffer);
-      if (event) onEvent(event);
+      if (event) onEvent(normalizeChatStreamEvent(event));
     }
   },
 };
 
-function authHeader(): Record<string, string> {
+function normalizeChatStreamEvent(event: ChatStreamEvent): ChatStreamEvent {
+  return {
+    ...event,
+    message: event.message ? normalizeChatMessage(event.message) : undefined,
+    sources: Array.isArray(event.sources) ? event.sources : [],
+  };
+}
+
+function authHeaders(): Record<string, string> {
   try {
     const raw = localStorage.getItem('auth-storage');
-    const token = raw ? JSON.parse(raw)?.state?.tokens?.access_token : null;
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    const state = raw ? JSON.parse(raw)?.state : null;
+    const token = state?.tokens?.access_token;
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    if (state?.user?.role === 'superadmin' && state?.selectedCompanyId) {
+      headers['X-Company-ID'] = state.selectedCompanyId;
+    }
+    return headers;
   } catch {
     return {};
   }

@@ -34,7 +34,7 @@ func (s *CommentService) Create(ctx context.Context, companyID uuid.UUID, commen
 		return errors.New("body is required")
 	}
 	if err := s.validateEntity(ctx, companyID, comment.EntityType, comment.EntityID); err != nil {
-		return err
+		return applog.TraceErr(ctx, "comment: validate entity failed", err)
 	}
 	return s.comments.Create(ctx, companyID, comment)
 }

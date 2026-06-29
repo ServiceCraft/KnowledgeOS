@@ -233,7 +233,7 @@ func (s *UserService) Delete(ctx context.Context, actor Actor, id uuid.UUID) err
 	applog.TraceCall(ctx, "service.UserService.Delete")
 	target, err := s.loadInCompany(ctx, actor.CompanyID, id)
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "delete user failed", err)
 	}
 	if target.ID == actor.ID {
 		return forbidden("you cannot delete your own account")

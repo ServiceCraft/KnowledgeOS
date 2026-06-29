@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 	"strings"
 	"time"
@@ -17,6 +18,10 @@ import (
 
 type chatService interface {
 	SendMessage(ctx context.Context, companyID, sessionID uuid.UUID, req service.SendChatMessageRequest) (*service.ChatExchange, error)
+}
+
+type handoffService interface {
+	RecordInbound(ctx context.Context, companyID uuid.UUID, session *domain.ChatSession, content string) (*domain.ChatMessage, error)
 }
 
 type settingsService interface {
@@ -33,6 +38,7 @@ type Gateway struct {
 	chat     chatService
 	settings settingsService
 	secrets  secretService
+	handoff  handoffService
 	adapters map[domain.ChatChannel]Adapter
 }
 
@@ -55,6 +61,10 @@ func NewGateway(chats domain.ChatRepository, chat chatService, settings settings
 		}
 	}
 	return &Gateway{chats: chats, chat: chat, settings: settings, secrets: secrets, adapters: byChannel}
+}
+
+func (g *Gateway) SetHandoff(handoff handoffService) {
+	g.handoff = handoff
 }
 
 func (g *Gateway) EnsureWebhook(ctx context.Context, companyID uuid.UUID, kind domain.SecretKind, baseURL string) (bool, error) {
@@ -118,6 +128,11 @@ func (g *Gateway) HandleWebhook(ctx context.Context, companyID uuid.UUID, channe
 		return nil, err
 	}
 	if session.State != domain.ChatStateBot {
+		if g.handoff != nil && (session.State == domain.ChatStateWaitingOperator || session.State == domain.ChatStateOperator) {
+			if _, err := g.handoff.RecordInbound(ctx, companyID, session, inbound.Text); err != nil {
+				return nil, err
+			}
+		}
 		return okResponse(), nil
 	}
 	_ = adapter.SendTyping(ctx, cfg, inbound.ExternalChatID)
@@ -139,6 +154,49 @@ func (g *Gateway) HandleWebhook(ctx context.Context, companyID uuid.UUID, channe
 		return nil, err
 	}
 	return okResponse(), nil
+}
+
+func (g *Gateway) SendOperatorMessage(ctx context.Context, companyID uuid.UUID, session *domain.ChatSession, message *domain.ChatMessage) error {
+	if session == nil || message == nil {
+		return nil
+	}
+	if session.Channel == domain.ChatChannelPlayground || session.Channel == domain.ChatChannelAPI || session.ExternalChatID == nil {
+		return nil
+	}
+	adapter, ok := g.adapters[session.Channel]
+	if !ok {
+		return statusError(http.StatusBadRequest, "unsupported channel")
+	}
+	token, metadata, err := g.secrets.GetPlaintextWithMetadata(ctx, companyID, adapter.SecretKind())
+	if err != nil {
+		return applog.TraceErr(ctx, "channel gateway: load channel secret failed", err)
+	}
+	return adapter.SendMessage(ctx, ChannelConfig{Token: token, Metadata: metadata}, OutboundMessage{
+		ExternalChatID: *session.ExternalChatID,
+		Text:           message.Content,
+	})
+}
+
+func (g *Gateway) NotifyHandoff(ctx context.Context, companyID uuid.UUID, session *domain.ChatSession, reason string, lastQuestion string) error {
+	adapter, ok := g.adapters[domain.ChatChannelTelegram]
+	if !ok {
+		return nil
+	}
+	token, metadata, err := g.secrets.GetPlaintextWithMetadata(ctx, companyID, adapter.SecretKind())
+	if err != nil {
+		if service.HTTPStatus(err) == http.StatusNotFound {
+			return nil
+		}
+		return applog.TraceErr(ctx, "channel gateway: load handoff notification secret failed", err)
+	}
+	chatID := handoffNotificationChatID(metadata)
+	if chatID == "" {
+		return nil
+	}
+	return adapter.SendMessage(ctx, ChannelConfig{Token: token, Metadata: metadata}, OutboundMessage{
+		ExternalChatID: chatID,
+		Text:           handoffNotificationText(session, reason, lastQuestion),
+	})
 }
 
 func (g *Gateway) Status(ctx context.Context, companyID uuid.UUID, baseURL string) ([]ChannelStatus, error) {
@@ -233,6 +291,52 @@ func channelEnabled(raw json.RawMessage, channel domain.ChatChannel) bool {
 		return false
 	}
 	return perChannel[string(channel)]
+}
+
+func handoffNotificationChatID(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var metadata map[string]interface{}
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return ""
+	}
+	for _, key := range []string{"handoff_notification_chat_id", "notification_chat_id", "handoff_group_chat_id"} {
+		if value, ok := metadata[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	if nested, ok := metadata["handoff"].(map[string]interface{}); ok {
+		if value, ok := nested["notification_chat_id"].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func handoffNotificationText(session *domain.ChatSession, reason string, lastQuestion string) string {
+	title := "Новый диалог"
+	if session != nil && strings.TrimSpace(session.Title) != "" {
+		title = strings.TrimSpace(session.Title)
+	}
+	question := strings.TrimSpace(lastQuestion)
+	if len([]rune(question)) > 240 {
+		question = string([]rune(question)[:240]) + "..."
+	}
+	parts := []string{
+		"Требуется оператор",
+		fmt.Sprintf("Диалог: %s", title),
+	}
+	if session != nil {
+		parts = append(parts, fmt.Sprintf("Канал: %s", session.Channel))
+	}
+	if strings.TrimSpace(reason) != "" {
+		parts = append(parts, fmt.Sprintf("Причина: %s", reason))
+	}
+	if question != "" {
+		parts = append(parts, fmt.Sprintf("Последний вопрос: %s", question))
+	}
+	return strings.Join(parts, "\n")
 }
 
 func webhookURL(baseURL string, channel domain.ChatChannel, companyID uuid.UUID) string {

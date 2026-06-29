@@ -23,6 +23,7 @@ import (
 
 	"github.com/knowledgeos/backend/internal/chat/eval"
 	"github.com/knowledgeos/backend/internal/domain"
+	applog "github.com/knowledgeos/backend/internal/logger"
 )
 
 func main() {
@@ -62,17 +63,17 @@ func run(base, email, password, outDir string) error {
 	report := eval.Run(ctx, cases, answer)
 
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return err
+		return applog.TraceErr(ctx, "chat eval: create output dir failed", err)
 	}
 	jsonBytes, err := report.JSON()
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "chat eval: marshal report failed", err)
 	}
 	if err := os.WriteFile(filepath.Join(outDir, "last-run.json"), jsonBytes, 0o644); err != nil {
-		return err
+		return applog.TraceErr(ctx, "chat eval: write json report failed", err)
 	}
 	if err := os.WriteFile(filepath.Join(outDir, "last-run.md"), []byte(report.Markdown()), 0o644); err != nil {
-		return err
+		return applog.TraceErr(ctx, "chat eval: write markdown report failed", err)
 	}
 
 	fmt.Printf("eval complete: %d/%d passed | grounding %.0f%% | refusal %.0f%%\n",
@@ -130,11 +131,11 @@ func sendMessage(ctx context.Context, c *http.Client, base, token, sessionID, qu
 func doJSON(ctx context.Context, c *http.Client, method, url, token string, body, out interface{}) error {
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "chat eval: marshal request failed", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(payload))
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "chat eval: build request failed", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
@@ -142,12 +143,12 @@ func doJSON(ctx context.Context, c *http.Client, method, url, token string, body
 	}
 	res, err := c.Do(req)
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "chat eval: http request failed", err)
 	}
 	defer res.Body.Close()
 	data, err := io.ReadAll(res.Body)
 	if err != nil {
-		return err
+		return applog.TraceErr(ctx, "chat eval: read response failed", err)
 	}
 	if res.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("%s %s: status %d: %s", method, url, res.StatusCode, string(data))

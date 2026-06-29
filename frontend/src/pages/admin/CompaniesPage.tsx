@@ -18,14 +18,17 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Check } from 'lucide-react';
 import { DataTable, type Column } from '@/components/shared/DataTable';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { useCompaniesList, useCreateCompany, useUpdateCompany, useDeleteCompany } from '@/hooks/useAdmin';
+import { useSelectCompanyContext } from '@/hooks/useCompanyContext';
+import { useAuthStore } from '@/stores/authStore';
 import type { Company } from '@/types';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
 const TIERS = ['local', 'cloud', 'enterprise'];
 const TIER_LABELS: Record<string, string> = {
@@ -41,6 +44,8 @@ export function CompaniesPage() {
   const createCompany = useCreateCompany();
   const updateCompany = useUpdateCompany();
   const deleteCompany = useDeleteCompany();
+  const selectedCompanyId = useAuthStore((s) => s.selectedCompanyId);
+  const selectCompany = useSelectCompanyContext();
 
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -107,7 +112,21 @@ export function CompaniesPage() {
     {
       key: 'name',
       header: 'Название',
-      render: (item) => <span className="font-medium">{item.name}</span>,
+      render: (item) => (
+        <div className="flex items-center gap-2">
+          {selectedCompanyId === item.id && (
+            <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+          )}
+          <span className={cn('font-medium', selectedCompanyId === item.id && 'text-primary')}>
+            {item.name}
+          </span>
+          {selectedCompanyId === item.id && (
+            <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary text-[10px]">
+              Текущая
+            </Badge>
+          )}
+        </div>
+      ),
     },
     {
       key: 'tier',
@@ -132,9 +151,21 @@ export function CompaniesPage() {
     {
       key: 'actions',
       header: '',
-      className: 'w-24',
+      className: 'w-44',
       render: (item) => (
-        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+          <Button
+            variant={selectedCompanyId === item.id ? 'default' : 'outline'}
+            size="sm"
+            className="h-7"
+            onClick={() => {
+              selectCompany(item.id, item.name);
+              toast.success(`Выбрана компания: ${item.name}`);
+              navigate('/kb');
+            }}
+          >
+            {selectedCompanyId === item.id ? 'Выбрана' : 'Выбрать'}
+          </Button>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(item)}>
             <Pencil className="h-3 w-3" />
           </Button>
@@ -157,7 +188,12 @@ export function CompaniesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Компании</h1>
+        <div>
+          <h1 className="text-2xl font-semibold">Компании</h1>
+          <p className="text-sm text-muted-foreground">
+            Выберите компанию, чтобы работать с её базой знаний, ботом, пользователями и handoff.
+          </p>
+        </div>
         <Button onClick={openCreate}>
           <Plus className="h-4 w-4 mr-2" />
           Добавить компанию
@@ -172,6 +208,11 @@ export function CompaniesPage() {
         limit={20}
         onPageChange={setPage}
         onRowClick={(item) => navigate(`/admin/companies/${item.id}`)}
+        getRowClassName={(item) =>
+          selectedCompanyId === item.id
+            ? 'border-l-2 border-l-primary bg-primary/5 hover:bg-primary/10'
+            : undefined
+        }
       />
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
