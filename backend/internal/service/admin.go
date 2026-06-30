@@ -7,18 +7,30 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/auth"
+	"github.com/knowledgeos/backend/internal/cache"
 	"github.com/knowledgeos/backend/internal/domain"
 )
 
 type AdminService struct {
-	companies domain.CompanyRepository
-	users     domain.UserRepository
-	syncRepo  domain.SyncRepository
+	companies    domain.CompanyRepository
+	users        domain.UserRepository
+	syncRepo     domain.SyncRepository
+	companyCache cache.Provider
 }
 
 // NewAdminService executes the service.NewAdminService operation.
-func NewAdminService(companies domain.CompanyRepository, users domain.UserRepository, syncRepo domain.SyncRepository) *AdminService {
-	return &AdminService{companies: companies, users: users, syncRepo: syncRepo}
+func NewAdminService(
+	companies domain.CompanyRepository,
+	users domain.UserRepository,
+	syncRepo domain.SyncRepository,
+	companyCache cache.Provider,
+) *AdminService {
+	return &AdminService{
+		companies:    companies,
+		users:        users,
+		syncRepo:     syncRepo,
+		companyCache: companyCache,
+	}
 }
 
 // ListCompanies executes the service.AdminService.ListCompanies operation.
@@ -30,14 +42,21 @@ func (s *AdminService) ListCompanies(ctx context.Context, filter domain.CompanyF
 // GetCompany executes the service.AdminService.GetCompany operation.
 func (s *AdminService) GetCompany(ctx context.Context, id uuid.UUID) (*domain.Company, error) {
 	applog.TraceCall(ctx, "service.AdminService.GetCompany")
-	return s.companies.GetByID(ctx, id)
+	company, err := s.companies.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, notFound("company not found")
+		}
+		return nil, err
+	}
+	return company, nil
 }
 
 // CreateCompany executes the service.AdminService.CreateCompany operation.
 func (s *AdminService) CreateCompany(ctx context.Context, company *domain.Company) error {
 	applog.TraceCall(ctx, "service.AdminService.CreateCompany")
 	if company.Name == "" {
-		return errors.New("name is required")
+		return badRequest("name is required")
 	}
 	if err := s.companies.Create(ctx, company); err != nil {
 		return applog.TraceErr(ctx, "create company failed", err)
@@ -49,18 +68,36 @@ func (s *AdminService) CreateCompany(ctx context.Context, company *domain.Compan
 func (s *AdminService) UpdateCompany(ctx context.Context, company *domain.Company) error {
 	applog.TraceCall(ctx, "service.AdminService.UpdateCompany")
 	if _, err := s.companies.GetByID(ctx, company.ID); err != nil {
-		return errors.New("company not found")
+		if errors.Is(err, domain.ErrNotFound) {
+			return notFound("company not found")
+		}
+		return err
 	}
-	return s.companies.Update(ctx, company)
+	if err := s.companies.Update(ctx, company); err != nil {
+		return err
+	}
+	if s.companyCache != nil {
+		_ = s.companyCache.InvalidateCompany(ctx, company.ID)
+	}
+	return nil
 }
 
 // DeleteCompany executes the service.AdminService.DeleteCompany operation.
 func (s *AdminService) DeleteCompany(ctx context.Context, id uuid.UUID) error {
 	applog.TraceCall(ctx, "service.AdminService.DeleteCompany")
 	if _, err := s.companies.GetByID(ctx, id); err != nil {
-		return errors.New("company not found")
+		if errors.Is(err, domain.ErrNotFound) {
+			return notFound("company not found")
+		}
+		return err
 	}
-	return s.companies.Delete(ctx, id)
+	if err := s.companies.Delete(ctx, id); err != nil {
+		return err
+	}
+	if s.companyCache != nil {
+		_ = s.companyCache.InvalidateCompany(ctx, id)
+	}
+	return nil
 }
 
 type CreateCompanyAdminRequest struct {
@@ -81,19 +118,5 @@ func (s *AdminService) CreateCompanyAdmin(ctx context.Context, companyID uuid.UU
 		return nil, err
 	}
 
-	user := &domain.User{
-		Email:        email,
-		PasswordHash: hash,
-		Role:         domain.RoleAdmin,
-		IsActive:     true,
-	}
-
-	if err := s.users.Create(ctx, user); err != nil {
-		return nil, err
-	}
-	if err := s.users.SetCompanyIDs(ctx, user.ID, []uuid.UUID{companyID}); err != nil {
-		return nil, err
-	}
-	user.CompanyIDs = []uuid.UUID{companyID}
-	return user, nil
+	return createCompanyAdminUser(ctx, s.users, email, hash, companyID)
 }

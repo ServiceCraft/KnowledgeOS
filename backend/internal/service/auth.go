@@ -12,15 +12,37 @@ import (
 )
 
 type AuthService struct {
-	users     domain.UserRepository
-	companies domain.CompanyRepository
-	syncRepo  domain.SyncRepository
-	jwtMgr    *auth.JWTManager
+	users              domain.UserRepository
+	companies          domain.CompanyRepository
+	tokens             domain.TokenRepository
+	jwtMgr             *auth.JWTManager
+	refreshTokenTTL    time.Duration
+	listCompaniesLimit int
 }
 
 // NewAuthService executes the service.NewAuthService operation.
-func NewAuthService(users domain.UserRepository, companies domain.CompanyRepository, syncRepo domain.SyncRepository, jwtMgr *auth.JWTManager) *AuthService {
-	return &AuthService{users: users, companies: companies, syncRepo: syncRepo, jwtMgr: jwtMgr}
+func NewAuthService(
+	users domain.UserRepository,
+	companies domain.CompanyRepository,
+	tokens domain.TokenRepository,
+	jwtMgr *auth.JWTManager,
+	refreshTokenTTL time.Duration,
+	listCompaniesLimit int,
+) *AuthService {
+	if refreshTokenTTL <= 0 {
+		refreshTokenTTL = 30 * 24 * time.Hour
+	}
+	if listCompaniesLimit <= 0 {
+		listCompaniesLimit = 1000
+	}
+	return &AuthService{
+		users:              users,
+		companies:          companies,
+		tokens:             tokens,
+		jwtMgr:             jwtMgr,
+		refreshTokenTTL:    refreshTokenTTL,
+		listCompaniesLimit: listCompaniesLimit,
+	}
 }
 
 type LoginRequest struct {
@@ -51,102 +73,57 @@ func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*LoginRespon
 	applog.TraceCall(ctx, "service.AuthService.Login")
 	user, err := s.users.GetByEmail(ctx, req.Email)
 	if err != nil {
-		return nil, errors.New("invalid credentials")
+		return nil, authUnauthorized("invalid credentials")
 	}
 
 	if !auth.ComparePassword(user.PasswordHash, req.Password) {
-		return nil, errors.New("invalid credentials")
+		return nil, authUnauthorized("invalid credentials")
 	}
 
 	if !user.IsActive {
-		return nil, errors.New("account is deactivated")
+		return nil, authUnauthorized("account is deactivated")
 	}
 
-	pair, refreshHash, err := s.jwtMgr.Issue(user)
-	if err != nil {
-		return nil, err
-	}
-
-	token := &domain.RefreshToken{
-		UserID:    user.ID,
-		TokenHash: refreshHash,
-		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
-	}
-	if err := s.syncRepo.SaveRefreshToken(ctx, token); err != nil {
-		return nil, err
-	}
-
-	lu, err := s.buildLoginUser(ctx, user)
-	if err != nil {
-		return nil, err
-	}
-
-	return &LoginResponse{
-		AccessToken:  pair.AccessToken,
-		RefreshToken: pair.RefreshToken,
-		ExpiresAt:    pair.ExpiresAt,
-		User:         lu,
-	}, nil
+	return s.issueSession(ctx, user)
 }
 
 // Refresh executes the service.AuthService.Refresh operation.
 func (s *AuthService) Refresh(ctx context.Context, req RefreshRequest) (*LoginResponse, error) {
 	applog.TraceCall(ctx, "service.AuthService.Refresh")
 	oldHash := auth.HashToken(req.RefreshToken)
-	stored, err := s.syncRepo.GetRefreshToken(ctx, oldHash)
+	stored, err := s.tokens.GetRefreshToken(ctx, oldHash)
 	if err != nil {
-		return nil, errors.New("invalid refresh token")
+		return nil, authUnauthorized("invalid refresh token")
 	}
 
 	if time.Now().After(stored.ExpiresAt) {
-		return nil, errors.New("refresh token expired")
+		return nil, authUnauthorized("refresh token expired")
 	}
 
-	if err := s.syncRepo.RevokeRefreshToken(ctx, oldHash); err != nil {
-		return nil, err
+	if err := s.tokens.RevokeRefreshToken(ctx, oldHash); err != nil {
+		return nil, authInternal("failed to rotate refresh token")
 	}
 
 	user, err := s.users.GetByID(ctx, stored.UserID)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, authUnauthorized("invalid refresh token")
+		}
+		return nil, authInternal("failed to load user")
 	}
 
 	if !user.IsActive {
-		return nil, errors.New("account is deactivated")
+		return nil, authUnauthorized("account is deactivated")
 	}
 
-	pair, newHash, err := s.jwtMgr.Issue(user)
-	if err != nil {
-		return nil, err
-	}
-
-	newToken := &domain.RefreshToken{
-		UserID:    user.ID,
-		TokenHash: newHash,
-		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
-	}
-	if err := s.syncRepo.SaveRefreshToken(ctx, newToken); err != nil {
-		return nil, err
-	}
-
-	lu, err := s.buildLoginUser(ctx, user)
-	if err != nil {
-		return nil, err
-	}
-
-	return &LoginResponse{
-		AccessToken:  pair.AccessToken,
-		RefreshToken: pair.RefreshToken,
-		ExpiresAt:    pair.ExpiresAt,
-		User:         lu,
-	}, nil
+	return s.issueSession(ctx, user)
 }
 
 // ListAccessibleCompanies returns companies the caller may access.
 func (s *AuthService) ListAccessibleCompanies(ctx context.Context, userID uuid.UUID, role domain.Role) ([]domain.Company, error) {
 	applog.TraceCall(ctx, "service.AuthService.ListAccessibleCompanies")
 	if role == domain.RoleSuperadmin {
-		items, _, err := s.companies.List(ctx, domain.CompanyFilter{Page: 1, Limit: 1000})
+		items, _, err := s.companies.List(ctx, domain.CompanyFilter{Page: 1, Limit: s.listCompaniesLimit})
 		return items, err
 	}
 	return s.users.ListCompaniesForUser(ctx, userID)
@@ -156,7 +133,35 @@ func (s *AuthService) ListAccessibleCompanies(ctx context.Context, userID uuid.U
 func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 	applog.TraceCall(ctx, "service.AuthService.Logout")
 	hash := auth.HashToken(refreshToken)
-	return s.syncRepo.RevokeRefreshToken(ctx, hash)
+	return s.tokens.RevokeRefreshToken(ctx, hash)
+}
+
+func (s *AuthService) issueSession(ctx context.Context, user *domain.User) (*LoginResponse, error) {
+	pair, refreshHash, err := s.jwtMgr.Issue(user)
+	if err != nil {
+		return nil, err
+	}
+
+	token := &domain.RefreshToken{
+		UserID:    user.ID,
+		TokenHash: refreshHash,
+		ExpiresAt: time.Now().Add(s.refreshTokenTTL),
+	}
+	if err := s.tokens.SaveRefreshToken(ctx, token); err != nil {
+		return nil, authInternal("failed to persist session")
+	}
+
+	lu, err := s.buildLoginUser(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LoginResponse{
+		AccessToken:  pair.AccessToken,
+		RefreshToken: pair.RefreshToken,
+		ExpiresAt:    pair.ExpiresAt,
+		User:         lu,
+	}, nil
 }
 
 func (s *AuthService) buildLoginUser(ctx context.Context, user *domain.User) (LoginUser, error) {

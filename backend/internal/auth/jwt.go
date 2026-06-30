@@ -8,14 +8,13 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/domain"
 )
 
 type Claims struct {
 	jwt.RegisteredClaims
-	CompanyID *uuid.UUID  `json:"company_id,omitempty"`
-	Role      domain.Role `json:"role"`
+	Role              domain.Role `json:"role"`
+	MembershipVersion int         `json:"mv,omitempty"`
 }
 
 type TokenPair struct {
@@ -25,18 +24,22 @@ type TokenPair struct {
 }
 
 type JWTManager struct {
-	secret []byte
+	secret         []byte
+	accessTokenTTL time.Duration
 }
 
 // NewJWTManager executes the auth.NewJWTManager operation.
-func NewJWTManager(secret string) *JWTManager {
-	return &JWTManager{secret: []byte(secret)}
+func NewJWTManager(secret string, accessTokenTTL time.Duration) *JWTManager {
+	if accessTokenTTL <= 0 {
+		accessTokenTTL = 24 * time.Hour
+	}
+	return &JWTManager{secret: []byte(secret), accessTokenTTL: accessTokenTTL}
 }
 
 // Issue executes the auth.JWTManager.Issue operation.
 func (m *JWTManager) Issue(user *domain.User) (*TokenPair, string, error) {
 	now := time.Now()
-	accessExp := now.Add(24 * time.Hour) // TODO: make < 30 min after all tests
+	accessExp := now.Add(m.accessTokenTTL)
 
 	accessClaims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -44,8 +47,8 @@ func (m *JWTManager) Issue(user *domain.User) (*TokenPair, string, error) {
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(accessExp),
 		},
-		CompanyID: user.CompanyID,
-		Role:      user.Role,
+		Role:              user.Role,
+		MembershipVersion: user.MembershipVersion,
 	}
 
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)

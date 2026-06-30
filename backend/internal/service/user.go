@@ -4,53 +4,28 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	applog "github.com/knowledgeos/backend/internal/logger"
-	"net/http"
 	"regexp"
 	"strings"
 
+	applog "github.com/knowledgeos/backend/internal/logger"
+
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/knowledgeos/backend/internal/auth"
 	"github.com/knowledgeos/backend/internal/domain"
-	"gorm.io/gorm"
 )
 
 const minPasswordLength = 8
 
 var emailRegex = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 
-// UserError carries an HTTP status so the handler can map service failures to
-// the right response code without leaking implementation details.
-type UserError struct {
-	Status int
-	Msg    string
-}
-
-// Error executes the service.UserError.Error operation.
-func (e *UserError) Error() string { return e.Msg }
-
-func badRequest(msg string) error { return &UserError{Status: http.StatusBadRequest, Msg: msg} }
-func forbidden(msg string) error  { return &UserError{Status: http.StatusForbidden, Msg: msg} }
-func notFound(msg string) error   { return &UserError{Status: http.StatusNotFound, Msg: msg} }
-func conflict(msg string) error   { return &UserError{Status: http.StatusConflict, Msg: msg} }
-
-// HTTPStatus extracts the status code from an error returned by UserService,
-// defaulting to 500 for unexpected errors.
-func HTTPStatus(err error) int {
-	var ue *UserError
-	if errors.As(err, &ue) {
-		return ue.Status
-	}
-	return http.StatusInternalServerError
-}
-
 type UserService struct {
 	users  domain.UserRepository
-	tokens domain.SyncRepository
+	tokens domain.TokenRepository
 }
 
 // NewUserService executes the service.NewUserService operation.
-func NewUserService(users domain.UserRepository, tokens domain.SyncRepository) *UserService {
+func NewUserService(users domain.UserRepository, tokens domain.TokenRepository) *UserService {
 	return &UserService{users: users, tokens: tokens}
 }
 
@@ -117,7 +92,7 @@ func (s *UserService) Create(ctx context.Context, actor Actor, req CreateUserReq
 
 	if _, err := s.users.GetByEmail(ctx, email); err == nil {
 		return nil, conflict("a user with this email already exists")
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return nil, err
 	}
 
@@ -137,19 +112,24 @@ func (s *UserService) Create(ctx context.Context, actor Actor, req CreateUserReq
 		Role:         req.Role,
 		IsActive:     active,
 	}
-	if err := s.users.Create(ctx, user); err != nil {
+
+	if req.Role == domain.RoleSuperadmin {
+		if err := s.users.Create(ctx, user); err != nil {
+			if isUniqueViolation(err) {
+				return nil, conflict("a user with this email already exists")
+			}
+			return nil, err
+		}
+		return user, nil
+	}
+
+	if err := s.users.CreateWithCompanies(ctx, user, companyIDs); err != nil {
 		if isUniqueViolation(err) {
 			return nil, conflict("a user with this email already exists")
 		}
 		return nil, err
 	}
-
-	if req.Role != domain.RoleSuperadmin {
-		if err := s.users.SetCompanyIDs(ctx, user.ID, companyIDs); err != nil {
-			return nil, err
-		}
-		user.CompanyIDs = companyIDs
-	}
+	user.CompanyIDs = companyIDs
 	return user, nil
 }
 
@@ -201,7 +181,7 @@ func (s *UserService) Update(ctx context.Context, actor Actor, id uuid.UUID, req
 		if email != target.Email {
 			if existing, err := s.users.GetByEmail(ctx, email); err == nil && existing.ID != target.ID {
 				return nil, conflict("a user with this email already exists")
-			} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
 				return nil, err
 			}
 			target.Email = email
@@ -250,7 +230,9 @@ func (s *UserService) Update(ctx context.Context, actor Actor, id uuid.UUID, req
 	}
 
 	if revokeSessions && s.tokens != nil {
-		_ = s.tokens.RevokeAllUserTokens(ctx, target.ID)
+		if err := s.tokens.RevokeAllUserTokens(ctx, target.ID); err != nil {
+			applog.TraceErr(ctx, "revoke user sessions failed", err)
+		}
 	}
 	return target, nil
 }
@@ -279,7 +261,7 @@ func (s *UserService) loadInCompany(ctx context.Context, companyID, id uuid.UUID
 	applog.TraceCall(ctx, "service.UserService.loadInCompany")
 	user, err := s.users.GetByID(ctx, id)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, domain.ErrNotFound) {
 			return nil, notFound("user not found")
 		}
 		return nil, err
@@ -287,17 +269,14 @@ func (s *UserService) loadInCompany(ctx context.Context, companyID, id uuid.UUID
 	if user.Role == domain.RoleSuperadmin {
 		return nil, notFound("user not found")
 	}
-	ok, err := s.users.HasCompany(ctx, id, companyID)
+	companyIDs, err := s.users.GetCompanyIDs(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if !ok {
+	if !containsCompanyID(companyIDs, companyID) {
 		return nil, notFound("user not found")
 	}
-	user.CompanyIDs, err = s.users.GetCompanyIDs(ctx, id)
-	if err != nil {
-		return nil, err
-	}
+	user.CompanyIDs = companyIDs
 	return user, nil
 }
 
@@ -394,5 +373,9 @@ func dedupeUUIDs(ids []uuid.UUID) []uuid.UUID {
 }
 
 func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return true
+	}
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "duplicate")
 }

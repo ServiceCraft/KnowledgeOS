@@ -23,12 +23,11 @@ func ValidRole(r Role) bool {
 
 type User struct {
 	BaseModel
-	// CompanyID is deprecated; use CompanyIDs via user_companies.
-	CompanyID    *uuid.UUID  `gorm:"type:uuid;index" json:"-"`
-	CompanyIDs   []uuid.UUID `gorm:"-" json:"company_ids,omitempty"`
-	Email        string      `gorm:"type:text;not null;uniqueIndex" json:"email"`
-	PasswordHash string      `gorm:"type:text;not null" json:"-"`
-	Role         Role        `gorm:"type:text;not null;default:viewer" json:"role"`
+	CompanyIDs        []uuid.UUID `gorm:"-" json:"company_ids,omitempty"`
+	MembershipVersion int         `gorm:"not null;default:0" json:"-"`
+	Email             string      `gorm:"type:text;not null;uniqueIndex" json:"email"`
+	PasswordHash      string      `gorm:"type:text;not null" json:"-"`
+	Role              Role        `gorm:"type:text;not null;default:viewer" json:"role"`
 	// No GORM default tag: with one, GORM omits a false value on INSERT (DB
 	// default would force true), so creating an inactive user would silently be
 	// stored as active. The column default lives in the migration; every Go

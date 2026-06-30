@@ -1,124 +1,128 @@
 package config
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"strconv"
+	"time"
 
 	"github.com/knowledgeos/backend/internal/logger"
+	"github.com/sethvargo/go-envconfig"
 )
 
 type Config struct {
-	// Postgres
-	PostgresHost     string
-	PostgresPort     int
-	PostgresUser     string
-	PostgresPassword string
-	PostgresDB       string
+	PostgresHost     string `env:"POSTGRES_HOST, default=localhost"`
+	PostgresPort     int    `env:"POSTGRES_PORT, default=5432"`
+	PostgresUser     string `env:"POSTGRES_USER, default=knowledgeos"`
+	PostgresPassword string `env:"POSTGRES_PASSWORD, default=changeme"`
+	PostgresDB       string `env:"POSTGRES_DB, default=knowledgeos"`
+	PostgresSSLMode  string `env:"POSTGRES_SSLMODE, default=disable"`
+	PGMaxOpenConns   int    `env:"PG_MAX_OPEN_CONNS, default=25"`
+	PGMaxIdleConns   int    `env:"PG_MAX_IDLE_CONNS, default=10"`
+	PGConnMaxLifeMin int    `env:"PG_CONN_MAX_LIFETIME_MIN, default=30"`
 
-	// App
-	AppProfile         string // "local" or "cloud"
-	JWTSecret          string
-	SuperadminEmail    string
-	SuperadminPassword string
-	LogLevel           string
-	LogFormat          string
+	AppProfile         string `env:"APP_PROFILE, default=local"`
+	JWTSecret          string `env:"JWT_SECRET"`
+	SuperadminEmail    string `env:"SUPERADMIN_EMAIL"`
+	SuperadminPassword string `env:"SUPERADMIN_PASSWORD"`
+	LogLevel           string `env:"LOG_LEVEL, default=info"`
+	LogFormat          string `env:"LOG_FORMAT, default=json"`
 
-	// Sync
-	CloudAPIURL         string
-	CloudAPIKey         string
-	SyncIntervalSeconds int
+	AuthAccessTokenHours   int `env:"AUTH_ACCESS_TOKEN_HOURS, default=24"`
+	AuthRefreshTokenDays   int `env:"AUTH_REFRESH_TOKEN_DAYS, default=30"`
+	AuthListCompaniesLimit int `env:"AUTH_LIST_COMPANIES_LIMIT, default=1000"`
 
-	// Backup snapshot endpoint
-	BackupCodePath   string // path to the source tree included in code.tar.gz
-	BackupGitCommit  string // current commit hash, surfaced in metadata.json
-	BackupCommitFile string // optional file to read the commit hash from when env is empty
+	CacheCompanyPositiveMin int `env:"CACHE_COMPANY_POSITIVE_TTL_MIN, default=5"`
+	CacheCompanyNegativeSec int `env:"CACHE_COMPANY_NEGATIVE_TTL_SEC, default=30"`
 
-	// Bot / LLM
-	SecretsEncryptionKey       string
-	YandexEndpoint             string
-	YandexFolderID             string
-	YandexAPIKey               string
-	YandexDefaultChatModelLite string
-	YandexDefaultChatModelPro  string
-	YandexEmbeddingDocModel    string
-	YandexEmbeddingQueryModel  string
-	YandexTimeoutSeconds       int
-	YandexMaxRetries           int
+	CloudAPIURL         string `env:"CLOUD_API_URL"`
+	CloudAPIKey         string `env:"CLOUD_API_KEY"`
+	SyncIntervalSeconds int    `env:"SYNC_INTERVAL_SECONDS, default=60"`
 
-	// RAG
-	RAGWorkerEnabled             bool
-	RAGWorkerBatchSize           int
-	RAGWorkerPollIntervalSeconds int
-	RAGIndexMaxAttempts          int
-	RAGVectorTopK                int
-	RAGHybridTopK                int
+	BackupCodePath   string `env:"BACKUP_CODE_PATH, default=/app/src"`
+	BackupGitCommit  string `env:"BACKUP_GIT_COMMIT"`
+	BackupCommitFile string `env:"BACKUP_COMMIT_FILE, default=/app/COMMIT"`
 
-	// Bot chat debug: log assembled LLM prompts and raw model responses (may contain PII).
-	BotChatDebugLog bool
+	SecretsEncryptionKey       string `env:"SECRETS_ENCRYPTION_KEY"`
+	YandexEndpoint             string `env:"YANDEX_ENDPOINT, default=https://ai.api.cloud.yandex.net/v1"`
+	YandexFolderID             string `env:"YANDEX_FOLDER_ID"`
+	YandexAPIKey               string `env:"YANDEX_API_KEY"`
+	YandexDefaultChatModelLite string `env:"YANDEX_DEFAULT_CHAT_MODEL_LITE"`
+	YandexDefaultChatModelPro  string `env:"YANDEX_DEFAULT_CHAT_MODEL_PRO"`
+	YandexEmbeddingDocModel    string `env:"YANDEX_EMBEDDING_DOC_MODEL"`
+	YandexEmbeddingQueryModel  string `env:"YANDEX_EMBEDDING_QUERY_MODEL"`
+	YandexTimeoutSeconds       int    `env:"YANDEX_TIMEOUT_SECONDS, default=30"`
+	YandexMaxRetries           int    `env:"YANDEX_MAX_RETRIES, default=3"`
+
+	RAGWorkerEnabled             bool `env:"RAG_WORKER_ENABLED, default=true"`
+	RAGWorkerBatchSize           int  `env:"RAG_WORKER_BATCH_SIZE, default=10"`
+	RAGWorkerPollIntervalSeconds int  `env:"RAG_WORKER_POLL_INTERVAL_SECONDS, default=5"`
+	RAGIndexMaxAttempts          int  `env:"RAG_INDEX_MAX_ATTEMPTS, default=5"`
+	RAGVectorTopK                int  `env:"RAG_VECTOR_TOP_K, default=20"`
+	RAGHybridTopK                int  `env:"RAG_HYBRID_TOP_K, default=8"`
+
+	BotChatDebugLog bool `env:"BOT_CHAT_DEBUG_LOG, default=false"`
 }
 
-// DSN executes the config.Config.DSN operation.
+// DSN returns the PostgreSQL connection string.
 func (c *Config) DSN() string {
 	return fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		c.PostgresHost, c.PostgresPort, c.PostgresUser, c.PostgresPassword, c.PostgresDB,
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		c.PostgresHost, c.PostgresPort, c.PostgresUser, c.PostgresPassword, c.PostgresDB, c.PostgresSSLMode,
 	)
 }
 
-// Load executes the config.Load operation.
-func Load() *Config {
-	port, _ := strconv.Atoi(getEnv("POSTGRES_PORT", "5432"))
-	syncInterval, _ := strconv.Atoi(getEnv("SYNC_INTERVAL_SECONDS", "60"))
-	yandexTimeout, _ := strconv.Atoi(getEnv("YANDEX_TIMEOUT_SECONDS", "30"))
-	yandexRetries, _ := strconv.Atoi(getEnv("YANDEX_MAX_RETRIES", "3"))
-	ragWorkerBatchSize, _ := strconv.Atoi(getEnv("RAG_WORKER_BATCH_SIZE", "10"))
-	ragWorkerPollInterval, _ := strconv.Atoi(getEnv("RAG_WORKER_POLL_INTERVAL_SECONDS", "5"))
-	ragIndexMaxAttempts, _ := strconv.Atoi(getEnv("RAG_INDEX_MAX_ATTEMPTS", "5"))
-	ragVectorTopK, _ := strconv.Atoi(getEnv("RAG_VECTOR_TOP_K", "20"))
-	ragHybridTopK, _ := strconv.Atoi(getEnv("RAG_HYBRID_TOP_K", "8"))
-
-	return &Config{
-		PostgresHost:                 getEnv("POSTGRES_HOST", "localhost"),
-		PostgresPort:                 port,
-		PostgresUser:                 getEnv("POSTGRES_USER", "knowledgeos"),
-		PostgresPassword:             getEnv("POSTGRES_PASSWORD", "changeme"),
-		PostgresDB:                   getEnv("POSTGRES_DB", "knowledgeos"),
-		AppProfile:                   getEnv("APP_PROFILE", "local"),
-		JWTSecret:                    getEnv("JWT_SECRET", ""),
-		SuperadminEmail:              getEnv("SUPERADMIN_EMAIL", ""),
-		SuperadminPassword:           getEnv("SUPERADMIN_PASSWORD", ""),
-		LogLevel:                     getEnv("LOG_LEVEL", logger.DefaultLevel()),
-		LogFormat:                    getEnv("LOG_FORMAT", logger.DefaultFormat()),
-		CloudAPIURL:                  getEnv("CLOUD_API_URL", ""),
-		CloudAPIKey:                  getEnv("CLOUD_API_KEY", ""),
-		SyncIntervalSeconds:          syncInterval,
-		BackupCodePath:               getEnv("BACKUP_CODE_PATH", "/app/src"),
-		BackupGitCommit:              getEnv("BACKUP_GIT_COMMIT", ""),
-		BackupCommitFile:             getEnv("BACKUP_COMMIT_FILE", "/app/COMMIT"),
-		SecretsEncryptionKey:         getEnv("SECRETS_ENCRYPTION_KEY", ""),
-		YandexEndpoint:               getEnv("YANDEX_ENDPOINT", "https://ai.api.cloud.yandex.net/v1"),
-		YandexFolderID:               getEnv("YANDEX_FOLDER_ID", ""),
-		YandexAPIKey:                 getEnv("YANDEX_API_KEY", ""),
-		YandexDefaultChatModelLite:   getEnv("YANDEX_DEFAULT_CHAT_MODEL_LITE", ""),
-		YandexDefaultChatModelPro:    getEnv("YANDEX_DEFAULT_CHAT_MODEL_PRO", ""),
-		YandexEmbeddingDocModel:      getEnv("YANDEX_EMBEDDING_DOC_MODEL", ""),
-		YandexEmbeddingQueryModel:    getEnv("YANDEX_EMBEDDING_QUERY_MODEL", ""),
-		YandexTimeoutSeconds:         yandexTimeout,
-		YandexMaxRetries:             yandexRetries,
-		RAGWorkerEnabled:             getEnv("RAG_WORKER_ENABLED", "true") == "true",
-		RAGWorkerBatchSize:           ragWorkerBatchSize,
-		RAGWorkerPollIntervalSeconds: ragWorkerPollInterval,
-		RAGIndexMaxAttempts:          ragIndexMaxAttempts,
-		RAGVectorTopK:                ragVectorTopK,
-		RAGHybridTopK:                ragHybridTopK,
-		BotChatDebugLog:              getEnv("BOT_CHAT_DEBUG_LOG", "false") == "true",
+// AccessTokenTTL returns configured access token lifetime.
+func (c *Config) AccessTokenTTL() time.Duration {
+	if c.AuthAccessTokenHours <= 0 {
+		return 24 * time.Hour
 	}
+	return time.Duration(c.AuthAccessTokenHours) * time.Hour
 }
 
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+// RefreshTokenTTL returns configured refresh token lifetime.
+func (c *Config) RefreshTokenTTL() time.Duration {
+	if c.AuthRefreshTokenDays <= 0 {
+		return 30 * 24 * time.Hour
 	}
-	return fallback
+	return time.Duration(c.AuthRefreshTokenDays) * 24 * time.Hour
+}
+
+// CompanyCachePositiveTTL returns TTL for positive company existence cache entries.
+func (c *Config) CompanyCachePositiveTTL() time.Duration {
+	if c.CacheCompanyPositiveMin <= 0 {
+		return 5 * time.Minute
+	}
+	return time.Duration(c.CacheCompanyPositiveMin) * time.Minute
+}
+
+// CompanyCacheNegativeTTL returns TTL for negative company existence cache entries.
+func (c *Config) CompanyCacheNegativeTTL() time.Duration {
+	if c.CacheCompanyNegativeSec <= 0 {
+		return 30 * time.Second
+	}
+	return time.Duration(c.CacheCompanyNegativeSec) * time.Second
+}
+
+// PGConnMaxLifetime returns configured connection max lifetime.
+func (c *Config) PGConnMaxLifetime() time.Duration {
+	if c.PGConnMaxLifeMin <= 0 {
+		return 30 * time.Minute
+	}
+	return time.Duration(c.PGConnMaxLifeMin) * time.Minute
+}
+
+// Load reads configuration from environment variables.
+func Load() *Config {
+	ctx := context.Background()
+	var cfg Config
+	if err := envconfig.Process(ctx, &cfg); err != nil {
+		panic(fmt.Sprintf("load config: %v", err))
+	}
+	if cfg.LogLevel == "" {
+		cfg.LogLevel = logger.DefaultLevel()
+	}
+	if cfg.LogFormat == "" {
+		cfg.LogFormat = logger.DefaultFormat()
+	}
+	return &cfg
 }

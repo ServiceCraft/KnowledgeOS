@@ -1,14 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Bot, CheckCircle2, Headphones, MessageSquare, RotateCcw, Send, User } from 'lucide-react';
 import type { ChatChannel, ChatMessage, ChatSession, ChatState } from '@/types';
-import { collectSources, guardrailReasonLabel, STATE_LABELS } from '@/lib/chatUi';
-import { ChatSourcesPanel } from '@/components/chat/ChatSourcesPanel';
+import { guardrailReasonLabel, STATE_LABELS } from '@/lib/chatUi';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import {
   useClaimHandoffSession,
   useCloseHandoffSession,
-  useHandoffMetrics,
   useHandoffSession,
   useHandoffSessions,
   useReleaseHandoffSession,
@@ -61,11 +59,8 @@ export function HandoffPage() {
     ? selectedSessionId
     : sessions[0]?.id;
   const sessionQuery = useHandoffSession(effectiveSelectedSessionId);
-  const metricsQuery = useHandoffMetrics();
   const selected = sessionQuery.data?.session;
   const messages = useMemo(() => sessionQuery.data?.messages ?? [], [sessionQuery.data?.messages]);
-  const sources = useMemo(() => collectSources(messages), [messages]);
-  const metrics = metricsQuery.data;
 
   const claim = useClaimHandoffSession();
   const send = useSendOperatorMessage();
@@ -280,53 +275,6 @@ export function HandoffPage() {
           </div>
         </CardContent>
       </Card>
-
-      <div className="hidden w-80 shrink-0 flex-col gap-4 xl:flex">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Метрики handoff</CardTitle>
-            <CardDescription>Текущая нагрузка по диалогам</CardDescription>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3 text-sm">
-            <Metric label="Ожидают" value={metrics?.waiting_operator ?? 0} />
-            <Metric label="У оператора" value={metrics?.operator ?? 0} />
-            <Metric label="Закрыты" value={metrics?.closed ?? 0} />
-            <Metric label="Всего" value={metrics?.total ?? 0} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Памятка оператору</CardTitle>
-            <CardDescription>Базовый порядок обработки эскалации</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>1. Откройте вкладку «Ожидают» и нажмите «Взять диалог».</p>
-            <p>2. Ответьте клиенту от лица оператора; бот в это время молчит.</p>
-            <p>3. Нажмите «Вернуть боту», если бот может продолжить, или «Закрыть» после решения вопроса.</p>
-            <p>4. Уведомления в Telegram-группу настраиваются в параметрах Telegram-канала.</p>
-          </CardContent>
-        </Card>
-
-        <Card className="min-h-0 flex-1 border-0 shadow-none bg-transparent p-0">
-          <ChatSourcesPanel
-            sources={sources}
-            title="Источники диалога"
-            description="Контекст, на который ссылался бот до эскалации"
-            emptyMessage="В истории пока нет источников."
-            className="flex min-h-0 flex-1 flex-col"
-          />
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg border bg-muted/20 p-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-xl font-semibold">{value}</p>
     </div>
   );
 }

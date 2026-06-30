@@ -39,9 +39,19 @@ func (s *CompanyStore) GetByID(ctx context.Context, id uuid.UUID) (*domain.Compa
 	applog.TraceCall(ctx, "store.CompanyStore.GetByID")
 	var company domain.Company
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&company).Error; err != nil {
-		return nil, err
+		return nil, mapErr(err)
 	}
 	return &company, nil
+}
+
+// Exists reports whether a company with the given ID exists.
+func (s *CompanyStore) Exists(ctx context.Context, id uuid.UUID) (bool, error) {
+	applog.TraceCall(ctx, "store.CompanyStore.Exists")
+	var exists bool
+	err := s.db.WithContext(ctx).Raw(
+		`SELECT EXISTS(SELECT 1 FROM companies WHERE id = ?)`, id,
+	).Scan(&exists).Error
+	return exists, err
 }
 
 // Create executes the store.CompanyStore.Create operation.

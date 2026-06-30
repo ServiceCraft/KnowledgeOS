@@ -1,9 +1,14 @@
 package handler
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/httprate"
 	"github.com/knowledgeos/backend/internal/auth"
+	"github.com/knowledgeos/backend/internal/cache"
 	"github.com/knowledgeos/backend/internal/domain"
 	"github.com/knowledgeos/backend/internal/middleware"
 )
@@ -30,28 +35,52 @@ type Handlers struct {
 	Channels *ChannelWebhookHandler
 }
 
+type RouterDeps struct {
+	Handlers     *Handlers
+	JWT          *auth.JWTManager
+	SyncRepo     domain.SyncRepository
+	Membership   domain.UserMembershipReader
+	CompanyCache cache.Provider
+	BackupKey    func() string
+	DBPing       func(r *http.Request) error
+}
+
 // writeRoles are allowed to mutate business entities. Viewer (Оператор) is
 // intentionally excluded — it is a read-only role.
 var writeRoles = []domain.Role{domain.RoleEditor, domain.RoleAdmin, domain.RoleSuperadmin}
 
 // NewRouter executes the handler.NewRouter operation.
-func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncRepository, users domain.UserRepository, backupKey func() string) *chi.Mux {
+func NewRouter(deps RouterDeps) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chiMiddleware.Recoverer)
 	r.Use(chiMiddleware.RealIP)
+	r.Use(chiMiddleware.RequestID)
 	r.Use(middleware.Logger)
+	r.Use(chiMiddleware.Heartbeat("/healthz"))
+
+	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if deps.DBPing != nil {
+			if err := deps.DBPing(r); err != nil {
+				Error(w, http.StatusServiceUnavailable, "database unavailable")
+				return
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	h := deps.Handlers
 
 	r.Route("/api/v1", func(r chi.Router) {
-		// Public
-		r.Post("/auth/login", h.Auth.Login)
-		r.Post("/auth/refresh", h.Auth.Refresh)
+		r.Group(func(r chi.Router) {
+			r.Use(httprate.LimitByIP(20, time.Minute))
+			r.Post("/auth/login", h.Auth.Login)
+			r.Post("/auth/refresh", h.Auth.Refresh)
+		})
 		r.Post("/webhooks/{channel}/{company_id}", h.Channels.Handle)
 
-		// Protected global routes. These do not need tenant context; superadmins
-		// must explicitly select a company before entering tenant-scoped routes.
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.JWTAuth(jwtMgr))
+			r.Use(middleware.JWTAuth(deps.JWT))
 			r.Post("/auth/logout", h.Auth.Logout)
 			r.Get("/auth/companies", h.Auth.ListCompanies)
 
@@ -66,13 +95,10 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 			})
 		})
 
-		// Protected tenant routes. All reads available to any authenticated
-		// role (viewer included); writes are gated to editor and above.
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.JWTAuth(jwtMgr))
-			r.Use(middleware.Tenant(users))
+			r.Use(middleware.JWTAuth(deps.JWT))
+			r.Use(middleware.Tenant(deps.Membership, deps.CompanyCache))
 
-			// --- Reads (viewer+) ---
 			r.Get("/qa", h.QA.List)
 			r.Get("/qa/{id}", h.QA.Get)
 			r.Get("/qa/{id}/mentions", h.Call.ListMentionsForQA)
@@ -87,34 +113,28 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 			r.Get("/search", h.Search.Search)
 			r.Get("/sync/status", h.Sync.Status)
 
-			// --- Writes (editor+) ---
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole(writeRoles...))
 
-				// QA
 				r.Post("/qa", h.QA.Create)
 				r.Patch("/qa/{id}", h.QA.Update)
 				r.Post("/qa/{id}/review", h.QA.Review)
 				r.Delete("/qa/{id}", h.QA.Delete)
 
-				// Themes
 				r.Post("/themes", h.Theme.Create)
 				r.Patch("/themes/{id}", h.Theme.Update)
 				r.Delete("/themes/{id}", h.Theme.Delete)
 
-				// Pricing
 				r.Post("/pricing", h.Pricing.Create)
 				r.Patch("/pricing/{id}", h.Pricing.Update)
 				r.Delete("/pricing/{id}", h.Pricing.Delete)
 				r.Post("/pricing/{id}/move", h.Pricing.Move)
 
-				// Articles
 				r.Post("/articles", h.Article.Create)
 				r.Patch("/articles/{id}", h.Article.Update)
 				r.Delete("/articles/{id}", h.Article.Delete)
 			})
 
-			// Comments (polymorphic): read for everyone, write for editor+.
 			r.Route("/{entityType}/{entityID}/comments", func(r chi.Router) {
 				r.Use(middleware.EntityType)
 				r.Get("/", h.Comment.List)
@@ -126,7 +146,6 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 				})
 			})
 
-			// Links (polymorphic): read for everyone, write for editor+.
 			r.Route("/{entityType}/{entityID}/links", func(r chi.Router) {
 				r.Use(middleware.EntityType)
 				r.Get("/", h.Link.List)
@@ -137,8 +156,6 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 				})
 			})
 
-			// User administration (admin + superadmin). Assigning the
-			// superadmin role is further restricted inside the service.
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole(domain.RoleAdmin, domain.RoleSuperadmin))
 				r.Get("/admin/users", h.User.List)
@@ -147,7 +164,6 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 				r.Delete("/admin/users/{id}", h.User.Delete)
 			})
 
-			// Bot settings and tenant secrets — admin + superadmin.
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole(domain.RoleAdmin, domain.RoleSuperadmin))
 				r.Get("/admin/bot/settings", h.Bot.GetSettings)
@@ -161,7 +177,6 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 				r.Post("/admin/bot/rag/search", h.RAG.Search)
 			})
 
-			// Bot playground chat — authenticated users within the tenant.
 			r.Route("/admin/bot/chat", func(r chi.Router) {
 				r.Post("/sessions", h.Chat.CreateSession)
 				r.Get("/sessions", h.Chat.ListSessions)
@@ -170,8 +185,6 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 				r.Post("/sessions/{id}/messages/stream", h.Chat.StreamMessage)
 			})
 
-			// Handoff queue — viewer is the operator persona here; write access
-			// is constrained by the handler/service to assigned chat sessions.
 			r.Route("/admin/bot/handoff", func(r chi.Router) {
 				r.Use(middleware.RequireRole(domain.RoleViewer, domain.RoleAdmin, domain.RoleSuperadmin))
 				r.Get("/sessions", h.Handoff.ListSessions)
@@ -184,7 +197,6 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 				r.Post("/sessions/{id}/escalate", h.Handoff.Escalate)
 			})
 
-			// Import/Export of the knowledge base — superadmin only.
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole(domain.RoleSuperadmin))
 				r.Get("/export", h.Export.Export)
@@ -193,16 +205,14 @@ func NewRouter(h *Handlers, jwtMgr *auth.JWTManager, syncRepo domain.SyncReposit
 
 		})
 
-		// Sync routes (API Key auth)
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.SyncAPIKeyAuth(syncRepo))
+			r.Use(middleware.SyncAPIKeyAuth(deps.SyncRepo))
 			r.Post("/sync/push", h.Sync.Push)
 			r.Get("/sync/pull", h.Sync.Pull)
 		})
 
-		// Backup snapshot endpoint (dedicated backup API key, not JWT).
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.BackupAPIKeyAuth(backupKey))
+			r.Use(middleware.BackupAPIKeyAuth(deps.BackupKey))
 			r.Get("/backup/snapshot", h.Backup.Snapshot)
 		})
 	})

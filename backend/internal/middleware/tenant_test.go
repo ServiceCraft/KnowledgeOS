@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,115 +8,140 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/auth"
+	"github.com/knowledgeos/backend/internal/cache"
 	"github.com/knowledgeos/backend/internal/domain"
-	"gorm.io/gorm"
+	"github.com/knowledgeos/backend/internal/testutil"
 )
 
-type tenantTestUsers struct {
-	companyIDs map[uuid.UUID][]uuid.UUID
-}
-
-func (r *tenantTestUsers) List(context.Context, uuid.UUID, domain.UserFilter) ([]domain.User, int64, error) {
-	return nil, 0, nil
-}
-func (r *tenantTestUsers) GetByID(context.Context, uuid.UUID) (*domain.User, error) {
-	return nil, gorm.ErrRecordNotFound
-}
-func (r *tenantTestUsers) GetByEmail(context.Context, string) (*domain.User, error) {
-	return nil, gorm.ErrRecordNotFound
-}
-func (r *tenantTestUsers) Create(context.Context, *domain.User) error { return nil }
-func (r *tenantTestUsers) Update(context.Context, *domain.User) error { return nil }
-func (r *tenantTestUsers) Delete(context.Context, uuid.UUID) error    { return nil }
-func (r *tenantTestUsers) GetCompanyIDs(_ context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	return append([]uuid.UUID(nil), r.companyIDs[userID]...), nil
-}
-func (r *tenantTestUsers) SetCompanyIDs(context.Context, uuid.UUID, []uuid.UUID) error { return nil }
-func (r *tenantTestUsers) HasCompany(_ context.Context, userID, companyID uuid.UUID) (bool, error) {
-	for _, id := range r.companyIDs[userID] {
-		if id == companyID {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-func (r *tenantTestUsers) ListCompaniesForUser(context.Context, uuid.UUID) ([]domain.Company, error) {
-	return nil, nil
-}
-
-func TestTenantRequiresCompanyHeaderForSuperadmin(t *testing.T) {
-	called := false
-	users := &tenantTestUsers{}
-	handler := Tenant(users)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		called = true
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/qa", nil)
-	req = req.WithContext(SetClaims(req.Context(), &auth.Claims{Role: domain.RoleSuperadmin}))
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if called {
-		t.Fatal("next handler was called")
-	}
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
-	}
-}
-
-func TestTenantUsesCompanyHeaderForSuperadmin(t *testing.T) {
-	companyID := uuid.New()
-	users := &tenantTestUsers{}
-	handler := Tenant(users)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		if got := GetCompanyID(r.Context()); got != companyID {
-			t.Fatalf("company id = %s, want %s", got, companyID)
-		}
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/qa", nil)
-	req.Header.Set("X-Company-ID", companyID.String())
-	req = req.WithContext(SetClaims(req.Context(), &auth.Claims{Role: domain.RoleSuperadmin}))
-
-	handler.ServeHTTP(httptest.NewRecorder(), req)
-}
-
-func TestTenantUsesAssignedCompanyForSingleCompanyUser(t *testing.T) {
-	companyID := uuid.New()
-	userID := uuid.New()
-	users := &tenantTestUsers{companyIDs: map[uuid.UUID][]uuid.UUID{userID: {companyID}}}
-	handler := Tenant(users)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		if got := GetCompanyID(r.Context()); got != companyID {
-			t.Fatalf("company id = %s, want %s", got, companyID)
-		}
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/qa", nil)
-	req = req.WithContext(SetClaims(req.Context(), &auth.Claims{
-		RegisteredClaims: jwt.RegisteredClaims{Subject: userID.String()},
-		Role:             domain.RoleAdmin,
-	}))
-
-	handler.ServeHTTP(httptest.NewRecorder(), req)
-}
-
-func TestTenantUsesHeaderForMultiCompanyUser(t *testing.T) {
+func TestTenantMiddleware(t *testing.T) {
 	companyA := uuid.New()
 	companyB := uuid.New()
 	userID := uuid.New()
-	users := &tenantTestUsers{companyIDs: map[uuid.UUID][]uuid.UUID{userID: {companyA, companyB}}}
-	handler := Tenant(users)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		if got := GetCompanyID(r.Context()); got != companyB {
-			t.Fatalf("company id = %s, want %s", got, companyB)
-		}
-	}))
+	superCompany := uuid.New()
 
-	req := httptest.NewRequest(http.MethodGet, "/qa", nil)
-	req.Header.Set("X-Company-ID", companyB.String())
-	req = req.WithContext(SetClaims(req.Context(), &auth.Claims{
-		RegisteredClaims: jwt.RegisteredClaims{Subject: userID.String()},
-		Role:             domain.RoleAdmin,
-	}))
+	tests := []struct {
+		name        string // что проверяем
+		role        domain.Role
+		userID      uuid.UUID
+		companies   []uuid.UUID
+		companyMap  map[uuid.UUID]bool
+		header      string
+		wantStatus  int
+		wantCompany uuid.UUID
+		wantCalled  bool
+	}{
+		{
+			name:       "superadmin без заголовка — 403, tenant не резолвится",
+			role:       domain.RoleSuperadmin,
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:        "superadmin с валидным header и существующей company — company в context",
+			role:        domain.RoleSuperadmin,
+			companyMap:  map[uuid.UUID]bool{superCompany: true},
+			header:      superCompany.String(),
+			wantStatus:  http.StatusOK,
+			wantCompany: superCompany,
+			wantCalled:  true,
+		},
+		{
+			name:       "superadmin с несуществующей company — 404",
+			role:       domain.RoleSuperadmin,
+			companyMap: map[uuid.UUID]bool{superCompany: false},
+			header:     superCompany.String(),
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:        "user с одной company — auto-select без header",
+			role:        domain.RoleAdmin,
+			userID:      userID,
+			companies:   []uuid.UUID{companyA},
+			wantStatus:  http.StatusOK,
+			wantCompany: companyA,
+			wantCalled:  true,
+		},
+		{
+			name:       "user с двумя companies без header — 403",
+			role:       domain.RoleAdmin,
+			userID:     userID,
+			companies:  []uuid.UUID{companyA, companyB},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "user с header чужой company — 403 access denied",
+			role:       domain.RoleAdmin,
+			userID:     userID,
+			companies:  []uuid.UUID{companyA, companyB},
+			header:     uuid.New().String(),
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "user без companies — 403",
+			role:       domain.RoleAdmin,
+			userID:     userID,
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "invalid UUID в header — 400",
+			role:       domain.RoleAdmin,
+			userID:     userID,
+			companies:  []uuid.UUID{companyA},
+			header:     "not-a-uuid",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "claims == nil — 401",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:        "multi-company user с header выбирает company B",
+			role:        domain.RoleAdmin,
+			userID:      userID,
+			companies:   []uuid.UUID{companyA, companyB},
+			header:      companyB.String(),
+			wantStatus:  http.StatusOK,
+			wantCompany: companyB,
+			wantCalled:  true,
+		},
+	}
 
-	handler.ServeHTTP(httptest.NewRecorder(), req)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			membership := &testutil.FakeUserRepo{CompanyIDs: map[uuid.UUID][]uuid.UUID{}}
+			if tt.userID != uuid.Nil {
+				membership.CompanyIDs[tt.userID] = tt.companies
+			}
+			checker := &testutil.FakeCompanyChecker{ExistsMap: tt.companyMap}
+			cacheProvider := cache.NewMemoryProvider(checker, 0, 0)
+
+			called := false
+			handler := Tenant(membership, cacheProvider)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				called = true
+				if got := GetCompanyID(r.Context()); got != tt.wantCompany {
+					t.Fatalf("company id = %s, want %s", got, tt.wantCompany)
+				}
+			}))
+
+			req := httptest.NewRequest(http.MethodGet, "/qa", nil)
+			if tt.header != "" {
+				req.Header.Set("X-Company-ID", tt.header)
+			}
+			if tt.role != "" || tt.userID != uuid.Nil {
+				req = req.WithContext(SetClaims(req.Context(), &auth.Claims{
+					RegisteredClaims: jwt.RegisteredClaims{Subject: tt.userID.String()},
+					Role:             tt.role,
+				}))
+			}
+
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if called != tt.wantCalled {
+				t.Fatalf("next called = %v, want %v", called, tt.wantCalled)
+			}
+		})
+	}
 }

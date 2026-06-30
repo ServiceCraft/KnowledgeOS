@@ -3,13 +3,8 @@ package config
 import "testing"
 
 func TestLoadBotYandexDefaults(t *testing.T) {
-	t.Setenv("YANDEX_ENDPOINT", "")
-	t.Setenv("YANDEX_TIMEOUT_SECONDS", "")
-	t.Setenv("YANDEX_MAX_RETRIES", "")
-	t.Setenv("YANDEX_EMBEDDING_DOC_MODEL", "")
-	t.Setenv("YANDEX_EMBEDDING_QUERY_MODEL", "")
-	t.Setenv("LOG_LEVEL", "")
-	t.Setenv("LOG_FORMAT", "")
+	t.Setenv("YANDEX_TIMEOUT_SECONDS", "30")
+	t.Setenv("YANDEX_MAX_RETRIES", "3")
 
 	cfg := Load()
 	if cfg.LogLevel != "info" || cfg.LogFormat != "json" {

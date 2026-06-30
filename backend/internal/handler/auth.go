@@ -28,7 +28,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	pair, err := h.svc.Login(r.Context(), req)
 	if err != nil {
-		Error(w, http.StatusUnauthorized, err.Error())
+		Error(w, service.HTTPStatus(err), err.Error())
 		return
 	}
 
@@ -46,7 +46,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	pair, err := h.svc.Refresh(r.Context(), req)
 	if err != nil {
-		Error(w, http.StatusUnauthorized, err.Error())
+		Error(w, service.HTTPStatus(err), err.Error())
 		return
 	}
 
@@ -69,6 +69,8 @@ func (h *AuthHandler) ListCompanies(w http.ResponseWriter, r *http.Request) {
 	}
 	JSONList(w, http.StatusOK, items, int64(len(items)))
 }
+
+// Logout executes the handler.AuthHandler.Logout operation.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	applog.TraceCall(r.Context(), "handler.AuthHandler.Logout")
 	var req logoutRequest

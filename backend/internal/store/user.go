@@ -64,7 +64,7 @@ func (s *UserStore) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, er
 	applog.TraceCall(ctx, "store.UserStore.GetByID")
 	var user domain.User
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&user).Error; err != nil {
-		return nil, err
+		return nil, mapErr(err)
 	}
 	return &user, nil
 }
@@ -74,7 +74,7 @@ func (s *UserStore) GetByEmail(ctx context.Context, email string) (*domain.User,
 	applog.TraceCall(ctx, "store.UserStore.GetByEmail")
 	var user domain.User
 	if err := s.db.WithContext(ctx).Where("email = ?", email).First(&user).Error; err != nil {
-		return nil, err
+		return nil, mapErr(err)
 	}
 	return &user, nil
 }
@@ -85,12 +85,30 @@ func (s *UserStore) Create(ctx context.Context, user *domain.User) error {
 	return s.db.WithContext(ctx).Create(user).Error
 }
 
-// Update persists the mutable fields of a user. Save would also overwrite the
-// password hash with the value present on the struct, so callers are expected to
-// pass a fully-loaded user record.
+// CreateWithCompanies creates a user and company assignments atomically.
+func (s *UserStore) CreateWithCompanies(ctx context.Context, user *domain.User, companyIDs []uuid.UUID) error {
+	applog.TraceCall(ctx, "store.UserStore.CreateWithCompanies")
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(user).Error; err != nil {
+			return err
+		}
+		if len(companyIDs) == 0 {
+			return nil
+		}
+		rows := make([]domain.UserCompany, len(companyIDs))
+		for i, cid := range companyIDs {
+			rows[i] = domain.UserCompany{UserID: user.ID, CompanyID: cid}
+		}
+		return tx.CreateInBatches(rows, 100).Error
+	})
+}
+
+// Update persists the mutable fields of a user.
 func (s *UserStore) Update(ctx context.Context, user *domain.User) error {
 	applog.TraceCall(ctx, "store.UserStore.Update")
-	return s.db.WithContext(ctx).Save(user).Error
+	return s.db.WithContext(ctx).Model(user).Select(
+		"Email", "PasswordHash", "Role", "IsActive", "UpdatedAt",
+	).Updates(user).Error
 }
 
 // Delete executes the store.UserStore.Delete operation.
@@ -98,78 +116,3 @@ func (s *UserStore) Delete(ctx context.Context, id uuid.UUID) error {
 	applog.TraceCall(ctx, "store.UserStore.Delete")
 	return s.db.WithContext(ctx).Where("id = ?", id).Delete(&domain.User{}).Error
 }
-
-// GetCompanyIDs returns company IDs assigned to the user.
-func (s *UserStore) GetCompanyIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	applog.TraceCall(ctx, "store.UserStore.GetCompanyIDs")
-	var ids []uuid.UUID
-	err := s.db.WithContext(ctx).Model(&domain.UserCompany{}).
-		Where("user_id = ?", userID).
-		Pluck("company_id", &ids).Error
-	return ids, err
-}
-
-// SetCompanyIDs replaces all company assignments for the user.
-func (s *UserStore) SetCompanyIDs(ctx context.Context, userID uuid.UUID, companyIDs []uuid.UUID) error {
-	applog.TraceCall(ctx, "store.UserStore.SetCompanyIDs")
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", userID).Delete(&domain.UserCompany{}).Error; err != nil {
-			return err
-		}
-		for _, cid := range companyIDs {
-			row := domain.UserCompany{UserID: userID, CompanyID: cid}
-			if err := tx.Create(&row).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-// HasCompany reports whether the user is assigned to the company.
-func (s *UserStore) HasCompany(ctx context.Context, userID, companyID uuid.UUID) (bool, error) {
-	applog.TraceCall(ctx, "store.UserStore.HasCompany")
-	var count int64
-	err := s.db.WithContext(ctx).Model(&domain.UserCompany{}).
-		Where("user_id = ? AND company_id = ?", userID, companyID).
-		Count(&count).Error
-	return count > 0, err
-}
-
-// ListCompaniesForUser returns companies the user is assigned to.
-func (s *UserStore) ListCompaniesForUser(ctx context.Context, userID uuid.UUID) ([]domain.Company, error) {
-	applog.TraceCall(ctx, "store.UserStore.ListCompaniesForUser")
-	var companies []domain.Company
-	err := s.db.WithContext(ctx).
-		Joins("JOIN user_companies uc ON uc.company_id = companies.id").
-		Where("uc.user_id = ?", userID).
-		Order("companies.name ASC").
-		Find(&companies).Error
-	return companies, err
-}
-
-func (s *UserStore) attachCompanyIDs(ctx context.Context, users []domain.User) error {
-	ids := make([]uuid.UUID, len(users))
-	for i, u := range users {
-		ids[i] = u.ID
-	}
-	var links []domain.UserCompany
-	if err := s.db.WithContext(ctx).Where("user_id IN ?", ids).Find(&links).Error; err != nil {
-		return err
-	}
-	byUser := make(map[uuid.UUID][]uuid.UUID, len(users))
-	for _, l := range links {
-		byUser[l.UserID] = append(byUser[l.UserID], l.CompanyID)
-	}
-	for i := range users {
-		if users[i].Role == domain.RoleSuperadmin {
-			continue
-		}
-		users[i].CompanyIDs = byUser[users[i].ID]
-	}
-	return nil
-}
-
-// ErrNotFound mirrors gorm's record-not-found for callers that want to detect it
-// without importing gorm directly.
-var ErrNotFound = gorm.ErrRecordNotFound

@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	applog "github.com/knowledgeos/backend/internal/logger"
 
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/auth"
@@ -14,39 +13,60 @@ type contextKey string
 const (
 	claimsKey     contextKey = "claims"
 	companyIDKey  contextKey = "company_id"
+	tenantKey     contextKey = "tenant"
 	entityTypeKey contextKey = "entity_type"
 	requestIDKey  contextKey = "request_id"
 )
 
-// SetClaims executes the middleware.SetClaims operation.
+// TenantContext carries authenticated identity and active company for tenant routes.
+type TenantContext struct {
+	UserID    uuid.UUID
+	Role      domain.Role
+	CompanyID uuid.UUID
+}
+
+// SetClaims stores JWT claims on the context.
 func SetClaims(ctx context.Context, claims *auth.Claims) context.Context {
-	applog.TraceCall(ctx, "middleware.SetClaims")
 	return context.WithValue(ctx, claimsKey, claims)
 }
 
-// GetClaims executes the middleware.GetClaims operation.
+// GetClaims returns JWT claims from the context.
 func GetClaims(ctx context.Context) *auth.Claims {
-	applog.TraceCall(ctx, "middleware.GetClaims")
 	claims, _ := ctx.Value(claimsKey).(*auth.Claims)
 	return claims
 }
 
-// SetCompanyID executes the middleware.SetCompanyID operation.
+// SetTenant stores resolved tenant context.
+func SetTenant(ctx context.Context, tenant TenantContext) context.Context {
+	ctx = context.WithValue(ctx, tenantKey, tenant)
+	return context.WithValue(ctx, companyIDKey, tenant.CompanyID)
+}
+
+// TenantFromContext returns tenant context when present.
+func TenantFromContext(ctx context.Context) (TenantContext, bool) {
+	tenant, ok := ctx.Value(tenantKey).(TenantContext)
+	return tenant, ok
+}
+
+// SetCompanyID sets the active company without full tenant context (webhooks/sync).
 func SetCompanyID(ctx context.Context, id uuid.UUID) context.Context {
-	applog.TraceCall(ctx, "middleware.SetCompanyID")
 	return context.WithValue(ctx, companyIDKey, id)
 }
 
-// GetCompanyID executes the middleware.GetCompanyID operation.
+// GetCompanyID returns the active company ID from tenant or legacy context value.
 func GetCompanyID(ctx context.Context) uuid.UUID {
-	applog.TraceCall(ctx, "middleware.GetCompanyID")
+	if tenant, ok := TenantFromContext(ctx); ok {
+		return tenant.CompanyID
+	}
 	id, _ := ctx.Value(companyIDKey).(uuid.UUID)
 	return id
 }
 
-// GetUserID executes the middleware.GetUserID operation.
+// GetUserID returns the authenticated user ID.
 func GetUserID(ctx context.Context) uuid.UUID {
-	applog.TraceCall(ctx, "middleware.GetUserID")
+	if tenant, ok := TenantFromContext(ctx); ok && tenant.UserID != uuid.Nil {
+		return tenant.UserID
+	}
 	claims := GetClaims(ctx)
 	if claims == nil {
 		return uuid.Nil
@@ -55,9 +75,11 @@ func GetUserID(ctx context.Context) uuid.UUID {
 	return id
 }
 
-// GetRole executes the middleware.GetRole operation.
+// GetRole returns the authenticated user role.
 func GetRole(ctx context.Context) domain.Role {
-	applog.TraceCall(ctx, "middleware.GetRole")
+	if tenant, ok := TenantFromContext(ctx); ok && tenant.Role != "" {
+		return tenant.Role
+	}
 	claims := GetClaims(ctx)
 	if claims == nil {
 		return ""
@@ -65,28 +87,24 @@ func GetRole(ctx context.Context) domain.Role {
 	return claims.Role
 }
 
-// SetEntityType executes the middleware.SetEntityType operation.
+// SetEntityType stores the polymorphic entity type route parameter.
 func SetEntityType(ctx context.Context, et string) context.Context {
-	applog.TraceCall(ctx, "middleware.SetEntityType")
 	return context.WithValue(ctx, entityTypeKey, et)
 }
 
-// GetEntityType executes the middleware.GetEntityType operation.
+// GetEntityType returns the polymorphic entity type route parameter.
 func GetEntityType(ctx context.Context) string {
-	applog.TraceCall(ctx, "middleware.GetEntityType")
 	et, _ := ctx.Value(entityTypeKey).(string)
 	return et
 }
 
-// SetRequestID executes the middleware.SetRequestID operation.
+// SetRequestID stores the request correlation ID.
 func SetRequestID(ctx context.Context, id string) context.Context {
-	applog.TraceCall(ctx, "middleware.SetRequestID")
 	return context.WithValue(ctx, requestIDKey, id)
 }
 
-// GetRequestID executes the middleware.GetRequestID operation.
+// GetRequestID returns the request correlation ID.
 func GetRequestID(ctx context.Context) string {
-	applog.TraceCall(ctx, "middleware.GetRequestID")
 	id, _ := ctx.Value(requestIDKey).(string)
 	return id
 }

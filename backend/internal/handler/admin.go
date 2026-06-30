@@ -46,7 +46,7 @@ func (h *AdminHandler) GetCompany(w http.ResponseWriter, r *http.Request) {
 
 	company, err := h.svc.GetCompany(r.Context(), id)
 	if err != nil {
-		Error(w, http.StatusNotFound, "company not found")
+		Error(w, service.HTTPStatus(err), err.Error())
 		return
 	}
 	JSON(w, http.StatusOK, company)
@@ -62,7 +62,7 @@ func (h *AdminHandler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.CreateCompany(r.Context(), &company); err != nil {
-		Error(w, http.StatusBadRequest, err.Error())
+		Error(w, service.HTTPStatus(err), err.Error())
 		return
 	}
 	JSON(w, http.StatusCreated, company)
@@ -85,7 +85,7 @@ func (h *AdminHandler) UpdateCompany(w http.ResponseWriter, r *http.Request) {
 	company.ID = id
 
 	if err := h.svc.UpdateCompany(r.Context(), &company); err != nil {
-		Error(w, http.StatusBadRequest, err.Error())
+		Error(w, service.HTTPStatus(err), err.Error())
 		return
 	}
 	JSON(w, http.StatusOK, company)
@@ -101,7 +101,7 @@ func (h *AdminHandler) DeleteCompany(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.DeleteCompany(r.Context(), id); err != nil {
-		Error(w, http.StatusBadRequest, err.Error())
+		Error(w, service.HTTPStatus(err), err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -124,7 +124,7 @@ func (h *AdminHandler) CreateCompanyAdmin(w http.ResponseWriter, r *http.Request
 
 	user, err := h.svc.CreateCompanyAdmin(r.Context(), companyID, req)
 	if err != nil {
-		Error(w, http.StatusBadRequest, err.Error())
+		Error(w, service.HTTPStatus(err), err.Error())
 		return
 	}
 	JSON(w, http.StatusCreated, user)

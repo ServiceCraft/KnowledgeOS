@@ -6,70 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/domain"
-	"gorm.io/gorm"
+	"github.com/knowledgeos/backend/internal/testutil"
 )
-
-// fakeUserRepo is a minimal in-memory domain.UserRepository for service tests.
-type fakeUserRepo struct {
-	byID       map[uuid.UUID]*domain.User
-	companyIDs map[uuid.UUID][]uuid.UUID
-}
-
-func newFakeUserRepo(users ...*domain.User) *fakeUserRepo {
-	r := &fakeUserRepo{
-		byID:       map[uuid.UUID]*domain.User{},
-		companyIDs: map[uuid.UUID][]uuid.UUID{},
-	}
-	for _, u := range users {
-		r.byID[u.ID] = u
-		if u.CompanyID != nil {
-			r.companyIDs[u.ID] = []uuid.UUID{*u.CompanyID}
-		}
-		if len(u.CompanyIDs) > 0 {
-			r.companyIDs[u.ID] = append([]uuid.UUID(nil), u.CompanyIDs...)
-		}
-	}
-	return r
-}
-
-func (r *fakeUserRepo) List(context.Context, uuid.UUID, domain.UserFilter) ([]domain.User, int64, error) {
-	return nil, 0, nil
-}
-func (r *fakeUserRepo) GetByID(_ context.Context, id uuid.UUID) (*domain.User, error) {
-	if u, ok := r.byID[id]; ok {
-		return u, nil
-	}
-	return nil, gorm.ErrRecordNotFound
-}
-func (r *fakeUserRepo) GetByEmail(_ context.Context, email string) (*domain.User, error) {
-	for _, u := range r.byID {
-		if u.Email == email {
-			return u, nil
-		}
-	}
-	return nil, gorm.ErrRecordNotFound
-}
-func (r *fakeUserRepo) Create(_ context.Context, u *domain.User) error { r.byID[u.ID] = u; return nil }
-func (r *fakeUserRepo) Update(_ context.Context, u *domain.User) error { r.byID[u.ID] = u; return nil }
-func (r *fakeUserRepo) Delete(_ context.Context, id uuid.UUID) error   { delete(r.byID, id); return nil }
-func (r *fakeUserRepo) GetCompanyIDs(_ context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	return append([]uuid.UUID(nil), r.companyIDs[userID]...), nil
-}
-func (r *fakeUserRepo) SetCompanyIDs(_ context.Context, userID uuid.UUID, companyIDs []uuid.UUID) error {
-	r.companyIDs[userID] = append([]uuid.UUID(nil), companyIDs...)
-	return nil
-}
-func (r *fakeUserRepo) HasCompany(_ context.Context, userID, companyID uuid.UUID) (bool, error) {
-	for _, id := range r.companyIDs[userID] {
-		if id == companyID {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-func (r *fakeUserRepo) ListCompaniesForUser(context.Context, uuid.UUID) ([]domain.Company, error) {
-	return nil, nil
-}
 
 func mkUser(role domain.Role, company uuid.UUID) *domain.User {
 	id := uuid.New()
@@ -84,7 +22,7 @@ func mkUser(role domain.Role, company uuid.UUID) *domain.User {
 
 func ptrStr(s string) *string { return &s }
 
-func TestAdminCannotManageOtherAdmins(t *testing.T) {
+func TestUserServiceRBAC(t *testing.T) {
 	ctx := context.Background()
 	company := uuid.New()
 
@@ -93,30 +31,92 @@ func TestAdminCannotManageOtherAdmins(t *testing.T) {
 	editor := mkUser(domain.RoleEditor, company)
 	superadmin := mkUser(domain.RoleSuperadmin, company)
 
-	repo := newFakeUserRepo(admin, otherAdmin, editor, superadmin)
+	repo := testutil.NewFakeUserRepo(admin, otherAdmin, editor, superadmin)
 	svc := NewUserService(repo, nil)
 
 	adminActor := Actor{ID: admin.ID, Role: domain.RoleAdmin, CompanyID: company}
 	superActor := Actor{ID: superadmin.ID, Role: domain.RoleSuperadmin, CompanyID: company}
 
-	newEmail := "changed@example.com"
-
-	if _, err := svc.Update(ctx, adminActor, otherAdmin.ID, UpdateUserRequest{Email: ptrStr(newEmail)}); HTTPStatus(err) != 403 {
-		t.Fatalf("admin editing other admin: want 403, got %v (err=%v)", HTTPStatus(err), err)
+	tests := []struct {
+		name       string // что проверяем
+		run        func() error
+		wantStatus int
+	}{
+		{
+			name:       "admin не может редактировать другого admin — 403",
+			wantStatus: 403,
+			run: func() error {
+				_, err := svc.Update(ctx, adminActor, otherAdmin.ID, UpdateUserRequest{Email: ptrStr("changed@example.com")})
+				return err
+			},
+		},
+		{
+			name:       "admin не может удалить другого admin — 403",
+			wantStatus: 403,
+			run: func() error {
+				return svc.Delete(ctx, adminActor, otherAdmin.ID)
+			},
+		},
+		{
+			name: "admin может редактировать editor",
+			run: func() error {
+				_, err := svc.Update(ctx, adminActor, editor.ID, UpdateUserRequest{Email: ptrStr("editor2@example.com")})
+				return err
+			},
+		},
+		{
+			name: "admin может редактировать себя",
+			run: func() error {
+				_, err := svc.Update(ctx, adminActor, admin.ID, UpdateUserRequest{Email: ptrStr("me@example.com")})
+				return err
+			},
+		},
+		{
+			name: "superadmin может редактировать admin",
+			run: func() error {
+				_, err := svc.Update(ctx, superActor, admin.ID, UpdateUserRequest{Email: ptrStr("admin-by-super@example.com")})
+				return err
+			},
+		},
+		{
+			name:       "admin не может назначить чужую company при create — 403",
+			wantStatus: 403,
+			run: func() error {
+				_, err := svc.Create(ctx, adminActor, CreateUserRequest{
+					Email:      "new-user@example.com",
+					Password:   "password123",
+					Role:       domain.RoleEditor,
+					CompanyIDs: []uuid.UUID{uuid.New()},
+				})
+				return err
+			},
+		},
+		{
+			name:       "create без companies для non-superadmin — 400",
+			wantStatus: 400,
+			run: func() error {
+				_, err := svc.Create(ctx, superActor, CreateUserRequest{
+					Email:    "no-company@example.com",
+					Password: "password123",
+					Role:     domain.RoleEditor,
+				})
+				return err
+			},
+		},
 	}
-	if err := svc.Delete(ctx, adminActor, otherAdmin.ID); HTTPStatus(err) != 403 {
-		t.Fatalf("admin deleting other admin: want 403, got %v (err=%v)", HTTPStatus(err), err)
-	}
 
-	if _, err := svc.Update(ctx, adminActor, editor.ID, UpdateUserRequest{Email: ptrStr("editor2@example.com")}); err != nil {
-		t.Fatalf("admin editing editor: unexpected error %v", err)
-	}
-
-	if _, err := svc.Update(ctx, adminActor, admin.ID, UpdateUserRequest{Email: ptrStr("me@example.com")}); err != nil {
-		t.Fatalf("admin editing self: unexpected error %v", err)
-	}
-
-	if _, err := svc.Update(ctx, superActor, admin.ID, UpdateUserRequest{Email: ptrStr("admin-by-super@example.com")}); err != nil {
-		t.Fatalf("superadmin editing admin: unexpected error %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run()
+			if tt.wantStatus == 0 {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if HTTPStatus(err) != tt.wantStatus {
+				t.Fatalf("status = %d, err = %v, want %d", HTTPStatus(err), err, tt.wantStatus)
+			}
+		})
 	}
 }

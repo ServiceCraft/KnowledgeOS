@@ -25,8 +25,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
-import { collectSources, guardrailReasonLabel, mapChatStreamError, STATE_LABELS } from '@/lib/chatUi';
-import { ChatSourcesPanel } from '@/components/chat/ChatSourcesPanel';
+import { guardrailReasonLabel, mapChatStreamError, STATE_LABELS } from '@/lib/chatUi';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { ChatAnswerContent } from '@/components/chat/ChatCitations';
@@ -66,7 +65,6 @@ export function BotPlaygroundPage() {
   const sessionsTotal = sessionsQuery.data?.total ?? 0;
   const sessionsTotalPages = Math.ceil(sessionsTotal / 30) || 1;
   const showTypingIndicator = isStreaming && localMessages[localMessages.length - 1]?.role === 'user';
-  const sources = useMemo(() => collectSources(localMessages), [localMessages]);
   const canChat = selectedSession?.state === 'bot';
   const sessionState = selectedSession?.state;
   const composerPlaceholder = !selectedSession
@@ -376,8 +374,6 @@ export function BotPlaygroundPage() {
           </div>
         </CardContent>
       </Card>
-
-      <ChatSourcesPanel sources={sources} />
     </div>
   );
 }

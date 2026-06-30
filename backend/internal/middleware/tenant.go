@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/knowledgeos/backend/internal/cache"
 	"github.com/knowledgeos/backend/internal/domain"
 	"github.com/knowledgeos/backend/internal/respond"
 )
@@ -11,7 +12,7 @@ import (
 // Tenant resolves the active company for tenant-scoped routes. Superadmins must
 // send X-Company-ID. Other roles use X-Company-ID when they belong to multiple
 // companies; a single assignment is auto-selected.
-func Tenant(users domain.UserRepository) func(http.Handler) http.Handler {
+func Tenant(membership domain.UserMembershipReader, companies cache.Provider) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims := GetClaims(r.Context())
@@ -31,13 +32,26 @@ func Tenant(users domain.UserRepository) func(http.Handler) http.Handler {
 					respond.Error(w, http.StatusBadRequest, "invalid X-Company-ID")
 					return
 				}
-				ctx := SetCompanyID(r.Context(), id)
+				exists, err := companies.CompanyExists(r.Context(), id)
+				if err != nil {
+					respond.Error(w, http.StatusInternalServerError, "failed to validate company")
+					return
+				}
+				if !exists {
+					respond.Error(w, http.StatusNotFound, "company not found")
+					return
+				}
+				ctx := SetTenant(r.Context(), TenantContext{
+					UserID:    GetUserID(r.Context()),
+					Role:      claims.Role,
+					CompanyID: id,
+				})
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 
 			userID := GetUserID(r.Context())
-			companyIDs, err := users.GetCompanyIDs(r.Context(), userID)
+			companyIDs, err := membership.GetCompanyIDs(r.Context(), userID)
 			if err != nil {
 				respond.Error(w, http.StatusInternalServerError, "failed to resolve user companies")
 				return
@@ -67,7 +81,11 @@ func Tenant(users domain.UserRepository) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := SetCompanyID(r.Context(), companyID)
+			ctx := SetTenant(r.Context(), TenantContext{
+				UserID:    userID,
+				Role:      claims.Role,
+				CompanyID: companyID,
+			})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

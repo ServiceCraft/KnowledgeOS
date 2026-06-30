@@ -179,12 +179,20 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	Create(ctx context.Context, user *User) error
+	CreateWithCompanies(ctx context.Context, user *User, companyIDs []uuid.UUID) error
 	Update(ctx context.Context, user *User) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	GetCompanyIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
 	SetCompanyIDs(ctx context.Context, userID uuid.UUID, companyIDs []uuid.UUID) error
 	HasCompany(ctx context.Context, userID, companyID uuid.UUID) (bool, error)
 	ListCompaniesForUser(ctx context.Context, userID uuid.UUID) ([]Company, error)
+}
+
+type TokenRepository interface {
+	SaveRefreshToken(ctx context.Context, token *RefreshToken) error
+	GetRefreshToken(ctx context.Context, tokenHash string) (*RefreshToken, error)
+	RevokeRefreshToken(ctx context.Context, tokenHash string) error
+	RevokeAllUserTokens(ctx context.Context, userID uuid.UUID) error
 }
 
 type SearchRepository interface {
