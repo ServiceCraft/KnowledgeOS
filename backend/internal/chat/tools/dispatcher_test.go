@@ -62,6 +62,22 @@ func TestRegistryExecuteInvalidArgsRejectedBeforeTool(t *testing.T) {
 	}
 }
 
+func TestRegistryExecuteNullArgsTreatedAsEmptyObject(t *testing.T) {
+	tool := &spyTool{name: "no_args", schema: `{"type":"object"}`}
+	reg := NewRegistry(tool)
+
+	for _, args := range []string{`null`, ``, `   `, `{}`} {
+		t.Run("args="+args, func(t *testing.T) {
+			if _, err := reg.Execute(context.Background(), uuid.New(), toolCall("no_args", args)); err != nil {
+				t.Fatalf("Execute(%q) error = %v, want nil", args, err)
+			}
+		})
+	}
+	if tool.called != 4 {
+		t.Fatalf("tool called %d times, want 4", tool.called)
+	}
+}
+
 func TestRegistryExecuteUnknownToolRejected(t *testing.T) {
 	reg := NewRegistry()
 	_, err := reg.Execute(context.Background(), uuid.New(), toolCall("does_not_exist", `{}`))

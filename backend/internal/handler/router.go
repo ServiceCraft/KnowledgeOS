@@ -178,6 +178,10 @@ func NewRouter(deps RouterDeps) *chi.Mux {
 			})
 
 			r.Route("/admin/bot/chat", func(r chi.Router) {
+				// Playground consumes LLM tokens; restrict to write roles
+				// (editor/admin/superadmin). Operators (viewer) use the
+				// handoff routes, not the playground.
+				r.Use(middleware.RequireRole(writeRoles...))
 				r.Post("/sessions", h.Chat.CreateSession)
 				r.Get("/sessions", h.Chat.ListSessions)
 				r.Get("/sessions/{id}", h.Chat.GetSession)
