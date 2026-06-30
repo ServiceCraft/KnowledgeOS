@@ -25,3 +25,11 @@ export function useCreateChatSession() {
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.botChat.all }),
   });
 }
+
+export function useDeleteChatSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => botChatApi.deleteSession(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.botChat.all }),
+  });
+}

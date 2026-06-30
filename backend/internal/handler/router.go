@@ -185,6 +185,7 @@ func NewRouter(deps RouterDeps) *chi.Mux {
 				r.Post("/sessions", h.Chat.CreateSession)
 				r.Get("/sessions", h.Chat.ListSessions)
 				r.Get("/sessions/{id}", h.Chat.GetSession)
+				r.Delete("/sessions/{id}", h.Chat.DeleteSession)
 				r.Post("/sessions/{id}/messages", h.Chat.SendMessage)
 				r.Post("/sessions/{id}/messages/stream", h.Chat.StreamMessage)
 			})

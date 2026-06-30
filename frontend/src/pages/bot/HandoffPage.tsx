@@ -4,6 +4,7 @@ import type { ChatChannel, ChatMessage, ChatSession, ChatState } from '@/types';
 import { guardrailReasonLabel, STATE_LABELS } from '@/lib/chatUi';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import {
   useClaimHandoffSession,
   useCloseHandoffSession,
@@ -45,6 +46,7 @@ export function HandoffPage() {
   const [channelFilter, setChannelFilter] = useState<'all' | ChatChannel>('all');
   const [selectedSessionId, setSelectedSessionId] = useState<string>();
   const [draft, setDraft] = useState('');
+  const [confirmClose, setConfirmClose] = useState(false);
 
   const params = useMemo(() => {
     const channel = channelFilter === 'all' ? undefined : channelFilter;
@@ -208,10 +210,7 @@ export function HandoffPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => close.mutate(selected.id, {
-                      onSuccess: () => toast.success('Диалог закрыт'),
-                      onError: () => toast.error('Не удалось закрыть диалог'),
-                    })}
+                    onClick={() => setConfirmClose(true)}
                     disabled={close.isPending}
                   >
                     <CheckCircle2 className="h-4 w-4" />
@@ -275,6 +274,27 @@ export function HandoffPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmClose}
+        onOpenChange={setConfirmClose}
+        title="Закрыть диалог?"
+        description="Диалог будет помечен как решённый и возвращён боту. Продолжить?"
+        confirmLabel="Закрыть диалог"
+        loadingLabel="Закрытие..."
+        destructive={false}
+        loading={close.isPending}
+        onConfirm={() => {
+          if (!selected) return;
+          close.mutate(selected.id, {
+            onSuccess: () => {
+              toast.success('Диалог закрыт');
+              setConfirmClose(false);
+            },
+            onError: () => toast.error('Не удалось закрыть диалог'),
+          });
+        }}
+      />
     </div>
   );
 }

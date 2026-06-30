@@ -167,6 +167,13 @@ func (r *fakeRepo) CreateSession(_ context.Context, companyID uuid.UUID, session
 	r.sessions[session.ID] = &copy
 	return nil
 }
+func (r *fakeRepo) DeleteSession(_ context.Context, _ uuid.UUID, id uuid.UUID) error {
+	if _, ok := r.sessions[id]; !ok {
+		return gorm.ErrRecordNotFound
+	}
+	delete(r.sessions, id)
+	return nil
+}
 func (r *fakeRepo) ListSessions(context.Context, uuid.UUID, domain.ChatSessionFilter) ([]domain.ChatSession, int64, error) {
 	return nil, 0, nil
 }
