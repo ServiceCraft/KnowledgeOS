@@ -14,7 +14,7 @@ import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { toast } from 'sonner';
-import { Copy } from 'lucide-react';
+import { Copy, RefreshCw } from 'lucide-react';
 import type { ChannelStatus, SecretKind, TenantSecretStatus } from '@/types';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -36,6 +36,9 @@ import {
   CHANNEL_SECRET_KINDS,
   SERVICE_SECRET_KINDS,
   MASKED_SECRET_VALUE,
+  isSensitiveMetadataField,
+  canGenerateWebhookSecret,
+  generateWebhookSecret,
 } from '@/components/bot-admin/constants';
 import { FieldHint } from '@/components/bot-admin/FieldHint';
 import { channelModules } from '@/components/bot-admin/moduleHelpers';
@@ -72,7 +75,7 @@ export function ChannelsAndSecretsTab() {
       next[field.key] = typeof value === 'string' ? value : value == null ? '' : String(value);
     }
     setEditingChannel(status);
-    setToken('');
+    setToken(status.configured ? MASKED_SECRET_VALUE : '');
     setMetadata(next);
   };
 
@@ -341,26 +344,52 @@ export function ChannelsAndSecretsTab() {
                 type="password"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
-                placeholder="Введите токен заново при сохранении"
+                placeholder={
+                  editingChannel?.configured
+                    ? 'Оставьте без изменений или введите новый токен'
+                    : 'Токен бота'
+                }
                 autoFocus
               />
             </div>
             {editingChannel &&
-              CHANNEL_METADATA_FIELDS[editingChannel.channel].map((field) => (
-                <div className="space-y-2" key={field.key}>
-                  <FieldHint
-                    label={field.required ? <RequiredLabel>{field.label}</RequiredLabel> : field.label}
-                    htmlFor={`metadata-${field.key}`}
-                    hint={field.hint}
-                  />
-                  <Input
-                    id={`metadata-${field.key}`}
-                    value={metadata[field.key] ?? ''}
-                    placeholder={field.placeholder}
-                    onChange={(e) => setMetadata((m) => ({ ...m, [field.key]: e.target.value }))}
-                  />
-                </div>
-              ))}
+              CHANNEL_METADATA_FIELDS[editingChannel.channel].map((field) => {
+                const showGenerate = canGenerateWebhookSecret(editingChannel.channel, field.key);
+                const isPassword = isSensitiveMetadataField(field.key);
+                return (
+                  <div className="space-y-2" key={field.key}>
+                    <FieldHint
+                      label={field.required ? <RequiredLabel>{field.label}</RequiredLabel> : field.label}
+                      htmlFor={`metadata-${field.key}`}
+                      hint={field.hint}
+                    />
+                    <div className="flex gap-2">
+                      <Input
+                        id={`metadata-${field.key}`}
+                        type={isPassword ? 'password' : 'text'}
+                        value={metadata[field.key] ?? ''}
+                        placeholder={field.placeholder}
+                        onChange={(e) => setMetadata((m) => ({ ...m, [field.key]: e.target.value }))}
+                        className="font-mono text-xs"
+                      />
+                      {showGenerate && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          aria-label="Сгенерировать webhook secret"
+                          title="Сгенерировать webhook secret"
+                          onClick={() =>
+                            setMetadata((m) => ({ ...m, [field.key]: generateWebhookSecret() }))
+                          }
+                        >
+                          <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingChannel(null)}>Отмена</Button>

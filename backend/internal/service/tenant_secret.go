@@ -83,19 +83,32 @@ func (s *TenantSecretService) Set(ctx context.Context, companyID uuid.UUID, kind
 	}
 	// Preserve existing sensitive metadata when the client sends the masked
 	// sentinel or omits a sensitive key, so unrelated edits do not wipe secrets.
-	var existingMetadata json.RawMessage
-	if existing, getErr := s.secrets.Get(ctx, companyID, kind); getErr == nil {
-		existingMetadata = existing.Metadata
+	var existing *domain.TenantSecret
+	if loaded, getErr := s.secrets.Get(ctx, companyID, kind); getErr == nil {
+		existing = loaded
 	} else if !errors.Is(getErr, gorm.ErrRecordNotFound) {
 		return nil, getErr
+	}
+	var existingMetadata json.RawMessage
+	if existing != nil {
+		existingMetadata = existing.Metadata
 	}
 	metadata, err = mergeSecretMetadata(metadata, existingMetadata)
 	if err != nil {
 		return nil, badRequest("metadata must be a JSON object")
 	}
-	ciphertext, nonce, err := s.cipher.Encrypt([]byte(value))
-	if err != nil {
-		return nil, err
+	var ciphertext, nonce []byte
+	if value == MaskedSecretValue {
+		if existing == nil {
+			return nil, badRequest("secret value is required")
+		}
+		ciphertext = existing.Ciphertext
+		nonce = existing.Nonce
+	} else {
+		ciphertext, nonce, err = s.cipher.Encrypt([]byte(value))
+		if err != nil {
+			return nil, err
+		}
 	}
 	secret := &domain.TenantSecret{
 		Kind:       kind,

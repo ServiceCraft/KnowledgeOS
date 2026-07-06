@@ -138,3 +138,21 @@ export const MASKED_SECRET_VALUE = '********';
 export const CHANNEL_SECRET_KINDS: SecretKind[] = ['telegram', 'max', 'vk'];
 export const SERVICE_SECRET_KINDS: SecretKind[] = ['llm', 'bitrix24'];
 
+const SENSITIVE_METADATA_KEY_MARKERS = ['secret', 'password', 'token', 'api_key', 'access_key', 'private'] as const;
+
+/** Mirrors backend isSensitiveMetadataKey — used for password inputs in the channel editor. */
+export function isSensitiveMetadataField(key: string): boolean {
+  const lower = key.toLowerCase().trim();
+  return SENSITIVE_METADATA_KEY_MARKERS.some((marker) => lower.includes(marker));
+}
+
+export function canGenerateWebhookSecret(channel: ChannelStatus['channel'], fieldKey: string): boolean {
+  return fieldKey === 'webhook_secret' && (channel === 'telegram' || channel === 'max');
+}
+
+export function generateWebhookSecret(byteLength = 32): string {
+  const bytes = new Uint8Array(byteLength);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+

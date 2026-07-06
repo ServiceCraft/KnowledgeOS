@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	secretcrypto "github.com/knowledgeos/backend/internal/crypto"
 	"github.com/knowledgeos/backend/internal/domain"
 	"gorm.io/gorm"
 )
@@ -112,5 +113,60 @@ func TestMergeSecretMetadataDropsMaskedWithoutExisting(t *testing.T) {
 	}
 	if out["group_id"] != "2" {
 		t.Fatalf("expected non-sensitive value preserved, got %q", out["group_id"])
+	}
+}
+
+func TestSetPreservesMaskedTokenValue(t *testing.T) {
+	repo := newFakeSecretRepo()
+	cipher, err := secretcrypto.NewCipher("test-secret-key")
+	if err != nil {
+		t.Fatalf("NewCipher() error = %v", err)
+	}
+	svc := NewTenantSecretService(repo, cipher)
+	companyID := uuid.New()
+
+	initial, err := svc.Set(context.Background(), companyID, domain.SecretKindTelegram, SetTenantSecretRequest{
+		Value:    "real-bot-token",
+		Metadata: json.RawMessage(`{"webhook_secret":"hook-secret"}`),
+	})
+	if err != nil {
+		t.Fatalf("initial Set error: %v", err)
+	}
+	if !initial.IsSet {
+		t.Fatal("expected secret to be set")
+	}
+
+	updated, err := svc.Set(context.Background(), companyID, domain.SecretKindTelegram, SetTenantSecretRequest{
+		Value:    MaskedSecretValue,
+		Metadata: json.RawMessage(`{"handoff_notification_chat_id":"999"}`),
+	})
+	if err != nil {
+		t.Fatalf("update Set error: %v", err)
+	}
+	if !updated.IsSet {
+		t.Fatal("expected secret to remain set")
+	}
+
+	plaintext, err := svc.GetPlaintext(context.Background(), companyID, domain.SecretKindTelegram)
+	if err != nil {
+		t.Fatalf("GetPlaintext error: %v", err)
+	}
+	if plaintext != "real-bot-token" {
+		t.Fatalf("expected preserved token, got %q", plaintext)
+	}
+
+	_, metadata, err := svc.GetPlaintextWithMetadata(context.Background(), companyID, domain.SecretKindTelegram)
+	if err != nil {
+		t.Fatalf("GetPlaintextWithMetadata error: %v", err)
+	}
+	var meta map[string]string
+	if err := json.Unmarshal(metadata, &meta); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if meta["webhook_secret"] != "hook-secret" {
+		t.Fatalf("expected preserved webhook secret, got %q", meta["webhook_secret"])
+	}
+	if meta["handoff_notification_chat_id"] != "999" {
+		t.Fatalf("expected updated chat id, got %q", meta["handoff_notification_chat_id"])
 	}
 }
