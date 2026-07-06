@@ -178,7 +178,7 @@ func New(cfg *config.Config) (*App, error) {
 		RAG:      handler.NewRAGHandler(ragIndexerSvc, retrieverSvc),
 		Chat:     handler.NewChatHandler(chatSvc),
 		Handoff:  handler.NewHandoffHandler(handoffSvc),
-		Channels: handler.NewChannelWebhookHandler(channelGateway),
+		Channels: handler.NewChannelWebhookHandler(channelGateway, cfg.PublicWebhookBaseURL),
 	}
 
 	var syncRepo domain.SyncRepository = syncStore

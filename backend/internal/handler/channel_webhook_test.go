@@ -24,7 +24,7 @@ func TestChannelWebhookHandlerHandle(t *testing.T) {
 		&handlerFakeSecrets{},
 		&handlerFakeAdapter{},
 	)
-	h := NewChannelWebhookHandler(gateway)
+	h := NewChannelWebhookHandler(gateway, "https://public.example.com")
 	router := chi.NewRouter()
 	router.Post("/webhooks/{channel}/{company_id}", h.Handle)
 

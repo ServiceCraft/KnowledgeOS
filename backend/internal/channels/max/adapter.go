@@ -35,17 +35,18 @@ func (a *Adapter) Channel() domain.ChatChannel { return domain.ChatChannelMAX }
 func (a *Adapter) SecretKind() domain.SecretKind { return domain.SecretKindMAX }
 
 func (a *Adapter) RegisterWebhook(ctx context.Context, cfg channels.ChannelConfig, webhookURL string) (bool, error) {
-	registrationURL := metadataString(cfg.Metadata, "webhook_registration_url")
+	registrationURL := metadataStringDefault(cfg.Metadata, "webhook_registration_url", defaultSubscriptionsURL)
 	secret := metadataString(cfg.Metadata, "webhook_secret", "secret")
-	if registrationURL == "" || secret == "" || strings.TrimSpace(cfg.Token) == "" || strings.TrimSpace(webhookURL) == "" {
+	if secret == "" || strings.TrimSpace(cfg.Token) == "" || strings.TrimSpace(webhookURL) == "" {
 		return false, nil
 	}
 	if err := channels.ValidateOutboundURL(registrationURL); err != nil {
 		return false, statusError(http.StatusBadRequest, "max webhook registration url is not allowed")
 	}
 	payload := map[string]interface{}{
-		"url":    webhookURL,
-		"secret": secret,
+		"url":          webhookURL,
+		"secret":       secret,
+		"update_types": []string{"message_created", "bot_started"},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -56,7 +57,7 @@ func (a *Adapter) RegisterWebhook(ctx context.Context, cfg channels.ChannelConfi
 		return false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	req.Header.Set("Authorization", cfg.Token)
 	resp, err := a.client.Do(req)
 	if err != nil {
 		return false, err

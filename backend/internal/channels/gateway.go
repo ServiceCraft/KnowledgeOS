@@ -77,30 +77,43 @@ func (g *Gateway) SetHandoff(handoff handoffService) {
 	g.handoff = handoff
 }
 
-func (g *Gateway) registerWebhook(ctx context.Context, companyID uuid.UUID, kind domain.SecretKind, baseURL string) (bool, error) {
+func (g *Gateway) registerWebhook(ctx context.Context, companyID uuid.UUID, kind domain.SecretKind, baseURL string) (WebhookRegistrationResult, error) {
 	adapter := g.adapterBySecretKind(kind)
 	if adapter == nil {
-		return false, nil
+		return WebhookRegistrationResult{}, nil
 	}
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" || !strings.HasPrefix(baseURL, "https://") {
-		return false, nil
+		return WebhookRegistrationResult{
+			Reason: "Не задан публичный HTTPS URL webhook (PUBLIC_WEBHOOK_BASE_URL или доступ к admin по HTTPS)",
+		}, nil
 	}
 	token, metadata, err := g.secrets.GetPlaintextWithMetadata(ctx, companyID, kind)
 	if err != nil {
-		return false, err
+		return WebhookRegistrationResult{}, err
 	}
 	cfg := ChannelConfig{Token: token, Metadata: metadata}
-	return adapter.RegisterWebhook(ctx, cfg, webhookURL(baseURL, adapter.Channel(), companyID))
+	targetURL := webhookURL(baseURL, adapter.Channel(), companyID)
+	if reason := MissingWebhookRegistrationFields(adapter.Channel(), cfg, targetURL); reason != "" {
+		return WebhookRegistrationResult{Reason: reason}, nil
+	}
+	registered, err := adapter.RegisterWebhook(ctx, cfg, targetURL)
+	if err != nil {
+		return WebhookRegistrationResult{}, err
+	}
+	if !registered {
+		return WebhookRegistrationResult{Reason: "Не хватает обязательных полей канала"}, nil
+	}
+	return WebhookRegistrationResult{Registered: true}, nil
 }
 
 // RegisterChannelWebhook (re)registers the webhook for a channel on demand,
 // e.g. when triggered from the admin UI. It returns whether the upstream
 // registration was actually performed (false when required fields are missing).
-func (g *Gateway) RegisterChannelWebhook(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, baseURL string) (bool, error) {
+func (g *Gateway) RegisterChannelWebhook(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, baseURL string) (WebhookRegistrationResult, error) {
 	adapter, ok := g.adapters[channel]
 	if !ok {
-		return false, statusError(http.StatusBadRequest, "unsupported channel")
+		return WebhookRegistrationResult{}, statusError(http.StatusBadRequest, "unsupported channel")
 	}
 	return g.registerWebhook(ctx, companyID, adapter.SecretKind(), baseURL)
 }

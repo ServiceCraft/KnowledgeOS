@@ -70,6 +70,11 @@ type Config struct {
 
 	BotChatDebugLog bool `env:"BOT_CHAT_DEBUG_LOG, default=false"`
 
+	// PublicWebhookBaseURL is the HTTPS origin used when registering channel
+	// webhooks, e.g. https://bot.example.com. Required when admin UI is opened
+	// over plain HTTP (local dev) or behind a proxy without X-Forwarded-Proto.
+	PublicWebhookBaseURL string `env:"PUBLIC_WEBHOOK_BASE_URL"`
+
 	MaxExtraCACertFile string `env:"MAX_EXTRA_CA_CERT_FILE"`
 	MaxExtraCACertPEM  string `env:"MAX_EXTRA_CA_CERT_PEM"`
 	MaxInsecureTLS     bool   `env:"MAX_INSECURE_SKIP_VERIFY, default=false"`

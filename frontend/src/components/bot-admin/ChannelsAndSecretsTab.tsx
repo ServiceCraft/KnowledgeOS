@@ -161,7 +161,7 @@ export function ChannelsAndSecretsTab() {
       onSuccess: (res) =>
         res.registered
           ? toast.success('Webhook зарегистрирован')
-          : toast.warning('Webhook не зарегистрирован: заполните обязательные поля канала'),
+          : toast.warning(res.reason ?? 'Webhook не зарегистрирован: заполните обязательные поля канала'),
       onError: () => toast.error('Не удалось зарегистрировать webhook'),
     });
   };
@@ -301,7 +301,7 @@ export function ChannelsAndSecretsTab() {
                   </>
                 )}
                 <Button variant="outline" onClick={() => openChannelEditor(status)}>
-                  {status.configured ? 'Обновить токен и параметры' : 'Настроить'}
+                  {status.configured ? 'Параметры' : 'Настроить'}
                 </Button>
               </div>
             </CardContent>
@@ -652,7 +652,7 @@ function SubscriptionsButton({
 }) {
   const button = (
     <Button variant="outline" disabled={!configured || loading} onClick={onClick}>
-      Посмотреть подписки
+      Подписки
     </Button>
   );
 
@@ -711,7 +711,7 @@ function ChannelEnabledButton({
           : 'border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive'
       }
     >
-      {enabled ? 'Канал включён' : 'Канал выключен'}
+      {enabled ? 'Включен' : 'Выключен'}
     </Button>
   );
 }

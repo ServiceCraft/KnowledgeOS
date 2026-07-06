@@ -16,11 +16,16 @@ import (
 const channelWebhookMaxBody = 1 << 20
 
 type ChannelWebhookHandler struct {
-	gateway *channels.Gateway
+	gateway              *channels.Gateway
+	publicWebhookBaseURL string
 }
 
-func NewChannelWebhookHandler(gateway *channels.Gateway) *ChannelWebhookHandler {
-	return &ChannelWebhookHandler{gateway: gateway}
+func NewChannelWebhookHandler(gateway *channels.Gateway, publicWebhookBaseURL string) *ChannelWebhookHandler {
+	return &ChannelWebhookHandler{gateway: gateway, publicWebhookBaseURL: publicWebhookBaseURL}
+}
+
+func (h *ChannelWebhookHandler) webhookBaseURL(r *http.Request) string {
+	return channels.ResolveWebhookBaseURL(requestBaseURL(r), h.publicWebhookBaseURL)
 }
 
 func (h *ChannelWebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +61,7 @@ func (h *ChannelWebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 func (h *ChannelWebhookHandler) Status(w http.ResponseWriter, r *http.Request) {
 	applog.TraceCall(r.Context(), "handler.ChannelWebhookHandler.Status")
-	baseURL := requestBaseURL(r)
+	baseURL := h.webhookBaseURL(r)
 	statuses, err := h.gateway.Status(r.Context(), middleware.GetCompanyID(r.Context()), baseURL)
 	if err != nil {
 		ServiceError(w, r, err)
@@ -74,12 +79,12 @@ func (h *ChannelWebhookHandler) RegisterWebhook(w http.ResponseWriter, r *http.R
 		return
 	}
 	companyID := middleware.GetCompanyID(r.Context())
-	registered, err := h.gateway.RegisterChannelWebhook(r.Context(), companyID, channel, requestBaseURL(r))
+	result, err := h.gateway.RegisterChannelWebhook(r.Context(), companyID, channel, h.webhookBaseURL(r))
 	if err != nil {
 		ServiceError(w, r, err)
 		return
 	}
-	JSON(w, http.StatusOK, map[string]bool{"registered": registered})
+	JSON(w, http.StatusOK, result)
 }
 
 // Subscriptions returns the raw subscriptions/webhook payload the channel

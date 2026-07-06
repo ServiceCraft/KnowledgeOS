@@ -3,7 +3,9 @@ package max
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/knowledgeos/backend/internal/channels"
@@ -61,4 +63,45 @@ func TestRegisterWebhookBlocksUnsafeURL(t *testing.T) {
 	if ok || err == nil {
 		t.Fatalf("expected blocked registration url to error, got ok=%v err=%v", ok, err)
 	}
+}
+
+func TestRegisterWebhookUsesDefaultMAXAPI(t *testing.T) {
+	var calledURL, authHeader, body string
+	adapter := New(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calledURL = req.URL.String()
+		authHeader = req.Header.Get("Authorization")
+		data, _ := io.ReadAll(req.Body)
+		body = string(data)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`)), Header: http.Header{}}, nil
+	})})
+
+	registered, err := adapter.RegisterWebhook(
+		context.Background(),
+		channels.ChannelConfig{Token: "max-token", Metadata: json.RawMessage(`{"webhook_secret":"hook-secret"}`)},
+		"https://public.example.com/api/v1/webhooks/max/company",
+	)
+	if err != nil {
+		t.Fatalf("RegisterWebhook returned error: %v", err)
+	}
+	if !registered {
+		t.Fatal("expected webhook to be registered")
+	}
+	if calledURL != defaultSubscriptionsURL {
+		t.Fatalf("unexpected registration URL: %s", calledURL)
+	}
+	if authHeader != "max-token" {
+		t.Fatalf("expected raw token in Authorization, got %q", authHeader)
+	}
+	if strings.Contains(authHeader, "Bearer") {
+		t.Fatalf("MAX API must not use Bearer prefix, got %q", authHeader)
+	}
+	if !strings.Contains(body, `"secret":"hook-secret"`) || !strings.Contains(body, `"url":"https://public.example.com/api/v1/webhooks/max/company"`) {
+		t.Fatalf("unexpected request body: %s", body)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
