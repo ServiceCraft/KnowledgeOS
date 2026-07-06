@@ -1,0 +1,229 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: |
+            backend/go.sum
+            backup-service/go.mod
+
+      - name: Run backend tests
+        working-directory: backend
+        run: go test ./...
+
+      - name: Run backup-service tests
+        working-directory: backup-service
+        run: go test ./...
+
+      - name: Run backend lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          working-directory: backend
+          args: ./...
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+  build:
+    name: Build images
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.event_name == 'push'
+
+    outputs:
+      backend_image: ${{ steps.meta.outputs.backend_image }}
+      frontend_image: ${{ steps.meta.outputs.frontend_image }}
+      backup_image: ${{ steps.meta.outputs.backup_image }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Prepare image metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo="$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          short_sha="${GITHUB_SHA::12}"
+          safe_ref="$(printf '%s' "${GITHUB_REF_NAME}" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//')"
+
+          latest_tag="test-latest"
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            latest_tag="prod-latest"
+          fi
+
+          image_tag="sha-${short_sha}"
+          image_base="ghcr.io/${repo}"
+
+          {
+            echo "image_tag=${image_tag}"
+            echo "backend_image=${image_base}/backend:${image_tag}"
+            echo "frontend_image=${image_base}/frontend:${image_tag}"
+            echo "backup_image=${image_base}/backup-service:${image_tag}"
+            echo "backend_tags<<EOF"
+            printf '%s\n' \
+              "${image_base}/backend:${image_tag}" \
+              "${image_base}/backend:branch-${safe_ref}" \
+              "${image_base}/backend:${latest_tag}"
+            echo "EOF"
+            echo "frontend_tags<<EOF"
+            printf '%s\n' \
+              "${image_base}/frontend:${image_tag}" \
+              "${image_base}/frontend:branch-${safe_ref}" \
+              "${image_base}/frontend:${latest_tag}"
+            echo "EOF"
+            echo "backup_tags<<EOF"
+            printf '%s\n' \
+              "${image_base}/backup-service:${image_tag}" \
+              "${image_base}/backup-service:branch-${safe_ref}" \
+              "${image_base}/backup-service:${latest_tag}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.backend_tags }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.frontend_tags }}
+
+      - name: Build and push backup-service image
+        uses: docker/build-push-action@v6
+        with:
+          context: backup-service
+          file: backup-service/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.backup_tags }}
+
+  deploy_test:
+    name: Deploy test
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+    environment: test
+    concurrency:
+      group: deploy-test
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout deploy files
+        uses: actions/checkout@v4
+
+      - name: Deploy over SSH
+        env:
+          DEPLOY_ENV: test
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          APP_ENV_FILE: ${{ secrets.APP_ENV_FILE }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN || github.token }}
+          COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME || 'knowledgeos-test' }}
+          FRONTEND_IMAGE: ${{ needs.build.outputs.frontend_image }}
+          BACKEND_IMAGE: ${{ needs.build.outputs.backend_image }}
+          BACKUP_IMAGE: ${{ needs.build.outputs.backup_image }}
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+          SMOKE_URL: ${{ vars.SMOKE_URL }}
+        run: ./scripts/deploy-compose-ssh.sh
+
+  deploy_prod:
+    name: Deploy production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: prod
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout deploy files
+        uses: actions/checkout@v4
+
+      - name: Deploy over SSH
+        env:
+          DEPLOY_ENV: prod
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          APP_ENV_FILE: ${{ secrets.APP_ENV_FILE }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN || github.token }}
+          COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME || 'knowledgeos-prod' }}
+          FRONTEND_IMAGE: ${{ needs.build.outputs.frontend_image }}
+          BACKEND_IMAGE: ${{ needs.build.outputs.backend_image }}
+          BACKUP_IMAGE: ${{ needs.build.outputs.backup_image }}
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+          SMOKE_URL: ${{ vars.SMOKE_URL }}
+        run: ./scripts/deploy-compose-ssh.sh
