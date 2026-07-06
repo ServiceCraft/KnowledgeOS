@@ -231,7 +231,7 @@ func (s *UserService) Update(ctx context.Context, actor Actor, id uuid.UUID, req
 
 	if revokeSessions && s.tokens != nil {
 		if err := s.tokens.RevokeAllUserTokens(ctx, target.ID); err != nil {
-			applog.TraceErr(ctx, "revoke user sessions failed", err)
+			_ = applog.TraceErr(ctx, "revoke user sessions failed", err)
 		}
 	}
 	return target, nil

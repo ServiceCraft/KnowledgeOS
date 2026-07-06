@@ -40,7 +40,7 @@ func (h *BackupHandler) Snapshot(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "could not open snapshot archive")
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	stat, err := f.Stat()
 	if err != nil {

@@ -182,7 +182,7 @@ func (a *Adapter) callAPI(ctx context.Context, token, method string, payload map
 	if err != nil {
 		return nil, applog.TraceErr(ctx, "telegram: api request failed", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, applog.TraceErr(ctx, "telegram: read response failed", err)

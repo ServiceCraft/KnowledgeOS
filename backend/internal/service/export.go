@@ -229,26 +229,3 @@ func ensureID(m *domain.BaseModel) {
 		m.ID = uuid.New()
 	}
 }
-
-func topSortPricing(nodes []domain.PricingNode) []domain.PricingNode {
-	sorted := make([]domain.PricingNode, 0, len(nodes))
-	inserted := make(map[uuid.UUID]bool)
-	remaining := nodes
-	for len(remaining) > 0 {
-		var next []domain.PricingNode
-		for _, n := range remaining {
-			if n.ParentID == nil || inserted[*n.ParentID] {
-				sorted = append(sorted, n)
-				inserted[n.ID] = true
-			} else {
-				next = append(next, n)
-			}
-		}
-		if len(next) == len(remaining) {
-			sorted = append(sorted, next...)
-			break
-		}
-		remaining = next
-	}
-	return sorted
-}

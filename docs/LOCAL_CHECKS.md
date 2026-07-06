@@ -83,7 +83,7 @@ environment.
 Install these locally:
 
 - Go 1.25.x.
-- `golangci-lint` compatible with Go 1.25.
+- A Go toolchain capable of running the pinned `golangci-lint` from `Makefile`.
 - Node.js 20 and npm.
 - Docker Engine with Docker Compose plugin.
 - Ruby, used only to parse `.github/workflows/ci-cd.yml`.
@@ -96,10 +96,15 @@ configuration errors. They cannot guarantee that remote deployment succeeds,
 because deploy jobs also depend on GitHub Environment secrets, GHCR permissions,
 SSH access, server health, DNS, and TLS setup.
 
-If `golangci-lint` fails with an export data error like `unsupported version: 2`,
-update the local `golangci-lint` binary to a version compatible with the
-project's Go version. The focused errcheck target runs only for staged backend
-Go packages:
+`Makefile` runs a pinned `golangci-lint` through `go run` by default, so an old
+globally installed `golangci-lint` binary is not used. To use a local binary
+instead, override `GOLANGCI_LINT`:
+
+```bash
+GOLANGCI_LINT=golangci-lint make lint
+```
+
+The focused errcheck target runs only for staged backend Go packages:
 
 ```bash
 make check-backend-errcheck

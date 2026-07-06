@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
@@ -303,11 +302,4 @@ func latestUserQuestion(ctx context.Context, chats domain.ChatRepository, compan
 		}
 	}
 	return ""
-}
-
-func statusConflictToHTTP(err error) error {
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return &UserError{Status: http.StatusConflict, Msg: "chat session state changed"}
-	}
-	return applog.TraceErr(context.Background(), "handoff: map status conflict failed", err)
 }

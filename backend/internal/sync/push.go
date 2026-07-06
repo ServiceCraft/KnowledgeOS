@@ -51,7 +51,7 @@ func (p *Pusher) Push(companyID uuid.UUID) error {
 	if err != nil {
 		return fmt.Errorf("push request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("push failed with status %d", resp.StatusCode)

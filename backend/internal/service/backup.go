@@ -297,7 +297,6 @@ func tarGzDir(srcDir, outPath string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("create code archive: %w", err)
 	}
-	defer out.Close()
 
 	gz := gzip.NewWriter(out)
 	tw := tar.NewWriter(gz)
@@ -342,9 +341,13 @@ func tarGzDir(srcDir, outPath string) (int, error) {
 			if err != nil {
 				return applog.TraceErr(context.Background(), "backup: open file for tar failed", err)
 			}
-			defer f.Close()
-			if _, err := io.Copy(tw, f); err != nil {
-				return applog.TraceErr(context.Background(), "backup: write file to tar failed", err)
+			_, copyErr := io.Copy(tw, f)
+			closeErr := f.Close()
+			if copyErr != nil {
+				return applog.TraceErr(context.Background(), "backup: write file to tar failed", copyErr)
+			}
+			if closeErr != nil {
+				return applog.TraceErr(context.Background(), "backup: close file after tar failed", closeErr)
 			}
 			fileCount++
 			return nil
@@ -360,6 +363,9 @@ func tarGzDir(srcDir, outPath string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("tar code: %w", err)
 	}
+	if cerr := out.Close(); cerr != nil {
+		return 0, fmt.Errorf("close code archive: %w", cerr)
+	}
 	return fileCount, nil
 }
 
@@ -369,24 +375,29 @@ func buildArchive(outPath string, files []string) error {
 	if err != nil {
 		return fmt.Errorf("create archive: %w", err)
 	}
-	defer out.Close()
 
 	gz := gzip.NewWriter(out)
 	tw := tar.NewWriter(gz)
 
 	for _, f := range files {
 		if err := addFileToTar(tw, f, filepath.Base(f)); err != nil {
-			tw.Close()
-			gz.Close()
+			_ = tw.Close()
+			_ = gz.Close()
+			_ = out.Close()
 			return applog.TraceErr(context.Background(), "backup: add file to archive failed", err)
 		}
 	}
 
 	if err := tw.Close(); err != nil {
-		gz.Close()
+		_ = gz.Close()
+		_ = out.Close()
 		return applog.TraceErr(context.Background(), "backup: close tar writer failed", err)
 	}
-	return gz.Close()
+	if err := gz.Close(); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func addFileToTar(tw *tar.Writer, path, name string) error {
@@ -406,9 +417,12 @@ func addFileToTar(tw *tar.Writer, path, name string) error {
 	if err != nil {
 		return applog.TraceErr(context.Background(), "backup: open file failed", err)
 	}
-	defer f.Close()
-	_, err = io.Copy(tw, f)
-	return applog.TraceErr(context.Background(), "backup: write file to tar failed", err)
+	_, copyErr := io.Copy(tw, f)
+	closeErr := f.Close()
+	if copyErr != nil {
+		return applog.TraceErr(context.Background(), "backup: write file to tar failed", copyErr)
+	}
+	return applog.TraceErr(context.Background(), "backup: close file after tar failed", closeErr)
 }
 
 func fileStat(path string) (int64, string, error) {
@@ -416,10 +430,13 @@ func fileStat(path string) (int64, string, error) {
 	if err != nil {
 		return 0, "", err
 	}
-	defer f.Close()
 	h := sha256.New()
 	n, err := io.Copy(h, f)
 	if err != nil {
+		_ = f.Close()
+		return 0, "", err
+	}
+	if err := f.Close(); err != nil {
 		return 0, "", err
 	}
 	return n, hex.EncodeToString(h.Sum(nil)), nil

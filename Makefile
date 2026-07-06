@@ -6,6 +6,7 @@ PROD_ENV_FILE ?= .env.prod
 TEST_ENV_FILE ?= .env.test
 PROD_PROJECT ?= knowledgeos-prod
 TEST_PROJECT ?= knowledgeos-test
+GOLANGCI_LINT ?= go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.3.0
 
 up:
 	GIT_COMMIT=$(GIT_COMMIT) docker compose up --build -d
@@ -38,7 +39,7 @@ secret:
 	@openssl rand -base64 32
 
 lint:
-	cd backend && golangci-lint run ./...
+	cd backend && $(GOLANGCI_LINT) run ./...
 
 test:
 	cd backend && go test ./...
@@ -71,7 +72,7 @@ check-backend:
 	cd backend && go test ./...
 
 check-backend-lint:
-	cd backend && golangci-lint run ./...
+	cd backend && $(GOLANGCI_LINT) run ./...
 
 check-backend-errcheck:
 	@files="$$(git diff --cached --name-only --diff-filter=ACMR -- 'backend/*.go' 'backend/**/*.go')"; \
@@ -81,7 +82,7 @@ check-backend-errcheck:
 	fi; \
 	packages="$$(printf '%s\n' "$$files" | xargs -n1 dirname | sort -u | sed 's#^backend#.#')"; \
 	echo "Running errcheck on: $$packages"; \
-	cd backend && golangci-lint run --disable-all -E errcheck $$packages
+	cd backend && $(GOLANGCI_LINT) run --default=none -E errcheck $$packages
 
 check-frontend:
 	cd frontend && npm ci && npm run lint && npm run build

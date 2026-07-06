@@ -67,7 +67,7 @@ func (a *Adapter) RegisterWebhook(ctx context.Context, cfg channels.ChannelConfi
 	if err != nil {
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return false, statusError(http.StatusBadGateway, "vk webhook registration failed")
 	}
@@ -149,7 +149,7 @@ func (a *Adapter) SendMessage(ctx context.Context, cfg channels.ChannelConfig, m
 	if err != nil {
 		return applog.TraceErr(ctx, "vk: api request failed", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return statusError(http.StatusBadGateway, "vk api request failed")
 	}

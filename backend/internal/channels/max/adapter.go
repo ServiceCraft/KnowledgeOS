@@ -61,7 +61,7 @@ func (a *Adapter) RegisterWebhook(ctx context.Context, cfg channels.ChannelConfi
 	if err != nil {
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return false, statusError(http.StatusBadGateway, "max webhook registration failed")
 	}
@@ -92,7 +92,7 @@ func (a *Adapter) ListSubscriptions(ctx context.Context, cfg channels.ChannelCon
 		_ = applog.TraceErr(ctx, "max: subscriptions request failed", err)
 		return nil, statusError(http.StatusBadGateway, "max subscriptions request failed")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, applog.TraceErr(ctx, "max: read subscriptions response failed", err)
@@ -213,7 +213,7 @@ func (a *Adapter) SendMessage(ctx context.Context, cfg channels.ChannelConfig, m
 	if err != nil {
 		return applog.TraceErr(ctx, "max: api request failed", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return statusError(http.StatusBadGateway, "max api request failed")
 	}

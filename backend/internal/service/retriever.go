@@ -55,7 +55,7 @@ func (s *RetrieverService) Search(ctx context.Context, companyID uuid.UUID, req 
 
 	var provider llm.Provider
 	var embedder llm.Embedder
-	var llmErr error = badRequest("llm factory is not configured")
+	llmErr := badRequest("llm factory is not configured")
 	if s.llmFactory != nil {
 		provider, embedder, llmErr = s.llmFactory.ForCompany(ctx, companyID)
 	}

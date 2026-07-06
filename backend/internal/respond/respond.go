@@ -36,6 +36,6 @@ func Error(w http.ResponseWriter, status int, msg string) {
 // Decode executes the respond.Decode operation.
 func Decode(r *http.Request, v interface{}) error {
 	applog.TraceCall(r.Context(), "respond.Decode")
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	return json.NewDecoder(r.Body).Decode(v)
 }
