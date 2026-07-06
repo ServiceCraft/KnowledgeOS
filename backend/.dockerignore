@@ -1,0 +1,15 @@
+# Tests and local tooling — not needed in the runtime image or backup snapshot.
+**/*_test.go
+**/testdata/
+
+# Other binaries and sync tooling built outside the API image.
+cmd/sync/
+cmd/rag-worker/
+cmd/migrate/
+cmd/chat-eval/
+Dockerfile.sync
+
+# CI and editor files.
+.git
+.gitignore
+*.md
