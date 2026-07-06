@@ -2,6 +2,7 @@ package channels
 
 import (
 	"encoding/json"
+	"net"
 	"strings"
 
 	"github.com/knowledgeos/backend/internal/domain"
@@ -23,15 +24,61 @@ func ResolveWebhookBaseURL(requestBase, configured string) string {
 }
 
 // WebhookDisplayBase picks the origin shown in admin UI for webhook URLs.
-// Configured PUBLIC_WEBHOOK_BASE_URL wins; otherwise the incoming request host
-// is used as-is (including http:// on staging), matching pre-registration UX.
+// PUBLIC_WEBHOOK_BASE_URL and HTTPS requests win; plain HTTP on a public host
+// is upgraded to HTTPS so staging behind a TLS proxy shows the webhook URL
+// providers expect.
 func WebhookDisplayBase(requestBase, configured string) string {
-	configured = strings.TrimRight(strings.TrimSpace(configured), "/")
-	if configured != "" && strings.HasPrefix(configured, "https://") {
-		return configured
+	if resolved := ResolveWebhookBaseURL(requestBase, configured); resolved != "" {
+		return resolved
 	}
-	return strings.TrimRight(strings.TrimSpace(requestBase), "/")
+	requestBase = strings.TrimRight(strings.TrimSpace(requestBase), "/")
+	if requestBase == "" {
+		return ""
+	}
+	if strings.HasPrefix(requestBase, "http://") && shouldUpgradeHTTPDisplayToHTTPS(requestBase) {
+		return "https://" + strings.TrimPrefix(requestBase, "http://")
+	}
+	return requestBase
 }
+
+func shouldUpgradeHTTPDisplayToHTTPS(baseURL string) bool {
+	hostPort := webhookHostPortFromBaseURL(baseURL)
+	if hostPort == "" || webhookHostIsLocal(hostPort) {
+		return false
+	}
+	host, port, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		// No explicit port — treat as public HTTPS endpoint.
+		return !webhookHostIsLocal(hostPort)
+	}
+	// Custom ports (e.g. :8081) may not serve TLS; require PUBLIC_WEBHOOK_BASE_URL.
+	return port == "80" && !webhookHostIsLocal(host)
+}
+
+func webhookHostPortFromBaseURL(baseURL string) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if i := strings.Index(baseURL, "://"); i >= 0 {
+		baseURL = baseURL[i+3:]
+	}
+	if baseURL == "" {
+		return ""
+	}
+	if j := strings.Index(baseURL, "/"); j >= 0 {
+		baseURL = baseURL[:j]
+	}
+	return baseURL
+}
+
+func webhookHostIsLocal(hostPort string) bool {
+	host, _, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		host = hostPort
+	}
+	host = strings.ToLower(strings.TrimSpace(host))
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
+
+// MetadataString returns the first non-empty string metadata value for the keys.
 func MetadataString(raw json.RawMessage, keys ...string) string {
 	var data map[string]interface{}
 	if len(raw) == 0 || json.Unmarshal(raw, &data) != nil {

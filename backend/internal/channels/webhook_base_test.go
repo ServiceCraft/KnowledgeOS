@@ -8,9 +8,30 @@ import (
 )
 
 func TestWebhookDisplayBaseUsesRequestHostWhenPublicHTTPSUnknown(t *testing.T) {
+	got := WebhookDisplayBase("http://localhost:8080", "")
+	if got != "http://localhost:8080" {
+		t.Fatalf("WebhookDisplayBase() = %q, want local http base", got)
+	}
+}
+
+func TestWebhookDisplayBaseUpgradesPublicHTTPToHTTPS(t *testing.T) {
+	got := WebhookDisplayBase("http://staging.example.com", "")
+	if got != "https://staging.example.com" {
+		t.Fatalf("WebhookDisplayBase() = %q, want https public base", got)
+	}
+}
+
+func TestWebhookDisplayBaseKeepsCustomPortHTTP(t *testing.T) {
 	got := WebhookDisplayBase("http://staging.example.com:8081", "")
 	if got != "http://staging.example.com:8081" {
-		t.Fatalf("WebhookDisplayBase() = %q, want request host", got)
+		t.Fatalf("WebhookDisplayBase() = %q, want unchanged custom port", got)
+	}
+}
+
+func TestWebhookDisplayBaseUsesForwardedHTTPS(t *testing.T) {
+	got := WebhookDisplayBase("https://staging.example.com", "")
+	if got != "https://staging.example.com" {
+		t.Fatalf("WebhookDisplayBase() = %q, want https request base", got)
 	}
 }
 
