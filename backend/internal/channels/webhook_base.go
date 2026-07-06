@@ -22,7 +22,16 @@ func ResolveWebhookBaseURL(requestBase, configured string) string {
 	return ""
 }
 
-// MetadataString returns the first non-empty string metadata value for the keys.
+// WebhookDisplayBase picks the origin shown in admin UI for webhook URLs.
+// Configured PUBLIC_WEBHOOK_BASE_URL wins; otherwise the incoming request host
+// is used as-is (including http:// on staging), matching pre-registration UX.
+func WebhookDisplayBase(requestBase, configured string) string {
+	configured = strings.TrimRight(strings.TrimSpace(configured), "/")
+	if configured != "" && strings.HasPrefix(configured, "https://") {
+		return configured
+	}
+	return strings.TrimRight(strings.TrimSpace(requestBase), "/")
+}
 func MetadataString(raw json.RawMessage, keys ...string) string {
 	var data map[string]interface{}
 	if len(raw) == 0 || json.Unmarshal(raw, &data) != nil {

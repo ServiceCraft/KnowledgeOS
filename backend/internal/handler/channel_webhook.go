@@ -61,8 +61,9 @@ func (h *ChannelWebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 func (h *ChannelWebhookHandler) Status(w http.ResponseWriter, r *http.Request) {
 	applog.TraceCall(r.Context(), "handler.ChannelWebhookHandler.Status")
-	baseURL := h.webhookBaseURL(r)
-	statuses, err := h.gateway.Status(r.Context(), middleware.GetCompanyID(r.Context()), baseURL)
+	requestBase := requestBaseURL(r)
+	publicBase := h.webhookBaseURL(r)
+	statuses, err := h.gateway.Status(r.Context(), middleware.GetCompanyID(r.Context()), requestBase, publicBase)
 	if err != nil {
 		ServiceError(w, r, err)
 		return

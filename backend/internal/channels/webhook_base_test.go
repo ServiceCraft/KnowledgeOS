@@ -7,6 +7,20 @@ import (
 	"github.com/knowledgeos/backend/internal/domain"
 )
 
+func TestWebhookDisplayBaseUsesRequestHostWhenPublicHTTPSUnknown(t *testing.T) {
+	got := WebhookDisplayBase("http://staging.example.com:8081", "")
+	if got != "http://staging.example.com:8081" {
+		t.Fatalf("WebhookDisplayBase() = %q, want request host", got)
+	}
+}
+
+func TestWebhookDisplayBasePrefersConfiguredPublicHTTPS(t *testing.T) {
+	got := WebhookDisplayBase("http://staging.example.com:8081", "https://bot.example.com")
+	if got != "https://bot.example.com" {
+		t.Fatalf("WebhookDisplayBase() = %q, want configured public base", got)
+	}
+}
+
 func TestChannelRequiredFieldsComplete(t *testing.T) {
 	telegramMeta := json.RawMessage(`{"webhook_secret":"********"}`)
 	if !ChannelRequiredFieldsComplete(domain.ChatChannelTelegram, telegramMeta) {

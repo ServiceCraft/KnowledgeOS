@@ -304,7 +304,7 @@ func (g *Gateway) NotifyHandoff(ctx context.Context, companyID uuid.UUID, sessio
 	})
 }
 
-func (g *Gateway) Status(ctx context.Context, companyID uuid.UUID, baseURL string) ([]ChannelStatus, error) {
+func (g *Gateway) Status(ctx context.Context, companyID uuid.UUID, requestBaseURL, publicBaseURL string) ([]ChannelStatus, error) {
 	settings, err := g.settings.Get(ctx, companyID)
 	if err != nil {
 		return nil, err
@@ -330,7 +330,7 @@ func (g *Gateway) Status(ctx context.Context, companyID uuid.UUID, baseURL strin
 			v := secret.UpdatedAt.Format(time.RFC3339)
 			updatedAt = &v
 		}
-		webhookStatus := g.checkWebhook(ctx, companyID, adapter, secret, baseURL)
+		webhookStatus := g.checkWebhook(ctx, companyID, adapter, secret, publicBaseURL)
 		metadata := normalizeMetadata(secret.Metadata)
 		out = append(out, ChannelStatus{
 			Channel:           channel,
@@ -338,7 +338,7 @@ func (g *Gateway) Status(ctx context.Context, companyID uuid.UUID, baseURL strin
 			Configured:        secret.IsSet && ChannelRequiredFieldsComplete(channel, metadata),
 			Enabled:           settings.Enabled && channelEnabled(settings.EnabledModules, channel),
 			BotEnabled:        settings.Enabled,
-			WebhookURL:        webhookURL(baseURL, channel, companyID),
+			WebhookURL:        webhookURL(WebhookDisplayBase(requestBaseURL, publicBaseURL), channel, companyID),
 			WebhookConfigured: webhookStatus.Configured,
 			WebhookError:      webhookStatus.Error,
 			Metadata:          metadata,
