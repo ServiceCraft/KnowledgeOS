@@ -51,6 +51,17 @@ func Tenant(membership domain.UserMembershipReader, companies cache.Provider) fu
 			}
 
 			userID := GetUserID(r.Context())
+			// Reject access tokens issued before the user's company assignments
+			// changed so revoked access takes effect before the token expires.
+			currentVersion, err := membership.GetMembershipVersion(r.Context(), userID)
+			if err != nil {
+				respond.Error(w, http.StatusInternalServerError, "failed to validate session")
+				return
+			}
+			if currentVersion != claims.MembershipVersion {
+				respond.Error(w, http.StatusUnauthorized, "invalid token")
+				return
+			}
 			companyIDs, err := membership.GetCompanyIDs(r.Context(), userID)
 			if err != nil {
 				respond.Error(w, http.StatusInternalServerError, "failed to resolve user companies")

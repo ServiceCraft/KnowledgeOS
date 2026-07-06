@@ -303,6 +303,8 @@ export interface ChannelStatus {
   enabled: boolean;
   bot_enabled: boolean;
   webhook_url: string;
+  webhook_configured: boolean;
+  webhook_error?: string;
   metadata: Record<string, unknown>;
   updated_at?: string;
 }
@@ -329,3 +331,4 @@ export interface RagSearchResult {
   rewritten_query?: string;
   results: RagCandidate[];
 }
+

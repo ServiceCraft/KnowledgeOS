@@ -57,3 +57,20 @@ export function useDeleteBotSecret() {
     },
   });
 }
+
+export function useRegisterChannelWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (channel: string) => botAdminApi.registerWebhook(channel),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.botAdmin.channels });
+    },
+  });
+}
+
+export function useChannelSubscriptions() {
+  return useMutation({
+    mutationFn: (channel: string) => botAdminApi.getSubscriptions(channel),
+  });
+}
+

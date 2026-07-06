@@ -8,7 +8,7 @@ export const MODEL_TIER_LABELS: Record<BotSettings['model_tier'], string> = {
 };
 
 export const SECRET_LABELS: Record<SecretKind, string> = {
-  llm: 'API языковой модели',
+  llm: 'Yandex API',
   telegram: 'Telegram',
   max: 'MAX',
   vk: 'ВКонтакте',
@@ -23,7 +23,7 @@ export const CHANNEL_LABELS: Record<ChannelStatus['channel'], string> = {
 
 export const CHANNEL_METADATA_FIELDS: Record<
   ChannelStatus['channel'],
-  Array<{ key: string; label: string; placeholder?: string; hint: string }>
+  Array<{ key: string; label: string; placeholder?: string; hint: string; required?: boolean }>
 > = {
   telegram: [
     {
@@ -31,6 +31,7 @@ export const CHANNEL_METADATA_FIELDS: Record<
       label: 'Webhook secret token',
       placeholder: 'Секрет для X-Telegram-Bot-Api-Secret-Token',
       hint: 'Произвольная строка для проверки входящих webhook. Задайте её здесь и укажите тот же secret при регистрации webhook в Bot API (setWebhook). Telegram присылает её в заголовке X-Telegram-Bot-Api-Secret-Token.',
+      required: true,
     },
     {
       key: 'handoff_notification_chat_id',
@@ -45,6 +46,7 @@ export const CHANNEL_METADATA_FIELDS: Record<
       label: 'Webhook secret',
       placeholder: 'Секрет для X-Max-Bot-Api-Secret',
       hint: 'Секрет для проверки webhook MAX. Должен совпадать с тем, что указан при регистрации webhook у провайдера MAX.',
+      required: true,
     },
     {
       key: 'api_base',
@@ -65,12 +67,14 @@ export const CHANNEL_METADATA_FIELDS: Record<
       label: 'Callback secret',
       placeholder: 'Секрет Callback API',
       hint: 'Строка «Секретный ключ» из настроек Callback API сообщества VK → Управление → Работа с API.',
+      required: true,
     },
     {
       key: 'confirmation_token',
       label: 'Confirmation token',
       placeholder: 'Строка подтверждения VK',
       hint: 'Строка подтверждения, которую VK показывает при первичной настройке Callback API. Сервер должен вернуть её на confirmation-запрос.',
+      required: true,
     },
     {
       key: 'group_id',
@@ -96,7 +100,7 @@ export const CHANNEL_HINTS = {
   enabled:
     'Разрешает боту отвечать в этом канале. Требует включённого бота в основных настройках и сохранённого токена.',
   webhook:
-    'Публичный HTTPS-URL для приёма сообщений. Укажите его в кабинете Telegram / MAX / VK (Callback API). Должен быть доступен из интернета.',
+    'Публичный HTTPS-URL для приёма сообщений. Для Telegram сервер также сверяет текущий webhook в Bot API с этим адресом.',
   token: {
     telegram: 'Токен от @BotFather в Telegram: /newbot → скопируйте строку вида 123456789:AA....',
     max: 'Токен бота MAX из личного кабинета разработчика MAX Bot API.',
@@ -126,5 +130,11 @@ export const SETTING_HINTS = {
   citations: 'Требует ссылку на source_id из базы знаний в каждом ответе. Без цитаты — отказ или эскалация.',
 };
 
+// MASKED_SECRET_VALUE mirrors the backend sentinel used for sensitive metadata
+// (webhook secrets, callback secrets, confirmation tokens). It is display-only
+// and must never be persisted back as a real value.
+export const MASKED_SECRET_VALUE = '********';
+
 export const CHANNEL_SECRET_KINDS: SecretKind[] = ['telegram', 'max', 'vk'];
 export const SERVICE_SECRET_KINDS: SecretKind[] = ['llm', 'bitrix24'];
+

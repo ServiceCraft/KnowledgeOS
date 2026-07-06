@@ -1284,6 +1284,78 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/bot/channels/{channel}/webhook:
+    post:
+      tags: [Channels]
+      operationId: registerChannelWebhook
+      summary: Зарегистрировать webhook канала
+      description: |
+        Регистрирует (или перерегистрирует) webhook у провайдера канала, используя
+        сохранённый token и metadata. Поддерживается для Telegram и MAX. Возвращает
+        `registered=false`, если не заполнены обязательные поля для регистрации.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [telegram, max, vk]
+      responses:
+        '200':
+          description: Результат регистрации webhook.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      registered:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/bot/channels/{channel}/subscriptions:
+    get:
+      tags: [Channels]
+      operationId: getChannelSubscriptions
+      summary: Получить подписки/webhook канала
+      description: |
+        Возвращает «сырой» ответ провайдера о текущих подписках/webhook для
+        сохранённого token бота. Для Telegram это результат `getWebhookInfo`, для
+        MAX — ответ `GET /subscriptions`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [telegram, max, vk]
+      responses:
+        '200':
+          description: Ответ провайдера о подписках.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /admin/bot/rag/reindex:
     post:
       tags: [RAG]
@@ -2432,10 +2504,15 @@ components:
         metadata:
           type: object
           additionalProperties: true
+          description: >-
+            Публичная metadata секрета. Чувствительные ключи (webhook secret,
+            callback secret, confirmation token и т.п.) маскируются значением
+            `********` и не содержат реальных секретов. Отправлять `********`
+            обратно нельзя — сохранённое значение при этом не изменится.
         updated_at: { type: string, format: date-time }
     ChannelStatus:
       type: object
-      required: [channel, secret_kind, configured, enabled, bot_enabled, webhook_url, metadata]
+      required: [channel, secret_kind, configured, enabled, bot_enabled, webhook_url, webhook_configured, metadata]
       properties:
         channel:
           type: string
@@ -2447,9 +2524,14 @@ components:
         enabled: { type: boolean }
         bot_enabled: { type: boolean }
         webhook_url: { type: string }
+        webhook_configured: { type: boolean }
+        webhook_error: { type: string }
         metadata:
           type: object
           additionalProperties: true
+          description: >-
+            Публичная metadata канала. Чувствительные ключи маскируются значением
+            `********`; реальные секреты не возвращаются.
         updated_at: { type: string, format: date-time }
     KBEntityType:
       type: string

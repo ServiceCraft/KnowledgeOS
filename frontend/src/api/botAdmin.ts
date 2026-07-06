@@ -24,4 +24,11 @@ export const botAdminApi = {
     }).then((r) => r.data.data as TenantSecretStatus),
   deleteSecret: (kind: string) =>
     client.delete(`${base}/secrets/${kind}`),
+  registerWebhook: (channel: string) =>
+    client
+      .post(`${base}/channels/${channel}/webhook`)
+      .then((r) => r.data.data as { registered: boolean }),
+  getSubscriptions: (channel: string) =>
+    client.get(`${base}/channels/${channel}/subscriptions`).then((r) => r.data.data as unknown),
 };
+

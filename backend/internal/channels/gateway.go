@@ -5,16 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/domain"
+	applog "github.com/knowledgeos/backend/internal/logger"
 	"github.com/knowledgeos/backend/internal/service"
 	"gorm.io/gorm"
 )
+
+const asyncWebhookTimeout = 2 * time.Minute
 
 type chatService interface {
 	SendMessage(ctx context.Context, companyID, sessionID uuid.UUID, req service.SendChatMessageRequest) (*service.ChatExchange, error)
@@ -22,6 +24,12 @@ type chatService interface {
 
 type handoffService interface {
 	RecordInbound(ctx context.Context, companyID uuid.UUID, session *domain.ChatSession, content string) (*domain.ChatMessage, error)
+}
+
+type webhookDeduper interface {
+	StartChannelUpdate(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, updateID string) (bool, error)
+	MarkChannelUpdateDone(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, updateID string) error
+	MarkChannelUpdateFailed(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, updateID string, errMsg string) error
 }
 
 type settingsService interface {
@@ -43,14 +51,16 @@ type Gateway struct {
 }
 
 type ChannelStatus struct {
-	Channel    domain.ChatChannel `json:"channel"`
-	SecretKind domain.SecretKind  `json:"secret_kind"`
-	Configured bool               `json:"configured"`
-	Enabled    bool               `json:"enabled"`
-	BotEnabled bool               `json:"bot_enabled"`
-	WebhookURL string             `json:"webhook_url"`
-	Metadata   json.RawMessage    `json:"metadata"`
-	UpdatedAt  *string            `json:"updated_at,omitempty"`
+	Channel           domain.ChatChannel `json:"channel"`
+	SecretKind        domain.SecretKind  `json:"secret_kind"`
+	Configured        bool               `json:"configured"`
+	Enabled           bool               `json:"enabled"`
+	BotEnabled        bool               `json:"bot_enabled"`
+	WebhookURL        string             `json:"webhook_url"`
+	WebhookConfigured bool               `json:"webhook_configured"`
+	WebhookError      string             `json:"webhook_error,omitempty"`
+	Metadata          json.RawMessage    `json:"metadata"`
+	UpdatedAt         *string            `json:"updated_at,omitempty"`
 }
 
 func NewGateway(chats domain.ChatRepository, chat chatService, settings settingsService, secrets secretService, adapters ...Adapter) *Gateway {
@@ -67,7 +77,7 @@ func (g *Gateway) SetHandoff(handoff handoffService) {
 	g.handoff = handoff
 }
 
-func (g *Gateway) EnsureWebhook(ctx context.Context, companyID uuid.UUID, kind domain.SecretKind, baseURL string) (bool, error) {
+func (g *Gateway) registerWebhook(ctx context.Context, companyID uuid.UUID, kind domain.SecretKind, baseURL string) (bool, error) {
 	adapter := g.adapterBySecretKind(kind)
 	if adapter == nil {
 		return false, nil
@@ -82,6 +92,35 @@ func (g *Gateway) EnsureWebhook(ctx context.Context, companyID uuid.UUID, kind d
 	}
 	cfg := ChannelConfig{Token: token, Metadata: metadata}
 	return adapter.RegisterWebhook(ctx, cfg, webhookURL(baseURL, adapter.Channel(), companyID))
+}
+
+// RegisterChannelWebhook (re)registers the webhook for a channel on demand,
+// e.g. when triggered from the admin UI. It returns whether the upstream
+// registration was actually performed (false when required fields are missing).
+func (g *Gateway) RegisterChannelWebhook(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, baseURL string) (bool, error) {
+	adapter, ok := g.adapters[channel]
+	if !ok {
+		return false, statusError(http.StatusBadRequest, "unsupported channel")
+	}
+	return g.registerWebhook(ctx, companyID, adapter.SecretKind(), baseURL)
+}
+
+// ListSubscriptions returns the raw subscriptions/webhook payload reported by the
+// channel provider for the stored bot token.
+func (g *Gateway) ListSubscriptions(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel) (json.RawMessage, error) {
+	adapter, ok := g.adapters[channel]
+	if !ok {
+		return nil, statusError(http.StatusBadRequest, "unsupported channel")
+	}
+	lister, ok := adapter.(WebhookSubscriptionsLister)
+	if !ok {
+		return nil, statusError(http.StatusBadRequest, "subscriptions are not supported for this channel")
+	}
+	token, metadata, err := g.secrets.GetPlaintextWithMetadata(ctx, companyID, adapter.SecretKind())
+	if err != nil {
+		return nil, err
+	}
+	return lister.ListSubscriptions(ctx, ChannelConfig{Token: token, Metadata: metadata})
 }
 
 func (g *Gateway) HandleWebhook(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, r WebhookRequest) (*WebhookResponse, error) {
@@ -102,7 +141,7 @@ func (g *Gateway) HandleWebhook(ctx context.Context, companyID uuid.UUID, channe
 		return immediate, nil
 	}
 	if inbound == nil || strings.TrimSpace(inbound.Text) == "" {
-		return okResponse(), nil
+		return successResponse(channel), nil
 	}
 	if inbound.Channel == "" {
 		inbound.Channel = channel
@@ -118,42 +157,95 @@ func (g *Gateway) HandleWebhook(ctx context.Context, companyID uuid.UUID, channe
 		return nil, err
 	}
 	if !settings.Enabled {
+		if shouldAckRejected(channel) {
+			if err := g.ackWebhookUpdate(ctx, companyID, channel, inbound.UpdateID); err != nil {
+				return nil, err
+			}
+			return successResponse(channel), nil
+		}
 		return nil, statusError(http.StatusConflict, "bot is disabled")
 	}
 	if !channelEnabled(settings.EnabledModules, channel) {
+		if shouldAckRejected(channel) {
+			if err := g.ackWebhookUpdate(ctx, companyID, channel, inbound.UpdateID); err != nil {
+				return nil, err
+			}
+			return successResponse(channel), nil
+		}
 		return nil, statusError(http.StatusConflict, "channel is disabled")
 	}
-	session, err := g.getOrCreateSession(ctx, companyID, channel, inbound.ExternalChatID)
+	// Claim the update for processing. The event is only marked 'done' after the
+	// reply is delivered, so a transient failure leaves it reclaimable and the
+	// next provider retry can reprocess instead of being dropped as a duplicate.
+	shouldProcess, err := g.startWebhookUpdate(ctx, companyID, channel, inbound.UpdateID)
 	if err != nil {
 		return nil, err
 	}
+	if !shouldProcess {
+		return successResponse(channel), nil
+	}
+	session, err := g.getOrCreateSession(ctx, companyID, channel, inbound.ExternalChatID)
+	if err != nil {
+		g.markWebhookFailed(ctx, companyID, channel, inbound.UpdateID, err)
+		return nil, err
+	}
+	if shouldAckBeforeProcessing(channel) {
+		g.processInboundAsync(companyID, channel, adapter, cfg, session, inbound)
+		return successResponse(channel), nil
+	}
+	if err := g.processInbound(ctx, companyID, adapter, cfg, session, inbound); err != nil {
+		g.markWebhookFailed(ctx, companyID, channel, inbound.UpdateID, err)
+		return nil, err
+	}
+	g.markWebhookDone(ctx, companyID, channel, inbound.UpdateID)
+	return successResponse(channel), nil
+}
+
+func (g *Gateway) processInboundAsync(companyID uuid.UUID, channel domain.ChatChannel, adapter Adapter, cfg ChannelConfig, session *domain.ChatSession, inbound *InboundMessage) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), asyncWebhookTimeout)
+		defer cancel()
+		if err := g.processInbound(ctx, companyID, adapter, cfg, session, inbound); err != nil {
+			g.markWebhookFailed(ctx, companyID, channel, inbound.UpdateID, err)
+			applog.From(ctx).Error().
+				Err(err).
+				Str("company_id", companyID.String()).
+				Str("channel", string(channel)).
+				Str("update_id", strings.TrimSpace(inbound.UpdateID)).
+				Msg("channel webhook async processing failed")
+			return
+		}
+		g.markWebhookDone(ctx, companyID, channel, inbound.UpdateID)
+	}()
+}
+
+func (g *Gateway) processInbound(ctx context.Context, companyID uuid.UUID, adapter Adapter, cfg ChannelConfig, session *domain.ChatSession, inbound *InboundMessage) error {
 	if session.State != domain.ChatStateBot {
 		if g.handoff != nil && (session.State == domain.ChatStateWaitingOperator || session.State == domain.ChatStateOperator) {
-			if _, err := g.handoff.RecordInbound(ctx, companyID, session, inbound.Text); err != nil {
-				return nil, err
-			}
+			_, err := g.handoff.RecordInbound(ctx, companyID, session, inbound.Text)
+			return err
 		}
-		return okResponse(), nil
+		return nil
 	}
 	_ = adapter.SendTyping(ctx, cfg, inbound.ExternalChatID)
 	exchange, err := g.chat.SendMessage(ctx, companyID, session.ID, service.SendChatMessageRequest{Content: inbound.Text})
 	if err != nil {
 		if service.HTTPStatus(err) == http.StatusConflict {
-			return okResponse(), nil
+			return nil
 		}
-		return nil, err
+		return err
 	}
 	if exchange == nil || exchange.Message == nil {
-		return okResponse(), nil
+		return nil
 	}
 	if err := adapter.SendMessage(ctx, cfg, OutboundMessage{
 		ExternalChatID: inbound.ExternalChatID,
 		Text:           exchange.Message.Content,
 		Sources:        exchange.Sources,
 	}); err != nil {
-		return nil, err
+		return err
 	}
-	return okResponse(), nil
+	return nil
 }
 
 func (g *Gateway) SendOperatorMessage(ctx context.Context, companyID uuid.UUID, session *domain.ChatSession, message *domain.ChatMessage) error {
@@ -225,18 +317,40 @@ func (g *Gateway) Status(ctx context.Context, companyID uuid.UUID, baseURL strin
 			v := secret.UpdatedAt.Format(time.RFC3339)
 			updatedAt = &v
 		}
+		webhookStatus := g.checkWebhook(ctx, companyID, adapter, secret, baseURL)
 		out = append(out, ChannelStatus{
-			Channel:    channel,
-			SecretKind: adapter.SecretKind(),
-			Configured: secret.IsSet,
-			Enabled:    settings.Enabled && channelEnabled(settings.EnabledModules, channel),
-			BotEnabled: settings.Enabled,
-			WebhookURL: webhookURL(baseURL, channel, companyID),
-			Metadata:   normalizeMetadata(secret.Metadata),
-			UpdatedAt:  updatedAt,
+			Channel:           channel,
+			SecretKind:        adapter.SecretKind(),
+			Configured:        secret.IsSet,
+			Enabled:           settings.Enabled && channelEnabled(settings.EnabledModules, channel),
+			BotEnabled:        settings.Enabled,
+			WebhookURL:        webhookURL(baseURL, channel, companyID),
+			WebhookConfigured: webhookStatus.Configured,
+			WebhookError:      webhookStatus.Error,
+			Metadata:          normalizeMetadata(secret.Metadata),
+			UpdatedAt:         updatedAt,
 		})
 	}
 	return out, nil
+}
+
+func (g *Gateway) checkWebhook(ctx context.Context, companyID uuid.UUID, adapter Adapter, secret domain.TenantSecretStatus, baseURL string) WebhookStatus {
+	if !secret.IsSet {
+		return WebhookStatus{Configured: false, Error: "Секрет канала не задан"}
+	}
+	checker, ok := adapter.(WebhookChecker)
+	if !ok {
+		return WebhookStatus{}
+	}
+	token, metadata, err := g.secrets.GetPlaintextWithMetadata(ctx, companyID, adapter.SecretKind())
+	if err != nil {
+		return WebhookStatus{Configured: false, Error: err.Error()}
+	}
+	status, err := checker.CheckWebhook(ctx, ChannelConfig{Token: token, Metadata: metadata}, webhookURL(baseURL, adapter.Channel(), companyID))
+	if err != nil && status.Error == "" {
+		status.Error = err.Error()
+	}
+	return status
 }
 
 func (g *Gateway) getOrCreateSession(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, externalChatID string) (*domain.ChatSession, error) {
@@ -259,6 +373,83 @@ func (g *Gateway) getOrCreateSession(ctx context.Context, companyID uuid.UUID, c
 		return nil, err
 	}
 	return session, nil
+}
+
+// startWebhookUpdate claims an inbound update for processing. When the store does
+// not support deduplication the update is always processed.
+func (g *Gateway) startWebhookUpdate(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, updateID string) (bool, error) {
+	updateID = strings.TrimSpace(updateID)
+	if updateID == "" {
+		return true, nil
+	}
+	deduper, ok := g.chats.(webhookDeduper)
+	if !ok {
+		return true, nil
+	}
+	return deduper.StartChannelUpdate(ctx, companyID, channel, updateID)
+}
+
+// markWebhookDone marks a claimed update as processed. Failures are logged but do
+// not affect the already-delivered reply.
+func (g *Gateway) markWebhookDone(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, updateID string) {
+	if strings.TrimSpace(updateID) == "" {
+		return
+	}
+	deduper, ok := g.chats.(webhookDeduper)
+	if !ok {
+		return
+	}
+	if err := deduper.MarkChannelUpdateDone(ctx, companyID, channel, updateID); err != nil {
+		applog.From(ctx).Warn().Err(err).
+			Str("company_id", companyID.String()).
+			Str("channel", string(channel)).
+			Msg("channel webhook mark done failed")
+	}
+}
+
+// markWebhookFailed records a processing failure so a later delivery can reclaim
+// the update instead of treating it as a processed duplicate.
+func (g *Gateway) markWebhookFailed(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, updateID string, cause error) {
+	if strings.TrimSpace(updateID) == "" {
+		return
+	}
+	deduper, ok := g.chats.(webhookDeduper)
+	if !ok {
+		return
+	}
+	msg := ""
+	if cause != nil {
+		msg = cause.Error()
+	}
+	if err := deduper.MarkChannelUpdateFailed(ctx, companyID, channel, updateID, msg); err != nil {
+		applog.From(ctx).Warn().Err(err).
+			Str("company_id", companyID.String()).
+			Str("channel", string(channel)).
+			Msg("channel webhook mark failed update error")
+	}
+}
+
+// ackWebhookUpdate claims and immediately marks an update done. It is used when a
+// webhook is accepted but intentionally not processed (bot/channel disabled) so a
+// retry is not reprocessed.
+func (g *Gateway) ackWebhookUpdate(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, updateID string) error {
+	shouldProcess, err := g.startWebhookUpdate(ctx, companyID, channel, updateID)
+	if err != nil {
+		return err
+	}
+	if !shouldProcess {
+		return nil
+	}
+	g.markWebhookDone(ctx, companyID, channel, updateID)
+	return nil
+}
+
+func shouldAckBeforeProcessing(channel domain.ChatChannel) bool {
+	return channel == domain.ChatChannelVK
+}
+
+func shouldAckRejected(channel domain.ChatChannel) bool {
+	return channel == domain.ChatChannelVK
 }
 
 func (g *Gateway) adapterBySecretKind(kind domain.SecretKind) Adapter {
@@ -352,6 +543,13 @@ func normalizeMetadata(raw json.RawMessage) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	return raw
+}
+
+func successResponse(channel domain.ChatChannel) *WebhookResponse {
+	if channel == domain.ChatChannelVK {
+		return &WebhookResponse{Status: http.StatusOK, ContentType: "text/plain; charset=utf-8", Body: []byte("ok")}
+	}
+	return okResponse()
 }
 
 func okResponse() *WebhookResponse {

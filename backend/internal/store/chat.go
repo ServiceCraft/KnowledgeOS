@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 
 	applog "github.com/knowledgeos/backend/internal/logger"
 	"time"
@@ -142,6 +143,75 @@ func (s *ChatStore) GetSessionByExternal(ctx context.Context, companyID uuid.UUI
 		return nil, err
 	}
 	return &session, nil
+}
+
+// staleWebhookProcessingTTL bounds how long a webhook event may stay in the
+// 'processing' state before another delivery is allowed to reclaim it. It guards
+// against a crashed worker leaving an event stuck forever.
+const staleWebhookProcessingTTL = 5 * time.Minute
+
+// StartChannelUpdate claims a channel webhook update for processing. It returns
+// true when the caller should process the update (new event, previously failed,
+// or a stale 'processing' event) and false when the update is a duplicate that
+// is already done or actively being processed. An empty updateID cannot be
+// deduplicated, so it is always processed.
+func (s *ChatStore) StartChannelUpdate(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, updateID string) (bool, error) {
+	applog.TraceCall(ctx, "store.ChatStore.StartChannelUpdate")
+	updateID = strings.TrimSpace(updateID)
+	if updateID == "" {
+		return true, nil
+	}
+	staleCutoff := time.Now().Add(-staleWebhookProcessingTTL)
+	result := s.db.WithContext(ctx).Exec(
+		`INSERT INTO channel_webhook_events (company_id, channel, update_id, status, attempts, updated_at)
+		 VALUES (?, ?, ?, 'processing', 1, now())
+		 ON CONFLICT (company_id, channel, update_id) DO UPDATE SET
+		     status = 'processing',
+		     attempts = channel_webhook_events.attempts + 1,
+		     last_error = NULL,
+		     updated_at = now()
+		 WHERE channel_webhook_events.status = 'failed'
+		    OR (channel_webhook_events.status = 'processing' AND channel_webhook_events.updated_at < ?)`,
+		companyID, channel, updateID, staleCutoff,
+	)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+// MarkChannelUpdateDone marks a claimed webhook update as fully processed.
+func (s *ChatStore) MarkChannelUpdateDone(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, updateID string) error {
+	applog.TraceCall(ctx, "store.ChatStore.MarkChannelUpdateDone")
+	updateID = strings.TrimSpace(updateID)
+	if updateID == "" {
+		return nil
+	}
+	return s.db.WithContext(ctx).Exec(
+		`UPDATE channel_webhook_events
+		 SET status = 'done', processed_at = now(), last_error = NULL, updated_at = now()
+		 WHERE company_id = ? AND channel = ? AND update_id = ?`,
+		companyID, channel, updateID,
+	).Error
+}
+
+// MarkChannelUpdateFailed records that processing failed so a later delivery can
+// reclaim the update instead of treating it as a processed duplicate.
+func (s *ChatStore) MarkChannelUpdateFailed(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, updateID string, errMsg string) error {
+	applog.TraceCall(ctx, "store.ChatStore.MarkChannelUpdateFailed")
+	updateID = strings.TrimSpace(updateID)
+	if updateID == "" {
+		return nil
+	}
+	if len(errMsg) > 1000 {
+		errMsg = errMsg[:1000]
+	}
+	return s.db.WithContext(ctx).Exec(
+		`UPDATE channel_webhook_events
+		 SET status = 'failed', last_error = ?, updated_at = now()
+		 WHERE company_id = ? AND channel = ? AND update_id = ?`,
+		errMsg, companyID, channel, updateID,
+	).Error
 }
 
 // UpdateSession executes the store.ChatStore.UpdateSession operation.

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	applog "github.com/knowledgeos/backend/internal/logger"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -39,6 +40,9 @@ func (a *Adapter) RegisterWebhook(ctx context.Context, cfg channels.ChannelConfi
 	if registrationURL == "" || secret == "" || strings.TrimSpace(cfg.Token) == "" || strings.TrimSpace(webhookURL) == "" {
 		return false, nil
 	}
+	if err := channels.ValidateOutboundURL(registrationURL); err != nil {
+		return false, statusError(http.StatusBadRequest, "max webhook registration url is not allowed")
+	}
 	payload := map[string]interface{}{
 		"url":    webhookURL,
 		"secret": secret,
@@ -62,6 +66,44 @@ func (a *Adapter) RegisterWebhook(ctx context.Context, cfg channels.ChannelConfi
 		return false, statusError(http.StatusBadGateway, "max webhook registration failed")
 	}
 	return true, nil
+}
+
+const defaultSubscriptionsURL = "https://platform-api2.max.ru/subscriptions"
+
+// ListSubscriptions fetches the webhook subscriptions MAX has registered for the
+// bot token. It calls GET <subscriptions_url> with the bot token in the
+// Authorization header, mirroring the MAX platform API.
+func (a *Adapter) ListSubscriptions(ctx context.Context, cfg channels.ChannelConfig) (json.RawMessage, error) {
+	if strings.TrimSpace(cfg.Token) == "" {
+		return nil, statusError(http.StatusBadRequest, "Токен MAX не задан")
+	}
+	endpoint := metadataStringDefault(cfg.Metadata, "subscriptions_url", defaultSubscriptionsURL)
+	if err := channels.ValidateOutboundURL(endpoint); err != nil {
+		return nil, statusError(http.StatusBadRequest, "max subscriptions url is not allowed")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, applog.TraceErr(ctx, "max: build subscriptions request failed", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", cfg.Token)
+	resp, err := a.client.Do(req)
+	if err != nil {
+		_ = applog.TraceErr(ctx, "max: subscriptions request failed", err)
+		return nil, statusError(http.StatusBadGateway, "max subscriptions request failed")
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, applog.TraceErr(ctx, "max: read subscriptions response failed", err)
+	}
+	if resp.StatusCode >= 300 {
+		return nil, statusError(http.StatusBadGateway, "max subscriptions request failed")
+	}
+	if !json.Valid(data) {
+		return nil, statusError(http.StatusBadGateway, "max subscriptions response is not valid json")
+	}
+	return json.RawMessage(data), nil
 }
 
 func (a *Adapter) ParseInbound(r channels.WebhookRequest, cfg channels.ChannelConfig) (*channels.InboundMessage, *channels.WebhookResponse, error) {
@@ -138,6 +180,12 @@ func (a *Adapter) SendMessage(ctx context.Context, cfg channels.ChannelConfig, m
 	if endpoint == "" {
 		base := metadataStringDefault(cfg.Metadata, "api_base", "https://botapi.max.ru")
 		endpoint = strings.TrimRight(base, "/") + "/messages"
+	}
+	// Guard against SSRF: the endpoint is derived from tenant-controlled metadata
+	// and the bot token is attached as a query param, so it must be a public https
+	// target before we build or send the request.
+	if err := channels.ValidateOutboundURL(endpoint); err != nil {
+		return statusError(http.StatusBadRequest, "max api endpoint is not allowed")
 	}
 	u, err := url.Parse(endpoint)
 	if err != nil {

@@ -67,7 +67,7 @@ func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.svc.Create(r.Context(), h.actor(r), req)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusCreated, user)
@@ -90,7 +90,7 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.svc.Update(r.Context(), h.actor(r), id, req)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusOK, user)
@@ -106,7 +106,7 @@ func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.Delete(r.Context(), h.actor(r), id); err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -27,7 +27,7 @@ func (h *HandoffHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	sessions, total, err := h.svc.ListSessions(r.Context(), middleware.GetCompanyID(r.Context()), handoffActor(r), filter)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSONList(w, http.StatusOK, sessions, total)
@@ -37,7 +37,7 @@ func (h *HandoffHandler) Metrics(w http.ResponseWriter, r *http.Request) {
 	applog.TraceCall(r.Context(), "handler.HandoffHandler.Metrics")
 	metrics, err := h.svc.Metrics(r.Context(), middleware.GetCompanyID(r.Context()), handoffActor(r))
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusOK, metrics)
@@ -51,7 +51,7 @@ func (h *HandoffHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.svc.GetSession(r.Context(), middleware.GetCompanyID(r.Context()), handoffActor(r), sessionID)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusOK, result)
@@ -65,7 +65,7 @@ func (h *HandoffHandler) Claim(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := h.svc.Claim(r.Context(), middleware.GetCompanyID(r.Context()), handoffActor(r), sessionID)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusOK, session)
@@ -84,7 +84,7 @@ func (h *HandoffHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	message, err := h.svc.SendOperatorMessage(r.Context(), middleware.GetCompanyID(r.Context()), handoffActor(r), sessionID, req)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusCreated, message)
@@ -98,7 +98,7 @@ func (h *HandoffHandler) Release(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := h.svc.ReleaseToBot(r.Context(), middleware.GetCompanyID(r.Context()), handoffActor(r), sessionID)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusOK, session)
@@ -112,7 +112,7 @@ func (h *HandoffHandler) Close(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := h.svc.Close(r.Context(), middleware.GetCompanyID(r.Context()), handoffActor(r), sessionID)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusOK, session)
@@ -131,7 +131,7 @@ func (h *HandoffHandler) Escalate(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := h.svc.Escalate(r.Context(), middleware.GetCompanyID(r.Context()), sessionID, req.Reason)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusOK, session)

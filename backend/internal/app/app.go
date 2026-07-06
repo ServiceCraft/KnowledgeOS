@@ -2,9 +2,13 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -121,13 +125,17 @@ func New(cfg *config.Config) (*App, error) {
 		tools.NewRequestHandoffTool(),
 	)
 	chatSvc := service.NewChatService(chatStore, botSettingsSvc, retrieverSvc, llmFactory, chatTools, cfg.BotChatDebugLog)
+	maxClient, err := maxHTTPClient(cfg)
+	if err != nil {
+		return nil, err
+	}
 	channelGateway := channels.NewGateway(
 		chatStore,
 		chatSvc,
 		botSettingsSvc,
 		tenantSecretSvc,
 		telegram.New(nil),
-		channelmax.New(nil),
+		channelmax.New(maxClient),
 		vk.New(nil),
 	)
 	handoffSvc := service.NewHandoffService(chatStore, botSettingsSvc, channelGateway, channelGateway)
@@ -166,7 +174,7 @@ func New(cfg *config.Config) (*App, error) {
 		User:     handler.NewUserHandler(userSvc),
 		Call:     handler.NewCallHandler(callSvc),
 		Backup:   handler.NewBackupHandler(snapshotSvc),
-		Bot:      handler.NewBotHandlerWithChannels(botSettingsSvc, tenantSecretSvc, channelGateway),
+		Bot:      handler.NewBotHandler(botSettingsSvc, tenantSecretSvc),
 		RAG:      handler.NewRAGHandler(ragIndexerSvc, retrieverSvc),
 		Chat:     handler.NewChatHandler(chatSvc),
 		Handoff:  handler.NewHandoffHandler(handoffSvc),
@@ -238,6 +246,42 @@ func (a *App) Run() error {
 	}
 	log.Info().Msg("knowledgeos api stopped")
 	return nil
+}
+
+func maxHTTPClient(cfg *config.Config) (*http.Client, error) {
+	if cfg.MaxInsecureTLS {
+		log.Warn().Msg("MAX_INSECURE_SKIP_VERIFY enabled: MAX TLS certificate verification is disabled")
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		return &http.Client{Timeout: 10 * time.Second, Transport: transport}, nil
+	}
+	pemData := []byte(strings.TrimSpace(strings.ReplaceAll(cfg.MaxExtraCACertPEM, `\n`, "\n")))
+	if path := strings.TrimSpace(cfg.MaxExtraCACertFile); path != "" {
+		fileData, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("load MAX extra CA certificate file: %w", err)
+		}
+		if len(pemData) > 0 {
+			pemData = append(pemData, '\n')
+		}
+		pemData = append(pemData, fileData...)
+	}
+	if strings.TrimSpace(string(pemData)) == "" {
+		return nil, nil
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("load system CA certificate pool: %w", err)
+	}
+	if pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(pemData) {
+		return nil, fmt.Errorf("load MAX extra CA certificate: no valid PEM certificates")
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{RootCAs: pool}
+	return &http.Client{Timeout: 10 * time.Second, Transport: transport}, nil
 }
 
 func bootstrapSuperadmin(cfg *config.Config, companies *store.CompanyStore, users *store.UserStore, syncRepo *store.SyncStore) {

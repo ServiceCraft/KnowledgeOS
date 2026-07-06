@@ -38,6 +38,22 @@ type OutboundMessage struct {
 	Sources        []domain.ChatSource
 }
 
+type WebhookStatus struct {
+	Configured bool
+	Error      string
+}
+
+type WebhookChecker interface {
+	CheckWebhook(ctx context.Context, cfg ChannelConfig, webhookURL string) (WebhookStatus, error)
+}
+
+// WebhookSubscriptionsLister returns the raw subscription/webhook payload the
+// upstream provider reports for the bot token. It is used to let admins inspect
+// which webhooks are currently registered for a channel.
+type WebhookSubscriptionsLister interface {
+	ListSubscriptions(ctx context.Context, cfg ChannelConfig) (json.RawMessage, error)
+}
+
 type Adapter interface {
 	Channel() domain.ChatChannel
 	SecretKind() domain.SecretKind

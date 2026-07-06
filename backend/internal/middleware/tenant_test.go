@@ -13,6 +13,37 @@ import (
 	"github.com/knowledgeos/backend/internal/testutil"
 )
 
+func TestTenantMiddlewareRejectsStaleMembershipVersion(t *testing.T) {
+	userID := uuid.New()
+	companyA := uuid.New()
+	// Server-side version is 2 (membership changed since the token was issued).
+	user := &domain.User{BaseModel: domain.BaseModel{ID: userID}, Role: domain.RoleAdmin, MembershipVersion: 2}
+	membership := testutil.NewFakeUserRepo(user)
+	membership.CompanyIDs[userID] = []uuid.UUID{companyA}
+	cacheProvider := cache.NewMemoryProvider(&testutil.FakeCompanyChecker{}, 0, 0)
+
+	called := false
+	handler := Tenant(membership, cacheProvider)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/qa", nil)
+	req = req.WithContext(SetClaims(req.Context(), &auth.Claims{
+		RegisteredClaims:  jwt.RegisteredClaims{Subject: userID.String()},
+		Role:              domain.RoleAdmin,
+		MembershipVersion: 1, // stale
+	}))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+	if called {
+		t.Fatalf("handler should not run for stale membership version")
+	}
+}
+
 func TestTenantMiddleware(t *testing.T) {
 	companyA := uuid.New()
 	companyB := uuid.New()

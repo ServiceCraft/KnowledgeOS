@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	applog "github.com/knowledgeos/backend/internal/logger"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -16,6 +17,10 @@ import (
 	"github.com/knowledgeos/backend/internal/domain"
 	"github.com/knowledgeos/backend/internal/service"
 )
+
+// maxVKResponseBytes caps how much of the VK API response we buffer to inspect
+// for the error object.
+const maxVKResponseBytes = 64 << 10
 
 type Adapter struct {
 	client *http.Client
@@ -39,6 +44,9 @@ func (a *Adapter) RegisterWebhook(ctx context.Context, cfg channels.ChannelConfi
 	confirmation := metadataString(cfg.Metadata, "confirmation_token")
 	if registrationURL == "" || secret == "" || confirmation == "" || strings.TrimSpace(cfg.Token) == "" || strings.TrimSpace(webhookURL) == "" {
 		return false, nil
+	}
+	if err := channels.ValidateOutboundURL(registrationURL); err != nil {
+		return false, statusError(http.StatusBadRequest, "vk webhook registration url is not allowed")
 	}
 	payload := map[string]interface{}{
 		"url":                webhookURL,
@@ -68,6 +76,7 @@ func (a *Adapter) RegisterWebhook(ctx context.Context, cfg channels.ChannelConfi
 
 func (a *Adapter) ParseInbound(r channels.WebhookRequest, cfg channels.ChannelConfig) (*channels.InboundMessage, *channels.WebhookResponse, error) {
 	var update struct {
+		EventID string `json:"event_id"`
 		Type    string `json:"type"`
 		Secret  string `json:"secret"`
 		GroupID int64  `json:"group_id"`
@@ -104,10 +113,14 @@ func (a *Adapter) ParseInbound(r channels.WebhookRequest, cfg channels.ChannelCo
 	if peerID == 0 {
 		peerID = update.Object.Message.FromID
 	}
+	updateID := strings.TrimSpace(update.EventID)
+	if updateID == "" && update.Object.Message.ID != 0 {
+		updateID = strconv.FormatInt(update.Object.Message.ID, 10)
+	}
 	return &channels.InboundMessage{
 		Channel:        domain.ChatChannelVK,
 		ExternalChatID: strconv.FormatInt(peerID, 10),
-		UpdateID:       strconv.FormatInt(update.Object.Message.ID, 10),
+		UpdateID:       updateID,
 		Text:           update.Object.Message.Text,
 	}, nil, nil
 }
@@ -138,6 +151,29 @@ func (a *Adapter) SendMessage(ctx context.Context, cfg channels.ChannelConfig, m
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
+		return statusError(http.StatusBadGateway, "vk api request failed")
+	}
+	// VK returns HTTP 200 even for API errors, carrying an `error` object in the
+	// JSON body. Treat those as delivery failures instead of silent success.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxVKResponseBytes))
+	if err != nil {
+		return applog.TraceErr(ctx, "vk: read response failed", err)
+	}
+	var parsed struct {
+		Error *struct {
+			ErrorCode int    `json:"error_code"`
+			ErrorMsg  string `json:"error_msg"`
+		} `json:"error"`
+		Response json.RawMessage `json:"response"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return statusError(http.StatusBadGateway, "vk api returned unparseable response")
+	}
+	if parsed.Error != nil {
+		applog.From(ctx).Error().
+			Int("vk_error_code", parsed.Error.ErrorCode).
+			Str("vk_error_msg", parsed.Error.ErrorMsg).
+			Msg("vk messages.send returned api error")
 		return statusError(http.StatusBadGateway, "vk api request failed")
 	}
 	return nil

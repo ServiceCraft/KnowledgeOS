@@ -262,11 +262,13 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, strea
 				return nil, err
 			}
 		}
+		// Never log request bodies: they contain prompts, RAG context and user
+		// messages. Only structural metadata is safe to emit.
 		applog.From(ctx).Debug().
 			Str("method", method).
 			Str("path", path).
 			Int("attempt", attempt+1).
-			Str("request_body", truncateForLog(body)).
+			Int("body_size", len(body)).
 			Msg("yandex http request")
 
 		httpReq, err := http.NewRequestWithContext(ctx, method, c.cfg.Endpoint+path, bytes.NewReader(body))
@@ -309,7 +311,6 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, strea
 					Str("path", path).
 					Int("status", resp.StatusCode).
 					Int("attempt", attempt+1).
-					Str("response_body", "<stream>").
 					Msg("yandex http request succeeded")
 				return resp, nil
 			}
@@ -318,12 +319,13 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, strea
 			if readErr != nil {
 				return nil, fmt.Errorf("read yandex response: %w", readErr)
 			}
+			// Response bodies contain generated content; log only the size.
 			applog.From(ctx).Debug().
 				Str("method", method).
 				Str("path", path).
 				Int("status", resp.StatusCode).
 				Int("attempt", attempt+1).
-				Str("response_body", truncateForLog(respBody)).
+				Int("body_size", len(respBody)).
 				Msg("yandex http request succeeded")
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			return resp, nil
@@ -338,14 +340,15 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, strea
 		if !retryableStatus(resp.StatusCode) {
 			event = log.Error().Err(lastErr)
 		}
+		// Do not log request/response bodies here either; the upstream error text
+		// is carried in lastErr for server-side diagnostics only.
 		event.
 			Str("method", method).
 			Str("path", path).
 			Int("status", resp.StatusCode).
 			Int("attempt", attempt+1).
 			Bool("retryable", retryableStatus(resp.StatusCode)).
-			Str("request_body", truncateForLog(body)).
-			Str("response_body", respLog).
+			Int("body_size", len(body)).
 			Msg("yandex http request returned non-success status")
 		if !retryableStatus(resp.StatusCode) {
 			return nil, lastErr

@@ -33,7 +33,7 @@ func (h *ChatHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := h.svc.CreateSession(r.Context(), middleware.GetCompanyID(r.Context()), req)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusCreated, session)
@@ -47,7 +47,7 @@ func (h *ChatHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 		Limit: intQuery(r, "limit", 30),
 	})
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSONList(w, http.StatusOK, sessions, total)
@@ -62,7 +62,7 @@ func (h *ChatHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.svc.GetSession(r.Context(), middleware.GetCompanyID(r.Context()), sessionID)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusOK, result)
@@ -82,7 +82,7 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.svc.SendMessage(r.Context(), middleware.GetCompanyID(r.Context()), sessionID, req)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusOK, result)

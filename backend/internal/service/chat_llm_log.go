@@ -9,7 +9,21 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/llm"
+	"github.com/knowledgeos/backend/internal/privacy"
 )
+
+// maxDebugLogField bounds the size of any single debug field emitted by the
+// explicitly-opt-in BOT_CHAT_DEBUG_LOG mode.
+const maxDebugLogField = 2000
+
+// safeDebugField redacts PII and truncates a value for the debug log mode.
+func safeDebugField(s string) string {
+	s = privacy.Redact(s)
+	if len(s) > maxDebugLogField {
+		return s[:maxDebugLogField] + "...(truncated)"
+	}
+	return s
+}
 
 func (s *ChatService) logLLMExchange(
 	ctx context.Context,
@@ -30,14 +44,14 @@ func (s *ChatService) logLLMExchange(
 
 	if len(messages) > 0 {
 		if messages[0].Role == llm.RoleSystem {
-			event = event.Str("system_prompt", messages[0].Content)
+			event = event.Str("system_prompt", safeDebugField(messages[0].Content))
 		}
 		if encoded, err := json.Marshal(messages); err == nil {
-			event = event.RawJSON("llm_messages", encoded)
+			event = event.Str("llm_messages", safeDebugField(string(encoded)))
 		}
 	}
 	if response != "" {
-		event = event.Str("llm_response", response)
+		event = event.Str("llm_response", safeDebugField(response))
 	}
 	if len(toolCalls) > 0 {
 		names := make([]string, 0, len(toolCalls))

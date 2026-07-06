@@ -19,6 +19,16 @@ func (s *UserStore) GetCompanyIDs(ctx context.Context, userID uuid.UUID) ([]uuid
 	return ids, err
 }
 
+// GetMembershipVersion returns the user's current membership version.
+func (s *UserStore) GetMembershipVersion(ctx context.Context, userID uuid.UUID) (int, error) {
+	applog.TraceCall(ctx, "store.UserStore.GetMembershipVersion")
+	var version int
+	err := s.db.WithContext(ctx).Model(&domain.User{}).
+		Where("id = ?", userID).
+		Pluck("membership_version", &version).Error
+	return version, err
+}
+
 // SetCompanyIDs replaces all company assignments for the user.
 func (s *UserStore) SetCompanyIDs(ctx context.Context, userID uuid.UUID, companyIDs []uuid.UUID) error {
 	applog.TraceCall(ctx, "store.UserStore.SetCompanyIDs")

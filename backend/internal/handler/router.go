@@ -77,7 +77,18 @@ func NewRouter(deps RouterDeps) *chi.Mux {
 			r.Post("/auth/login", h.Auth.Login)
 			r.Post("/auth/refresh", h.Auth.Refresh)
 		})
-		r.Post("/webhooks/{channel}/{company_id}", h.Channels.Handle)
+		r.Group(func(r chi.Router) {
+			// Public webhook endpoint: limit per source IP and per target path
+			// (company + channel) so a single tenant/IP cannot flood the pipeline.
+			r.Use(httprate.Limit(
+				120,
+				time.Minute,
+				httprate.WithKeyFuncs(httprate.KeyByIP, func(req *http.Request) (string, error) {
+					return req.URL.Path, nil
+				}),
+			))
+			r.Post("/webhooks/{channel}/{company_id}", h.Channels.Handle)
+		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.JWTAuth(deps.JWT))
@@ -172,6 +183,8 @@ func NewRouter(deps RouterDeps) *chi.Mux {
 				r.Put("/admin/bot/secrets/{kind}", h.Bot.SetSecret)
 				r.Delete("/admin/bot/secrets/{kind}", h.Bot.DeleteSecret)
 				r.Get("/admin/bot/channels/status", h.Channels.Status)
+				r.Post("/admin/bot/channels/{channel}/webhook", h.Channels.RegisterWebhook)
+				r.Get("/admin/bot/channels/{channel}/subscriptions", h.Channels.Subscriptions)
 				r.Post("/admin/bot/rag/reindex", h.RAG.Reindex)
 				r.Get("/admin/bot/rag/index-status", h.RAG.Status)
 				r.Post("/admin/bot/rag/search", h.RAG.Search)

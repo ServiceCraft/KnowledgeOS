@@ -11,7 +11,6 @@ import (
 	"github.com/knowledgeos/backend/internal/domain"
 	applog "github.com/knowledgeos/backend/internal/logger"
 	"github.com/knowledgeos/backend/internal/middleware"
-	"github.com/knowledgeos/backend/internal/service"
 )
 
 const channelWebhookMaxBody = 1 << 20
@@ -30,6 +29,13 @@ func (h *ChannelWebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if retryCounter := strings.TrimSpace(r.Header.Get("X-Retry-Counter")); retryCounter != "" {
+		applog.From(r.Context()).Warn().
+			Str("channel", string(channel)).
+			Str("company_id", companyID.String()).
+			Str("retry_counter", retryCounter).
+			Msg("channel webhook retry received")
+	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, channelWebhookMaxBody))
 	if err != nil {
 		Error(w, http.StatusBadRequest, "invalid webhook body")
@@ -42,7 +48,7 @@ func (h *ChannelWebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		Query:   r.URL.Query(),
 	})
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	writeWebhookResponse(w, response)
@@ -53,10 +59,55 @@ func (h *ChannelWebhookHandler) Status(w http.ResponseWriter, r *http.Request) {
 	baseURL := requestBaseURL(r)
 	statuses, err := h.gateway.Status(r.Context(), middleware.GetCompanyID(r.Context()), baseURL)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusOK, statuses)
+}
+
+// RegisterWebhook (re)registers the webhook for a channel using the stored
+// secret and metadata. Triggered from the admin UI.
+func (h *ChannelWebhookHandler) RegisterWebhook(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.ChannelWebhookHandler.RegisterWebhook")
+	channel, ok := adminChannelParam(w, r)
+	if !ok {
+		return
+	}
+	companyID := middleware.GetCompanyID(r.Context())
+	registered, err := h.gateway.RegisterChannelWebhook(r.Context(), companyID, channel, requestBaseURL(r))
+	if err != nil {
+		ServiceError(w, r, err)
+		return
+	}
+	JSON(w, http.StatusOK, map[string]bool{"registered": registered})
+}
+
+// Subscriptions returns the raw subscriptions/webhook payload the channel
+// provider reports for the stored bot token.
+func (h *ChannelWebhookHandler) Subscriptions(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.ChannelWebhookHandler.Subscriptions")
+	channel, ok := adminChannelParam(w, r)
+	if !ok {
+		return
+	}
+	companyID := middleware.GetCompanyID(r.Context())
+	payload, err := h.gateway.ListSubscriptions(r.Context(), companyID, channel)
+	if err != nil {
+		ServiceError(w, r, err)
+		return
+	}
+	JSON(w, http.StatusOK, payload)
+}
+
+func adminChannelParam(w http.ResponseWriter, r *http.Request) (domain.ChatChannel, bool) {
+	channel := domain.ChatChannel(chi.URLParam(r, "channel"))
+	switch channel {
+	case domain.ChatChannelTelegram, domain.ChatChannelMAX, domain.ChatChannelVK:
+		return channel, true
+	default:
+		Error(w, http.StatusBadRequest, "invalid channel")
+		return "", false
+	}
 }
 
 func channelRouteParams(w http.ResponseWriter, r *http.Request) (uuid.UUID, domain.ChatChannel, bool) {

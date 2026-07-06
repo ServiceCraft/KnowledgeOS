@@ -2,12 +2,20 @@ package config
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/knowledgeos/backend/internal/logger"
 	"github.com/sethvargo/go-envconfig"
 )
+
+// minJWTSecretLength is the minimum acceptable JWT secret length (bytes) for
+// non-local profiles.
+const minJWTSecretLength = 32
 
 type Config struct {
 	PostgresHost     string `env:"POSTGRES_HOST, default=localhost"`
@@ -61,6 +69,10 @@ type Config struct {
 	RAGHybridTopK                int  `env:"RAG_HYBRID_TOP_K, default=8"`
 
 	BotChatDebugLog bool `env:"BOT_CHAT_DEBUG_LOG, default=false"`
+
+	MaxExtraCACertFile string `env:"MAX_EXTRA_CA_CERT_FILE"`
+	MaxExtraCACertPEM  string `env:"MAX_EXTRA_CA_CERT_PEM"`
+	MaxInsecureTLS     bool   `env:"MAX_INSECURE_SKIP_VERIFY, default=false"`
 }
 
 // DSN returns the PostgreSQL connection string.
@@ -124,5 +136,33 @@ func Load() *Config {
 	if cfg.LogFormat == "" {
 		cfg.LogFormat = logger.DefaultFormat()
 	}
+	cfg.validateJWTSecret()
 	return &cfg
+}
+
+// validateJWTSecret enforces a strong JWT secret outside local development. For
+// the local profile a missing secret is replaced with an ephemeral dev-only
+// value so the app still boots, but a warning is emitted.
+func (c *Config) validateJWTSecret() {
+	secret := strings.TrimSpace(c.JWTSecret)
+	isLocal := strings.EqualFold(strings.TrimSpace(c.AppProfile), "local")
+	if !isLocal {
+		if len(secret) < minJWTSecretLength {
+			panic(fmt.Sprintf(
+				"invalid configuration: JWT_SECRET must be set and at least %d characters for profile %q",
+				minJWTSecretLength, c.AppProfile,
+			))
+		}
+		return
+	}
+	if secret == "" {
+		raw := make([]byte, minJWTSecretLength)
+		if _, err := rand.Read(raw); err != nil {
+			panic(fmt.Sprintf("generate dev JWT secret: %v", err))
+		}
+		c.JWTSecret = hex.EncodeToString(raw)
+		fmt.Fprintln(os.Stderr,
+			"WARNING: JWT_SECRET is empty; generated an ephemeral dev-only secret. "+
+				"Existing tokens will be invalid on restart. Set JWT_SECRET for stable sessions.")
+	}
 }

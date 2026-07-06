@@ -52,7 +52,7 @@ func (s *TenantSecretService) ListStatus(ctx context.Context, companyID uuid.UUI
 		if item, ok := byKind[kind]; ok {
 			updatedAt := item.UpdatedAt
 			status.IsSet = true
-			status.Metadata = normalizeJSONRaw(item.Metadata)
+			status.Metadata = publicSecretMetadata(item.Metadata)
 			status.UpdatedAt = &updatedAt
 		}
 		statuses = append(statuses, status)
@@ -78,6 +78,18 @@ func (s *TenantSecretService) Set(ctx context.Context, companyID uuid.UUID, kind
 		return nil, badRequest("SECRETS_ENCRYPTION_KEY is not configured")
 	}
 	metadata, err := normalizeJSONObject(req.Metadata)
+	if err != nil {
+		return nil, badRequest("metadata must be a JSON object")
+	}
+	// Preserve existing sensitive metadata when the client sends the masked
+	// sentinel or omits a sensitive key, so unrelated edits do not wipe secrets.
+	var existingMetadata json.RawMessage
+	if existing, getErr := s.secrets.Get(ctx, companyID, kind); getErr == nil {
+		existingMetadata = existing.Metadata
+	} else if !errors.Is(getErr, gorm.ErrRecordNotFound) {
+		return nil, getErr
+	}
+	metadata, err = mergeSecretMetadata(metadata, existingMetadata)
 	if err != nil {
 		return nil, badRequest("metadata must be a JSON object")
 	}
@@ -197,7 +209,7 @@ func secretStatus(secret *domain.TenantSecret) *domain.TenantSecretStatus {
 	return &domain.TenantSecretStatus{
 		Kind:      secret.Kind,
 		IsSet:     true,
-		Metadata:  normalizeJSONRaw(secret.Metadata),
+		Metadata:  publicSecretMetadata(secret.Metadata),
 		UpdatedAt: &updatedAt,
 	}
 }
@@ -207,4 +219,90 @@ func normalizeJSONRaw(raw json.RawMessage) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	return raw
+}
+
+// MaskedSecretValue is returned for sensitive metadata keys so the UI can show
+// that a value is configured without exposing the real secret. Clients must not
+// persist this sentinel back as a real value.
+const MaskedSecretValue = "********"
+
+// publicSecretMetadata returns metadata safe to expose to API clients: sensitive
+// keys (webhook secrets, callback secrets, confirmation tokens, etc.) are
+// replaced with MaskedSecretValue while non-sensitive config (URLs, chat IDs,
+// group IDs) is preserved. Internal callers that need the real values must use
+// GetPlaintextWithMetadata instead.
+func publicSecretMetadata(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		// Not a JSON object we can inspect; drop it rather than risk leaking.
+		return json.RawMessage(`{}`)
+	}
+	for key := range fields {
+		if isSensitiveMetadataKey(key) {
+			masked, _ := json.Marshal(MaskedSecretValue)
+			fields[key] = masked
+		}
+	}
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return out
+}
+
+// mergeSecretMetadata combines client-supplied metadata with the currently
+// stored metadata. Non-sensitive keys are taken from the incoming payload (so
+// they can be updated or cleared). Sensitive keys retain their existing stored
+// value when the client sends the masked sentinel or omits them, and are dropped
+// entirely if masked with no prior value to restore.
+func mergeSecretMetadata(incoming, existing json.RawMessage) (json.RawMessage, error) {
+	inMap := map[string]json.RawMessage{}
+	if len(incoming) > 0 {
+		if err := json.Unmarshal(incoming, &inMap); err != nil {
+			return nil, err
+		}
+	}
+	exMap := map[string]json.RawMessage{}
+	if len(existing) > 0 {
+		_ = json.Unmarshal(existing, &exMap)
+	}
+	for key, exVal := range exMap {
+		if !isSensitiveMetadataKey(key) {
+			continue
+		}
+		if inVal, ok := inMap[key]; !ok || isMaskedRawValue(inVal) {
+			inMap[key] = exVal
+		}
+	}
+	for key, inVal := range inMap {
+		if isSensitiveMetadataKey(key) && isMaskedRawValue(inVal) {
+			delete(inMap, key)
+		}
+	}
+	out, err := json.Marshal(inMap)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func isMaskedRawValue(raw json.RawMessage) bool {
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return false
+	}
+	return s == MaskedSecretValue
+}
+
+func isSensitiveMetadataKey(key string) bool {
+	lower := strings.ToLower(strings.TrimSpace(key))
+	for _, marker := range []string{"secret", "password", "token", "api_key", "access_key", "private"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }

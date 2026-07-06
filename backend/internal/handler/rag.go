@@ -26,7 +26,7 @@ func (h *RAGHandler) Reindex(w http.ResponseWriter, r *http.Request) {
 	applog.TraceCall(r.Context(), "handler.RAGHandler.Reindex")
 	companyID := middleware.GetCompanyID(r.Context())
 	if err := h.indexer.ReindexCompany(r.Context(), companyID); err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
@@ -38,7 +38,7 @@ func (h *RAGHandler) Status(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
 	status, err := h.indexer.IndexStatus(r.Context(), companyID)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusOK, status)
@@ -88,7 +88,7 @@ func (h *RAGHandler) Search(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
 	result, err := h.retriever.Search(r.Context(), companyID, retrieveReq)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 	JSON(w, http.StatusOK, result)

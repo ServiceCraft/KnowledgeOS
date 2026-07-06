@@ -39,6 +39,58 @@ func TestRegisterWebhookCallsSetWebhook(t *testing.T) {
 	}
 }
 
+func TestCheckWebhookCallsGetWebhookInfo(t *testing.T) {
+	var calledURL string
+	adapter := New(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calledURL = req.URL.String()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ok":true,"result":{"url":"https://example.com/api/v1/webhooks/telegram/company"}}`)),
+			Header:     http.Header{},
+		}, nil
+	})})
+
+	status, err := adapter.CheckWebhook(
+		t.Context(),
+		channels.ChannelConfig{Token: "token"},
+		"https://example.com/api/v1/webhooks/telegram/company",
+	)
+	if err != nil {
+		t.Fatalf("CheckWebhook returned error: %v", err)
+	}
+	if !status.Configured || status.Error != "" {
+		t.Fatalf("unexpected status: %#v", status)
+	}
+	if !strings.Contains(calledURL, "/bottoken/getWebhookInfo") {
+		t.Fatalf("unexpected request URL: %s", calledURL)
+	}
+}
+
+func TestCheckWebhookMismatchDoesNotExposeURLs(t *testing.T) {
+	adapter := New(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ok":true,"result":{"url":"https://other.example.com/hook"}}`)),
+			Header:     http.Header{},
+		}, nil
+	})})
+
+	status, err := adapter.CheckWebhook(
+		t.Context(),
+		channels.ChannelConfig{Token: "token"},
+		"https://example.com/api/v1/webhooks/telegram/company",
+	)
+	if err != nil {
+		t.Fatalf("CheckWebhook returned error: %v", err)
+	}
+	if status.Configured {
+		t.Fatal("expected webhook to be reported as not configured")
+	}
+	if status.Error == "" || strings.Contains(status.Error, "https://") {
+		t.Fatalf("unexpected error text: %q", status.Error)
+	}
+}
+
 func TestParseInboundVerifiesSecretAndMapsMessage(t *testing.T) {
 	adapter := New(nil)
 	req := channels.WebhookRequest{

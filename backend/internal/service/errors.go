@@ -31,6 +31,29 @@ func HTTPStatus(err error) int {
 	return http.StatusInternalServerError
 }
 
+// SafeError returns the HTTP status and a client-safe message for err. Known
+// UserError/AuthError values carry curated, safe messages and are preserved;
+// any other error (an unexpected internal failure) is reduced to a generic
+// message so infrastructure details such as decrypt/DB/upstream text are not
+// leaked to clients.
+func SafeError(err error) (int, string) {
+	if err == nil {
+		return http.StatusOK, ""
+	}
+	var ue *UserError
+	if errors.As(err, &ue) {
+		return ue.Status, ue.Msg
+	}
+	var ae *AuthError
+	if errors.As(err, &ae) {
+		if ae.Status >= 500 {
+			return ae.Status, "internal server error"
+		}
+		return ae.Status, ae.Msg
+	}
+	return http.StatusInternalServerError, "internal server error"
+}
+
 // UserError carries an HTTP status so the handler can map service failures to
 // the right response code without leaking implementation details.
 type UserError struct {

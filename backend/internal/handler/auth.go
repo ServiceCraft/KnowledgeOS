@@ -28,7 +28,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	pair, err := h.svc.Login(r.Context(), req)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 
@@ -46,7 +46,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	pair, err := h.svc.Refresh(r.Context(), req)
 	if err != nil {
-		Error(w, service.HTTPStatus(err), err.Error())
+		ServiceError(w, r, err)
 		return
 	}
 

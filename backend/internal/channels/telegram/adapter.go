@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	applog "github.com/knowledgeos/backend/internal/logger"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -37,12 +38,55 @@ func (a *Adapter) RegisterWebhook(ctx context.Context, cfg channels.ChannelConfi
 	if secret == "" || strings.TrimSpace(cfg.Token) == "" || strings.TrimSpace(webhookURL) == "" {
 		return false, nil
 	}
-	return true, a.call(ctx, cfg.Token, "setWebhook", map[string]interface{}{
+	return true, a.registerWebhook(ctx, cfg.Token, webhookURL, secret)
+}
+
+func (a *Adapter) registerWebhook(ctx context.Context, token, webhookURL, secret string) error {
+	return a.call(ctx, token, "setWebhook", map[string]interface{}{
 		"url":                  webhookURL,
 		"secret_token":         secret,
 		"allowed_updates":      []string{"message"},
 		"drop_pending_updates": false,
 	})
+}
+
+func (a *Adapter) CheckWebhook(ctx context.Context, cfg channels.ChannelConfig, webhookURL string) (channels.WebhookStatus, error) {
+	expectedURL := strings.TrimRight(strings.TrimSpace(webhookURL), "/")
+	if strings.TrimSpace(cfg.Token) == "" {
+		return channels.WebhookStatus{Configured: false, Error: "Токен Telegram не задан"}, nil
+	}
+	if expectedURL == "" {
+		return channels.WebhookStatus{Configured: false, Error: "Адрес webhook на сервере не задан"}, nil
+	}
+	info, err := a.getWebhookInfo(ctx, cfg.Token)
+	if err != nil {
+		return channels.WebhookStatus{Configured: false, Error: "Не удалось проверить webhook в Telegram"}, err
+	}
+	actualURL := strings.TrimRight(strings.TrimSpace(info.URL), "/")
+	if actualURL == "" {
+		return channels.WebhookStatus{Configured: false, Error: "Webhook не зарегистрирован в Telegram"}, nil
+	}
+	if actualURL != expectedURL {
+		return channels.WebhookStatus{Configured: false, Error: "Webhook в Telegram настроен для другого адреса"}, nil
+	}
+	if strings.TrimSpace(info.LastErrorMessage) != "" {
+		return channels.WebhookStatus{Configured: false, Error: "Telegram сообщает об ошибке доставки: " + strings.TrimSpace(info.LastErrorMessage)}, nil
+	}
+	return channels.WebhookStatus{Configured: true}, nil
+}
+
+// ListSubscriptions returns the current webhook registration reported by the
+// Telegram Bot API (getWebhookInfo), which is Telegram's analogue of a
+// subscriptions list.
+func (a *Adapter) ListSubscriptions(ctx context.Context, cfg channels.ChannelConfig) (json.RawMessage, error) {
+	if strings.TrimSpace(cfg.Token) == "" {
+		return nil, statusError(http.StatusBadRequest, "Токен Telegram не задан")
+	}
+	data, err := a.callAPI(ctx, cfg.Token, "getWebhookInfo", map[string]interface{}{})
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(data), nil
 }
 
 func (a *Adapter) ParseInbound(r channels.WebhookRequest, cfg channels.ChannelConfig) (*channels.InboundMessage, *channels.WebhookResponse, error) {
@@ -101,24 +145,64 @@ func (a *Adapter) SendMessage(ctx context.Context, cfg channels.ChannelConfig, m
 }
 
 func (a *Adapter) call(ctx context.Context, token, method string, payload map[string]interface{}) error {
+	_, err := a.callAPI(ctx, token, method, payload)
+	return err
+}
+
+func (a *Adapter) getWebhookInfo(ctx context.Context, token string) (telegramWebhookInfo, error) {
+	data, err := a.callAPI(ctx, token, "getWebhookInfo", map[string]interface{}{})
+	if err != nil {
+		return telegramWebhookInfo{}, err
+	}
+	var resp struct {
+		OK          bool                `json:"ok"`
+		Result      telegramWebhookInfo `json:"result"`
+		Description string              `json:"description"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return telegramWebhookInfo{}, applog.TraceErr(ctx, "telegram: decode webhook info failed", err)
+	}
+	if !resp.OK {
+		return telegramWebhookInfo{}, statusError(http.StatusBadGateway, "telegram webhook check failed")
+	}
+	return resp.Result, nil
+}
+
+func (a *Adapter) callAPI(ctx context.Context, token, method string, payload map[string]interface{}) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return applog.TraceErr(ctx, "telegram: marshal request failed", err)
+		return nil, applog.TraceErr(ctx, "telegram: marshal request failed", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("https://api.telegram.org/bot%s/%s", token, method), bytes.NewReader(body))
 	if err != nil {
-		return applog.TraceErr(ctx, "telegram: build request failed", err)
+		return nil, applog.TraceErr(ctx, "telegram: build request failed", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return applog.TraceErr(ctx, "telegram: api request failed", err)
+		return nil, applog.TraceErr(ctx, "telegram: api request failed", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return statusError(http.StatusBadGateway, "telegram api request failed")
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, applog.TraceErr(ctx, "telegram: read response failed", err)
 	}
-	return nil
+	if resp.StatusCode >= 300 {
+		return nil, statusError(http.StatusBadGateway, "telegram api request failed")
+	}
+	var apiResp struct {
+		OK          *bool  `json:"ok"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(data, &apiResp); err == nil && apiResp.OK != nil && !*apiResp.OK {
+		return nil, statusError(http.StatusBadGateway, "telegram api request failed")
+	}
+	return data, nil
+}
+
+type telegramWebhookInfo struct {
+	URL              string `json:"url"`
+	LastErrorMessage string `json:"last_error_message"`
 }
 
 func metadataString(raw json.RawMessage, keys ...string) string {

@@ -59,6 +59,12 @@ func (r *FakeUserRepo) Delete(_ context.Context, id uuid.UUID) error   { delete(
 func (r *FakeUserRepo) GetCompanyIDs(_ context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 	return append([]uuid.UUID(nil), r.CompanyIDs[userID]...), nil
 }
+func (r *FakeUserRepo) GetMembershipVersion(_ context.Context, userID uuid.UUID) (int, error) {
+	if u, ok := r.ByID[userID]; ok {
+		return u.MembershipVersion, nil
+	}
+	return 0, nil
+}
 func (r *FakeUserRepo) SetCompanyIDs(_ context.Context, userID uuid.UUID, companyIDs []uuid.UUID) error {
 	r.CompanyIDs[userID] = append([]uuid.UUID(nil), companyIDs...)
 	return nil
