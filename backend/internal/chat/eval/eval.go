@@ -128,11 +128,11 @@ func (r Report) Markdown() string {
 	var b strings.Builder
 	b.WriteString("# Bot Guardrails Eval Report\n\n")
 	b.WriteString("## Метрики\n\n")
-	b.WriteString(fmt.Sprintf("- Всего кейсов: %d\n", r.Total))
-	b.WriteString(fmt.Sprintf("- Прошло: %d / %d\n", r.Passed, r.Total))
-	b.WriteString(fmt.Sprintf("- Grounding rate (in-domain): %.0f%%\n", r.GroundingRate*100))
-	b.WriteString(fmt.Sprintf("- Refusal accuracy (out-of-domain): %.0f%%\n", r.RefusalAccuracy*100))
-	b.WriteString(fmt.Sprintf("- Выдуманные цитаты (отклонено): %d\n\n", r.InvalidCitations))
+	fmt.Fprintf(&b, "- Всего кейсов: %d\n", r.Total)
+	fmt.Fprintf(&b, "- Прошло: %d / %d\n", r.Passed, r.Total)
+	fmt.Fprintf(&b, "- Grounding rate (in-domain): %.0f%%\n", r.GroundingRate*100)
+	fmt.Fprintf(&b, "- Refusal accuracy (out-of-domain): %.0f%%\n", r.RefusalAccuracy*100)
+	fmt.Fprintf(&b, "- Выдуманные цитаты (отклонено): %d\n\n", r.InvalidCitations)
 
 	b.WriteString("## Кейсы\n\n")
 	b.WriteString("| id | kind | action | reason | source | pass |\n")
@@ -153,7 +153,7 @@ func (r Report) Markdown() string {
 		if o.HasSource {
 			src = "да"
 		}
-		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n", o.Case.ID, o.Case.Kind, o.Action, reason, src, pass))
+		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s |\n", o.Case.ID, o.Case.Kind, o.Action, reason, src, pass)
 	}
 	return b.String()
 }
