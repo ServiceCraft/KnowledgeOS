@@ -145,7 +145,11 @@ func doJSON(ctx context.Context, c *http.Client, method, url, token string, body
 	if err != nil {
 		return applog.TraceErr(ctx, "chat eval: http request failed", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			applog.From(ctx).Warn().Err(err).Msg("chat eval: close response body failed")
+		}
+	}()
 	data, err := io.ReadAll(res.Body)
 	if err != nil {
 		return applog.TraceErr(ctx, "chat eval: read response failed", err)

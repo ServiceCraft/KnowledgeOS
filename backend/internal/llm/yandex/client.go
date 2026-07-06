@@ -82,7 +82,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(ctx, resp.Body)
 
 	var out openAIChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -130,7 +130,7 @@ func (c *Client) ChatStream(ctx context.Context, req llm.ChatRequest) (<-chan ll
 	ch := make(chan llm.StreamChunk)
 	go func() {
 		defer close(ch)
-		defer resp.Body.Close()
+		defer closeResponseBody(ctx, resp.Body)
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		for scanner.Scan() {
@@ -228,7 +228,7 @@ func (c *Client) embedOne(ctx context.Context, model, text string) ([]float32, e
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(ctx, resp.Body)
 
 	var out openAIEmbeddingResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -433,7 +433,7 @@ func retryableStatus(status int) bool {
 
 func sleepBackoff(ctx context.Context, attempt int) error {
 	applog.TraceCall(ctx, "yandex.sleepBackoff")
-	delay := time.Duration(100*(1<<min(attempt-1, 5))) * time.Millisecond
+	delay := time.Duration(100*(1<<minInt(attempt-1, 5))) * time.Millisecond
 	delay += time.Duration(rand.Intn(100)) * time.Millisecond
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
@@ -442,5 +442,18 @@ func sleepBackoff(ctx context.Context, attempt int) error {
 		return ctx.Err()
 	case <-timer.C:
 		return nil
+	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func closeResponseBody(ctx context.Context, body io.Closer) {
+	if err := body.Close(); err != nil {
+		applog.From(ctx).Warn().Err(err).Msg("yandex response body close failed")
 	}
 }

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,11 +43,11 @@ func TestClientChatSendsHeadersPayloadAndParsesResponse(t *testing.T) {
 			t.Fatalf("tools = %+v", req.Tools)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{
+		writeResponse(t, w, `{
 			"model":"gpt://folder/yandexgpt-lite/latest",
 			"choices":[{"message":{"role":"assistant","content":"answer","tool_calls":[{"id":"call-1","type":"function","function":{"name":"search_knowledge","arguments":{"q":"hello"}}}]}}],
 			"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}
-		}`))
+		}`)
 	}))
 	defer server.Close()
 
@@ -83,7 +83,7 @@ func TestClientChatAPIKeyAuthAndValidation(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Api-Key api-key" {
 			t.Fatalf("Authorization = %q", got)
 		}
-		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+		writeResponse(t, w, `{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`)
 	}))
 	defer server.Close()
 
@@ -106,14 +106,18 @@ func TestClientChatAPIKeyAuthAndValidation(t *testing.T) {
 }
 
 func TestClientRetriesOnlyRetryableStatuses(t *testing.T) {
-	var retryableCalls int32
+	var retryableMu sync.Mutex
+	var retryableCalls int
 	retryable := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		call := atomic.AddInt32(&retryableCalls, 1)
+		retryableMu.Lock()
+		retryableCalls++
+		call := retryableCalls
+		retryableMu.Unlock()
 		if call == 1 {
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
 		}
-		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+		writeResponse(t, w, `{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`)
 	}))
 	defer retryable.Close()
 	client := NewClient(retryable.Client(), Config{Endpoint: retryable.URL, DefaultChatModel: "model", MaxRetries: 1})
@@ -124,9 +128,12 @@ func TestClientRetriesOnlyRetryableStatuses(t *testing.T) {
 		t.Fatalf("retryable calls = %d, want 2", retryableCalls)
 	}
 
-	var nonRetryableCalls int32
+	var nonRetryableMu sync.Mutex
+	var nonRetryableCalls int
 	nonRetryable := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&nonRetryableCalls, 1)
+		nonRetryableMu.Lock()
+		nonRetryableCalls++
+		nonRetryableMu.Unlock()
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer nonRetryable.Close()
@@ -145,9 +152,9 @@ func TestClientChatStreamReadsSSE(t *testing.T) {
 			t.Fatalf("Accept = %q", got)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hel\"}}]}\n\n"))
-		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n"))
-		w.Write([]byte("data: [DONE]\n\n"))
+		writeResponse(t, w, "data: {\"choices\":[{\"delta\":{\"content\":\"hel\"}}]}\n\n")
+		writeResponse(t, w, "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n")
+		writeResponse(t, w, "data: [DONE]\n\n")
 	}))
 	defer server.Close()
 
@@ -173,7 +180,7 @@ func TestClientChatStreamReadsSSE(t *testing.T) {
 func TestClientChatStreamReportsDecodeError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		w.Write([]byte("data: {bad-json}\n\n"))
+		writeResponse(t, w, "data: {bad-json}\n\n")
 	}))
 	defer server.Close()
 
@@ -204,14 +211,14 @@ func TestClientEmbeddings(t *testing.T) {
 			}
 			switch req.Input[0] {
 			case "a":
-				w.Write([]byte(`{"data":[{"index":0,"embedding":[0.1,0.2]}]}`))
+				writeResponse(t, w, `{"data":[{"index":0,"embedding":[0.1,0.2]}]}`)
 			case "b":
-				w.Write([]byte(`{"data":[{"index":0,"embedding":[0.2,0.3]}]}`))
+				writeResponse(t, w, `{"data":[{"index":0,"embedding":[0.2,0.3]}]}`)
 			default:
 				t.Fatalf("unexpected doc input = %q", req.Input[0])
 			}
 		case "query-model":
-			w.Write([]byte(`{"data":[{"index":0,"embedding":[0.9,0.8]}]}`))
+			writeResponse(t, w, `{"data":[{"index":0,"embedding":[0.9,0.8]}]}`)
 		default:
 			t.Fatalf("unexpected model = %q", req.Model)
 		}
@@ -246,11 +253,18 @@ func TestClientEmbeddingValidation(t *testing.T) {
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"data":[{"index":2,"embedding":[0.1]}]}`))
+		writeResponse(t, w, `{"data":[{"index":2,"embedding":[0.1]}]}`)
 	}))
 	defer server.Close()
 	client = NewClient(server.Client(), Config{Endpoint: server.URL, EmbeddingDocModel: "doc-model", Timeout: time.Second})
 	if _, err := client.EmbedDocs(context.Background(), []string{"a"}); err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Fatalf("EmbedDocs() out-of-range error = %v", err)
+	}
+}
+
+func writeResponse(t *testing.T, w http.ResponseWriter, body string) {
+	t.Helper()
+	if _, err := w.Write([]byte(body)); err != nil {
+		t.Fatalf("write response: %v", err)
 	}
 }

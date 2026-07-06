@@ -26,7 +26,7 @@ type IndexEntry struct {
 	// Logical export bundle (export.json) stored gzipped alongside the dump.
 	// Empty when the snapshot carries no export (older app versions).
 	ExportFile     string `json:"export_file,omitempty"`
-	ExportBytes    int64  `json:"export_bytes,omitempty"`          // compressed size
+	ExportBytes    int64  `json:"export_bytes,omitempty"`           // compressed size
 	ExportChecksum string `json:"export_checksum_sha256,omitempty"` // of export.json.gz
 }
 

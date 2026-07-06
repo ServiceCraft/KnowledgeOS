@@ -16,21 +16,21 @@ type envelope struct {
 func JSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(envelope{Data: data})
+	_ = json.NewEncoder(w).Encode(envelope{Data: data})
 }
 
 // JSONList executes the respond.JSONList operation.
 func JSONList(w http.ResponseWriter, status int, data interface{}, total int64) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(envelope{Data: data, Total: &total})
+	_ = json.NewEncoder(w).Encode(envelope{Data: data, Total: &total})
 }
 
 // Error executes the respond.Error operation.
 func Error(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(envelope{Error: msg})
+	_ = json.NewEncoder(w).Encode(envelope{Error: msg})
 }
 
 // Decode executes the respond.Decode operation.
