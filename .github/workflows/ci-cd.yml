@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -52,7 +52,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -74,7 +74,7 @@ jobs:
         run: npm run build
 
       - name: Upload frontend dist
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: frontend/dist
@@ -92,10 +92,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Detect backend changes
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         id: changes
         with:
           filters: |
@@ -104,11 +104,11 @@ jobs:
 
       - name: Set up Docker Buildx
         if: steps.changes.outputs.backend == 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
         if: steps.changes.outputs.backend == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -152,7 +152,7 @@ jobs:
 
       - name: Build and push backend image
         if: steps.changes.outputs.backend == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: backend
           file: backend/Dockerfile
@@ -174,10 +174,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Detect frontend changes
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         id: changes
         with:
           filters: |
@@ -186,18 +186,18 @@ jobs:
 
       - name: Download frontend dist
         if: steps.changes.outputs.frontend == 'true'
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: frontend/dist
 
       - name: Set up Docker Buildx
         if: steps.changes.outputs.frontend == 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
         if: steps.changes.outputs.frontend == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -239,7 +239,7 @@ jobs:
 
       - name: Build and push frontend image
         if: steps.changes.outputs.frontend == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: frontend
           file: frontend/Dockerfile.deploy
@@ -259,10 +259,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Detect backup-service changes
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         id: changes
         with:
           filters: |
@@ -271,11 +271,11 @@ jobs:
 
       - name: Set up Docker Buildx
         if: steps.changes.outputs.backup == 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
         if: steps.changes.outputs.backup == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -318,7 +318,7 @@ jobs:
 
       - name: Build and push backup-service image
         if: steps.changes.outputs.backup == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: backup-service
           file: backup-service/Dockerfile
@@ -344,7 +344,7 @@ jobs:
 
     steps:
       - name: Checkout deploy files
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Deploy over SSH
         env:
@@ -381,7 +381,7 @@ jobs:
 
     steps:
       - name: Checkout deploy files
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Deploy over SSH
         env:
