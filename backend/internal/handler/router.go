@@ -54,7 +54,9 @@ func NewRouter(deps RouterDeps) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chiMiddleware.Recoverer)
-	r.Use(chiMiddleware.RealIP)
+	// RemoteAddr first, then overwrite with nginx X-Real-IP when present.
+	r.Use(chiMiddleware.ClientIPFromRemoteAddr)
+	r.Use(chiMiddleware.ClientIPFromHeader("X-Real-IP"))
 	r.Use(chiMiddleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(chiMiddleware.Heartbeat("/healthz"))
@@ -73,19 +75,17 @@ func NewRouter(deps RouterDeps) *chi.Mux {
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
-			r.Use(httprate.LimitByIP(20, time.Minute))
+			r.Use(httprate.LimitBy(20, time.Minute, clientIPRateLimitKey))
 			r.Post("/auth/login", h.Auth.Login)
 			r.Post("/auth/refresh", h.Auth.Refresh)
 		})
 		r.Group(func(r chi.Router) {
 			// Public webhook endpoint: limit per source IP and per target path
 			// (company + channel) so a single tenant/IP cannot flood the pipeline.
-			r.Use(httprate.Limit(
+			r.Use(httprate.LimitBy(
 				120,
 				time.Minute,
-				httprate.WithKeyFuncs(httprate.KeyByIP, func(req *http.Request) (string, error) {
-					return req.URL.Path, nil
-				}),
+				httprate.JoinKeys(clientIPRateLimitKey, httprate.KeyByEndpoint),
 			))
 			r.Post("/webhooks/{channel}/{company_id}", h.Channels.Handle)
 		})
@@ -232,4 +232,8 @@ func NewRouter(deps RouterDeps) *chi.Mux {
 	})
 
 	return r
+}
+
+func clientIPRateLimitKey(r *http.Request) (string, error) {
+	return httprate.CanonicalizeIP(chiMiddleware.GetClientIP(r.Context())), nil
 }
