@@ -6,17 +6,29 @@ shared test stand and replaces the previous test deployment.
 
 ## Pipeline
 
-1. `ci` runs for pull requests and pushes:
-   - `cd backend && go test ./...`
-   - `cd backup-service && go test ./...`
-   - `golangci-lint run ./...` in `backend`
-   - `cd frontend && npm ci && npm run lint && npm run build`
-2. `build` runs only for pushes and publishes images to GHCR:
-   - `ghcr.io/<owner>/<repo>/backend:sha-<commit>`
-   - `ghcr.io/<owner>/<repo>/frontend:sha-<commit>`
-   - `ghcr.io/<owner>/<repo>/backup-service:sha-<commit>`
+1. Checks run in parallel for pull requests and pushes:
+   - `backend-ci`: `go test ./...` in `backend` and `backup-service` (in
+     parallel), plus `golangci-lint run ./...` in `backend`
+   - `frontend-ci`: `cd frontend && npm ci && npm run lint && npm run build`,
+     then uploads `frontend/dist` as a workflow artifact
+2. Build jobs run only for pushes (in parallel after checks):
+   - `build-backend`: `ghcr.io/<owner>/<repo>/backend:sha-<commit>` with GHA
+     layer cache
+   - `build-frontend`: packages the CI artifact with
+     [`frontend/Dockerfile.deploy`](../frontend/Dockerfile.deploy) (no second
+     npm build in Docker)
+   - `build-backup`: publishes `backup-service` only when `backup-service/**`
+     changed; otherwise deploy reuses `:test-latest` or `:prod-latest`
+   - `build-meta`: aggregates image tags for deploy
 3. `deploy_test` runs for non-`main` branches with GitHub Environment `test`.
 4. `deploy_prod` runs for `main` with GitHub Environment `prod`.
+
+The multi-stage [`frontend/Dockerfile`](../frontend/Dockerfile) remains for
+local Docker Compose builds. CI deploy images use `Dockerfile.deploy` instead.
+
+When the backup compose profile is enabled (`docker compose --profile backup`),
+use the `:test-latest` or `:prod-latest` backup-service tag if the current
+commit did not change `backup-service/`.
 
 Production should use an environment protection rule with manual approval before
 the `deploy_prod` job is allowed to access production secrets.
