@@ -107,6 +107,24 @@ func (a *Adapter) ListSubscriptions(ctx context.Context, cfg channels.ChannelCon
 	return json.RawMessage(data), nil
 }
 
+func (a *Adapter) CheckWebhook(ctx context.Context, cfg channels.ChannelConfig, webhookURL string) (channels.WebhookStatus, error) {
+	expectedURL := strings.TrimRight(strings.TrimSpace(webhookURL), "/")
+	if strings.TrimSpace(cfg.Token) == "" {
+		return channels.WebhookStatus{Configured: false, Error: "Токен MAX не задан"}, nil
+	}
+	if expectedURL == "" {
+		return channels.WebhookStatus{Configured: false, Error: "Адрес webhook на сервере не задан"}, nil
+	}
+	data, err := a.ListSubscriptions(ctx, cfg)
+	if err != nil {
+		return channels.WebhookStatus{Configured: false, Error: "Не удалось проверить подписки MAX"}, err
+	}
+	if channels.SubscriptionsContainURL(data, expectedURL) {
+		return channels.WebhookStatus{Configured: true}, nil
+	}
+	return channels.WebhookStatus{Configured: false, Error: "Webhook не зарегистрирован в MAX"}, nil
+}
+
 func (a *Adapter) ParseInbound(r channels.WebhookRequest, cfg channels.ChannelConfig) (*channels.InboundMessage, *channels.WebhookResponse, error) {
 	secret := metadataString(cfg.Metadata, "webhook_secret", "secret")
 	if secret == "" {

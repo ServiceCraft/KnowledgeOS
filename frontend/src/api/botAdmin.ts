@@ -30,7 +30,4 @@ export const botAdminApi = {
     client
       .post(`${base}/channels/${channel}/webhook`)
       .then((r) => r.data.data as { registered: boolean; reason?: string }),
-  getSubscriptions: (channel: string) =>
-    client.get(`${base}/channels/${channel}/subscriptions`).then((r) => r.data.data as unknown),
 };
-

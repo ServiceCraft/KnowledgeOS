@@ -53,20 +53,9 @@ func TestSendMessageBlocksUnsafeEndpoints(t *testing.T) {
 	}
 }
 
-func TestRegisterWebhookBlocksUnsafeURL(t *testing.T) {
-	adapter := New(nil)
-	cfg := channels.ChannelConfig{
-		Token:    "token",
-		Metadata: json.RawMessage(`{"webhook_registration_url":"https://127.0.0.1/register","webhook_secret":"s"}`),
-	}
-	ok, err := adapter.RegisterWebhook(context.Background(), cfg, "https://public.example.com/webhook")
-	if ok || err == nil {
-		t.Fatalf("expected blocked registration url to error, got ok=%v err=%v", ok, err)
-	}
-}
-
 func TestRegisterWebhookUsesDefaultMAXAPI(t *testing.T) {
 	var calledURL, authHeader, body string
+	const testMAXAPI = "https://example.com/subscriptions"
 	adapter := New(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		calledURL = req.URL.String()
 		authHeader = req.Header.Get("Authorization")
@@ -75,9 +64,10 @@ func TestRegisterWebhookUsesDefaultMAXAPI(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`)), Header: http.Header{}}, nil
 	})})
 
+	meta := json.RawMessage(`{"webhook_secret":"hook-secret","webhook_registration_url":"` + testMAXAPI + `"}`)
 	registered, err := adapter.RegisterWebhook(
 		context.Background(),
-		channels.ChannelConfig{Token: "max-token", Metadata: json.RawMessage(`{"webhook_secret":"hook-secret"}`)},
+		channels.ChannelConfig{Token: "max-token", Metadata: meta},
 		"https://public.example.com/api/v1/webhooks/max/company",
 	)
 	if err != nil {
@@ -86,7 +76,7 @@ func TestRegisterWebhookUsesDefaultMAXAPI(t *testing.T) {
 	if !registered {
 		t.Fatal("expected webhook to be registered")
 	}
-	if calledURL != defaultSubscriptionsURL {
+	if calledURL != testMAXAPI {
 		t.Fatalf("unexpected registration URL: %s", calledURL)
 	}
 	if authHeader != "max-token" {
@@ -104,4 +94,71 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func TestRegisterWebhookBlocksUnsafeURL(t *testing.T) {
+	adapter := New(nil)
+	cfg := channels.ChannelConfig{
+		Token:    "token",
+		Metadata: json.RawMessage(`{"webhook_registration_url":"https://127.0.0.1/register","webhook_secret":"s"}`),
+	}
+	ok, err := adapter.RegisterWebhook(context.Background(), cfg, "https://public.example.com/webhook")
+	if ok || err == nil {
+		t.Fatalf("expected blocked registration url to error, got ok=%v err=%v", ok, err)
+	}
+}
+
+func TestCheckWebhookFindsRegisteredURLAmongMultiple(t *testing.T) {
+	const testMAXAPI = "https://example.com/subscriptions"
+	adapter := New(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(strings.NewReader(`{"subscriptions":[
+				{"url":"https://other.example.com/hook"},
+				{"url":"https://public.example.com/api/v1/webhooks/max/company"}
+			]}`)),
+			Header: http.Header{},
+		}, nil
+	})})
+
+	status, err := adapter.CheckWebhook(
+		context.Background(),
+		channels.ChannelConfig{
+			Token:    "max-token",
+			Metadata: json.RawMessage(`{"subscriptions_url":"` + testMAXAPI + `"}`),
+		},
+		"https://public.example.com/api/v1/webhooks/max/company",
+	)
+	if err != nil {
+		t.Fatalf("CheckWebhook returned error: %v", err)
+	}
+	if !status.Configured || status.Error != "" {
+		t.Fatalf("unexpected status: %#v", status)
+	}
+}
+
+func TestCheckWebhookFindsRegisteredURL(t *testing.T) {
+	const testMAXAPI = "https://example.com/subscriptions"
+	adapter := New(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"subscriptions":[{"url":"https://public.example.com/api/v1/webhooks/max/company"}]}`)),
+			Header:     http.Header{},
+		}, nil
+	})})
+
+	status, err := adapter.CheckWebhook(
+		context.Background(),
+		channels.ChannelConfig{
+			Token:    "max-token",
+			Metadata: json.RawMessage(`{"subscriptions_url":"` + testMAXAPI + `"}`),
+		},
+		"https://public.example.com/api/v1/webhooks/max/company",
+	)
+	if err != nil {
+		t.Fatalf("CheckWebhook returned error: %v", err)
+	}
+	if !status.Configured || status.Error != "" {
+		t.Fatalf("unexpected status: %#v", status)
+	}
 }

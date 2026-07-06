@@ -331,16 +331,17 @@ func (g *Gateway) Status(ctx context.Context, companyID uuid.UUID, baseURL strin
 			updatedAt = &v
 		}
 		webhookStatus := g.checkWebhook(ctx, companyID, adapter, secret, baseURL)
+		metadata := normalizeMetadata(secret.Metadata)
 		out = append(out, ChannelStatus{
 			Channel:           channel,
 			SecretKind:        adapter.SecretKind(),
-			Configured:        secret.IsSet,
+			Configured:        secret.IsSet && ChannelRequiredFieldsComplete(channel, metadata),
 			Enabled:           settings.Enabled && channelEnabled(settings.EnabledModules, channel),
 			BotEnabled:        settings.Enabled,
 			WebhookURL:        webhookURL(baseURL, channel, companyID),
 			WebhookConfigured: webhookStatus.Configured,
 			WebhookError:      webhookStatus.Error,
-			Metadata:          normalizeMetadata(secret.Metadata),
+			Metadata:          metadata,
 			UpdatedAt:         updatedAt,
 		})
 	}
@@ -351,6 +352,13 @@ func (g *Gateway) checkWebhook(ctx context.Context, companyID uuid.UUID, adapter
 	if !secret.IsSet {
 		return WebhookStatus{Configured: false, Error: "Секрет канала не задан"}
 	}
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" || !strings.HasPrefix(baseURL, "https://") {
+		return WebhookStatus{
+			Configured: false,
+			Error:      "Не задан публичный HTTPS URL webhook (PUBLIC_WEBHOOK_BASE_URL или доступ к admin по HTTPS)",
+		}
+	}
 	checker, ok := adapter.(WebhookChecker)
 	if !ok {
 		return WebhookStatus{}
@@ -359,7 +367,12 @@ func (g *Gateway) checkWebhook(ctx context.Context, companyID uuid.UUID, adapter
 	if err != nil {
 		return WebhookStatus{Configured: false, Error: err.Error()}
 	}
-	status, err := checker.CheckWebhook(ctx, ChannelConfig{Token: token, Metadata: metadata}, webhookURL(baseURL, adapter.Channel(), companyID))
+	cfg := ChannelConfig{Token: token, Metadata: metadata}
+	targetURL := webhookURL(baseURL, adapter.Channel(), companyID)
+	if reason := MissingWebhookRegistrationFields(adapter.Channel(), cfg, targetURL); reason != "" {
+		return WebhookStatus{Configured: false, Error: reason}
+	}
+	status, err := checker.CheckWebhook(ctx, cfg, targetURL)
 	if err != nil && status.Error == "" {
 		status.Error = err.Error()
 	}

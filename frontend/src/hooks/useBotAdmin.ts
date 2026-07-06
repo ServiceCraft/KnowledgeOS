@@ -68,9 +68,3 @@ export function useRegisterChannelWebhook() {
   });
 }
 
-export function useChannelSubscriptions() {
-  return useMutation({
-    mutationFn: (channel: string) => botAdminApi.getSubscriptions(channel),
-  });
-}
-

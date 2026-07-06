@@ -69,3 +69,19 @@ func MissingWebhookRegistrationFields(channel domain.ChatChannel, cfg ChannelCon
 	}
 	return ""
 }
+
+// ChannelRequiredFieldsComplete reports whether all required channel metadata fields
+// are present. The encrypted bot token alone is not enough for "configured".
+func ChannelRequiredFieldsComplete(channel domain.ChatChannel, metadata json.RawMessage) bool {
+	switch channel {
+	case domain.ChatChannelTelegram:
+		return MetadataString(metadata, "webhook_secret", "secret_token") != ""
+	case domain.ChatChannelMAX:
+		return MetadataString(metadata, "webhook_secret", "secret") != ""
+	case domain.ChatChannelVK:
+		return MetadataString(metadata, "secret", "webhook_secret") != "" &&
+			MetadataString(metadata, "confirmation_token") != ""
+	default:
+		return true
+	}
+}

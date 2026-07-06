@@ -26,7 +26,6 @@ import {
   useSetBotSecret,
   useDeleteBotSecret,
   useRegisterChannelWebhook,
-  useChannelSubscriptions,
 } from '@/hooks/useBotAdmin';
 import {
   SECRET_LABELS,
@@ -54,7 +53,6 @@ export function ChannelsAndSecretsTab() {
   const setSecret = useSetBotSecret();
   const deleteSecret = useDeleteBotSecret();
   const registerWebhook = useRegisterChannelWebhook();
-  const subscriptions = useChannelSubscriptions();
 
   const [editingService, setEditingService] = useState<TenantSecretStatus | null>(null);
   const [editingChannel, setEditingChannel] = useState<ChannelStatus | null>(null);
@@ -63,8 +61,6 @@ export function ChannelsAndSecretsTab() {
   const [metadata, setMetadata] = useState<Record<string, string>>({});
   const [channelEditorLoading, setChannelEditorLoading] = useState(false);
   const [deleteKind, setDeleteKind] = useState<SecretKind | null>(null);
-  const [subscriptionsChannel, setSubscriptionsChannel] = useState<ChannelStatus['channel'] | null>(null);
-  const [subscriptionsData, setSubscriptionsData] = useState<unknown>(null);
 
   if (secretsLoading || channelsLoading) return <LoadingState />;
   if (secretsError || channelsError) return <ErrorState message="Не удалось загрузить каналы и секреты." />;
@@ -166,18 +162,6 @@ export function ChannelsAndSecretsTab() {
     });
   };
 
-  const handleViewSubscriptions = (channel: ChannelStatus['channel']) => {
-    setSubscriptionsChannel(channel);
-    setSubscriptionsData(null);
-    subscriptions.mutate(channel, {
-      onSuccess: (data) => setSubscriptionsData(data),
-      onError: () => {
-        toast.error('Не удалось получить подписки');
-        setSubscriptionsChannel(null);
-      },
-    });
-  };
-
   return (
     <div className="space-y-6 max-w-3xl">
       <div className="space-y-3">
@@ -236,9 +220,16 @@ export function ChannelsAndSecretsTab() {
                   <CardTitle className="text-base">{CHANNEL_LABELS[status.channel]}</CardTitle>
                   <CardDescription>Токен, webhook и дополнительные параметры канала</CardDescription>
                 </div>
-                <Badge variant={status.configured ? 'secondary' : 'outline'}>
-                  {status.configured ? 'Настроен' : 'Не задан'}
-                </Badge>
+                <div className="flex flex-col items-end gap-1.5">
+                  <ChannelSetupStatusBadge label="Параметры" ok={status.configured} />
+                  {WEBHOOK_CHECK_CHANNELS.includes(status.channel) && (
+                    <ChannelSetupStatusBadge
+                      label="Webhook"
+                      ok={status.webhook_configured}
+                      error={status.webhook_error}
+                    />
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -257,14 +248,7 @@ export function ChannelsAndSecretsTab() {
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <FieldHint label="Webhook URL" hint={CHANNEL_HINTS.webhook} />
-                  {status.channel === 'telegram' ? (
-                    <WebhookStatusBadge status={status} />
-                  ) : (
-                    <span className="text-xs text-muted-foreground">Проверка доступна для Telegram</span>
-                  )}
-                </div>
+                <FieldHint label="Webhook URL" hint={CHANNEL_HINTS.webhook} />
                 <div className="flex gap-2">
                   <Input value={status.webhook_url} readOnly />
                   <Button
@@ -284,22 +268,17 @@ export function ChannelsAndSecretsTab() {
               </div>
 
               <div className="flex flex-wrap justify-end gap-2">
-                {WEBHOOK_ACTION_CHANNELS.includes(status.channel) && (
-                  <>
+                {WEBHOOK_CHECK_CHANNELS.includes(status.channel) &&
+                  status.configured &&
+                  !status.webhook_configured && (
                     <Button
                       variant="outline"
-                      disabled={!status.configured || registerWebhook.isPending}
+                      disabled={registerWebhook.isPending}
                       onClick={() => handleRegisterWebhook(status.channel)}
                     >
                       Зарегистрировать вебхук
                     </Button>
-                    <SubscriptionsButton
-                      configured={status.configured}
-                      loading={subscriptions.isPending && subscriptionsChannel === status.channel}
-                      onClick={() => handleViewSubscriptions(status.channel)}
-                    />
-                  </>
-                )}
+                  )}
                 <Button variant="outline" onClick={() => openChannelEditor(status)}>
                   {status.configured ? 'Параметры' : 'Настроить'}
                 </Button>
@@ -423,24 +402,6 @@ export function ChannelsAndSecretsTab() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!subscriptionsChannel} onOpenChange={(open) => !open && setSubscriptionsChannel(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              Подписки {subscriptionsChannel ? CHANNEL_LABELS[subscriptionsChannel] : ''}
-            </DialogTitle>
-          </DialogHeader>
-          {subscriptions.isPending ? (
-            <p className="text-sm text-muted-foreground">Загрузка подписок…</p>
-          ) : (
-            <SubscriptionsView channel={subscriptionsChannel} data={subscriptionsData} />
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSubscriptionsChannel(null)}>Закрыть</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <ConfirmDialog
         open={!!deleteKind}
         onOpenChange={(open) => !open && setDeleteKind(null)}
@@ -457,224 +418,7 @@ export function ChannelsAndSecretsTab() {
   );
 }
 
-const WEBHOOK_ACTION_CHANNELS: ChannelStatus['channel'][] = ['telegram', 'max'];
-
-type ParsedSubscription = {
-  key: string;
-  createdAt: string;
-  updateTypes: string[];
-};
-
-function SubscriptionsView({ channel, data }: { channel: ChannelStatus['channel'] | null; data: unknown }) {
-  const normalizedData = normalizeSubscriptionPayload(data);
-  const rows = parseSubscriptions(normalizedData);
-  const showCreatedAt = channel !== 'telegram';
-
-  if (!normalizedData) {
-    return <p className="text-sm text-muted-foreground">Нет данных</p>;
-  }
-
-  if (rows.length === 0) {
-    return (
-      <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">Подписки не найдены или формат ответа не распознан.</p>
-        <pre className="max-h-[40vh] overflow-auto rounded-md bg-muted p-3 font-mono text-xs whitespace-pre-wrap break-all">
-          {JSON.stringify(normalizedData, null, 2)}
-        </pre>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {rows.map((row, index) => (
-        <div key={row.key} className="rounded-md border p-3">
-          <div className="mb-2 text-sm font-medium">Подписка {index + 1}</div>
-          <div className="grid gap-2 text-sm sm:grid-cols-[140px_1fr]">
-            {showCreatedAt && (
-              <>
-                <span className="text-muted-foreground">Дата создания</span>
-                <span>{row.createdAt}</span>
-              </>
-            )}
-            <span className="text-muted-foreground">События</span>
-            <div className="flex flex-wrap gap-1.5">
-              {row.updateTypes.length > 0 ? (
-                row.updateTypes.map((type) => (
-                  <Badge key={type} variant="outline" className="font-mono text-xs">
-                    {type}
-                  </Badge>
-                ))
-              ) : (
-                <span className="text-muted-foreground">Не указаны</span>
-              )}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function parseSubscriptions(data: unknown): ParsedSubscription[] {
-  const items = extractSubscriptionItems(normalizeSubscriptionPayload(data));
-  return items.map((item, index) => ({
-    key: subscriptionKey(item, index),
-    createdAt: formatSubscriptionDate(readField(item, [
-      'time',
-      'created_at',
-      'createdAt',
-      'created',
-      'create_time',
-      'createTime',
-      'created_time',
-      'createdTime',
-      'creation_time',
-      'creationTime',
-      'created_timestamp',
-      'createdTimestamp',
-      'created_ts',
-      'createdTs',
-      'timestamp',
-      'ts',
-    ])),
-    updateTypes: formatUpdateTypes(readField(item, [
-      'update_types',
-      'updateTypes',
-      'allowed_updates',
-      'allowedUpdates',
-      'types',
-    ])),
-  }));
-}
-
-function normalizeSubscriptionPayload(data: unknown): unknown {
-  if (typeof data !== 'string') {
-    return data;
-  }
-  const trimmed = data.trim();
-  if (!trimmed) {
-    return data;
-  }
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    return data;
-  }
-}
-
-function extractSubscriptionItems(data: unknown): Record<string, unknown>[] {
-  if (Array.isArray(data)) {
-    return data.filter(isRecord);
-  }
-  if (!isRecord(data)) {
-    return [];
-  }
-  for (const key of ['subscriptions', 'items', 'data', 'result']) {
-    const value = data[key];
-    if (Array.isArray(value)) {
-      return value.filter(isRecord);
-    }
-  }
-  if (isRecord(data.result)) {
-    return [data.result];
-  }
-  return [data];
-}
-
-function subscriptionKey(item: Record<string, unknown>, index: number) {
-  const id = readField(item, ['id', 'subscription_id', 'subscriptionId', 'url']);
-  return typeof id === 'string' && id.trim() ? id : String(index);
-}
-
-function readField(item: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    if (item[key] != null) {
-      return item[key];
-    }
-  }
-  return undefined;
-}
-
-function formatSubscriptionDate(value: unknown) {
-  if (value == null || value === '') {
-    return 'Не указана';
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (/^\d+$/.test(trimmed)) {
-      return formatTimestamp(Number(trimmed));
-    }
-  }
-  if (typeof value === 'number') {
-    return formatTimestamp(value);
-  }
-  const date =
-    value instanceof Date
-      ? value
-      : new Date(String(value));
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
-  }
-  return date.toLocaleString();
-}
-
-function formatTimestamp(value: number) {
-  const date = new Date(value < 10_000_000_000 ? value * 1000 : value);
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
-  }
-  return date.toLocaleString();
-}
-
-function formatUpdateTypes(value: unknown) {
-  if (Array.isArray(value)) {
-    return value.map(String).map((item) => item.trim()).filter(Boolean);
-  }
-  if (typeof value === 'string') {
-    return value.split(',').map((item) => item.trim()).filter(Boolean);
-  }
-  return [];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function SubscriptionsButton({
-  configured,
-  loading,
-  onClick,
-}: {
-  configured: boolean;
-  loading: boolean;
-  onClick: () => void;
-}) {
-  const button = (
-    <Button variant="outline" disabled={!configured || loading} onClick={onClick}>
-      Подписки
-    </Button>
-  );
-
-  if (configured) {
-    return button;
-  }
-
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span className="inline-flex" tabIndex={0} aria-label="Не настроен токен бота">
-            {button}
-          </span>
-        }
-      />
-      <TooltipContent side="top" className="max-w-xs p-3 text-xs leading-relaxed whitespace-normal">
-        Не настроен токен бота
-      </TooltipContent>
-    </Tooltip>
-  );
-}
+const WEBHOOK_CHECK_CHANNELS: ChannelStatus['channel'][] = ['telegram', 'max'];
 
 function RequiredLabel({ children }: { children: ReactNode }) {
   return (
@@ -716,17 +460,29 @@ function ChannelEnabledButton({
   );
 }
 
-function WebhookStatusBadge({ status }: { status: ChannelStatus }) {
+function ChannelSetupStatusBadge({
+  label,
+  ok,
+  error,
+}: {
+  label: string;
+  ok: boolean;
+  error?: string;
+}) {
   const badge = (
     <Badge
-      variant={status.webhook_configured ? 'secondary' : 'outline'}
-      className={status.webhook_error ? 'cursor-help' : undefined}
+      variant="outline"
+      className={
+        ok
+          ? 'border-emerald-600/60 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
+          : 'border-destructive/60 bg-destructive/10 text-destructive'
+      }
     >
-      {status.webhook_configured ? 'Настроен' : 'Не настроен'}
+      {label}
     </Badge>
   );
 
-  if (!status.webhook_error) {
+  if (!error) {
     return badge;
   }
 
@@ -734,13 +490,13 @@ function WebhookStatusBadge({ status }: { status: ChannelStatus }) {
     <Tooltip>
       <TooltipTrigger
         render={
-          <span className="inline-flex" tabIndex={0} aria-label="Ошибка проверки webhook">
+          <span className="inline-flex cursor-help" tabIndex={0} aria-label={`${label}: ${error}`}>
             {badge}
           </span>
         }
       />
       <TooltipContent side="top" className="max-w-sm p-3 text-xs leading-relaxed whitespace-normal">
-        {status.webhook_error}
+        {error}
       </TooltipContent>
     </Tooltip>
   );
