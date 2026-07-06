@@ -180,6 +180,7 @@ func NewRouter(deps RouterDeps) *chi.Mux {
 				r.Get("/admin/bot/settings", h.Bot.GetSettings)
 				r.Put("/admin/bot/settings", h.Bot.UpdateSettings)
 				r.Get("/admin/bot/secrets", h.Bot.ListSecrets)
+				r.Get("/admin/bot/secrets/{kind}/edit", h.Bot.GetSecretForEdit)
 				r.Put("/admin/bot/secrets/{kind}", h.Bot.SetSecret)
 				r.Delete("/admin/bot/secrets/{kind}", h.Bot.DeleteSecret)
 				r.Get("/admin/bot/channels/status", h.Channels.Status)

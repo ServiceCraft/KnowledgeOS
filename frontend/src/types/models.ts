@@ -296,6 +296,13 @@ export interface TenantSecretStatus {
   updated_at?: string;
 }
 
+export interface EditableTenantSecret {
+  kind: SecretKind;
+  is_set: boolean;
+  value: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface ChannelStatus {
   channel: Extract<ChatChannel, 'telegram' | 'max' | 'vk'>;
   secret_kind: Extract<SecretKind, 'telegram' | 'max' | 'vk'>;

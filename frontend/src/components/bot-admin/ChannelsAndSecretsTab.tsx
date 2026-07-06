@@ -15,6 +15,7 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { toast } from 'sonner';
 import { Copy, RefreshCw } from 'lucide-react';
+import { botAdminApi } from '@/api/botAdmin';
 import type { ChannelStatus, SecretKind, TenantSecretStatus } from '@/types';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -39,8 +40,10 @@ import {
   isSensitiveMetadataField,
   canGenerateWebhookSecret,
   generateWebhookSecret,
+  buildChannelFormFromSecret,
 } from '@/components/bot-admin/constants';
 import { FieldHint } from '@/components/bot-admin/FieldHint';
+import { RevealableSecretInput } from '@/components/bot-admin/RevealableSecretInput';
 import { channelModules } from '@/components/bot-admin/moduleHelpers';
 
 export function ChannelsAndSecretsTab() {
@@ -58,6 +61,7 @@ export function ChannelsAndSecretsTab() {
   const [serviceValue, setServiceValue] = useState('');
   const [token, setToken] = useState('');
   const [metadata, setMetadata] = useState<Record<string, string>>({});
+  const [channelEditorLoading, setChannelEditorLoading] = useState(false);
   const [deleteKind, setDeleteKind] = useState<SecretKind | null>(null);
   const [subscriptionsChannel, setSubscriptionsChannel] = useState<ChannelStatus['channel'] | null>(null);
   const [subscriptionsData, setSubscriptionsData] = useState<unknown>(null);
@@ -69,14 +73,22 @@ export function ChannelsAndSecretsTab() {
   const modules = channelModules(settings?.enabled_modules);
 
   const openChannelEditor = (status: ChannelStatus) => {
-    const next: Record<string, string> = {};
-    for (const field of CHANNEL_METADATA_FIELDS[status.channel]) {
-      const value = status.metadata?.[field.key];
-      next[field.key] = typeof value === 'string' ? value : value == null ? '' : String(value);
-    }
     setEditingChannel(status);
-    setToken(status.configured ? MASKED_SECRET_VALUE : '');
-    setMetadata(next);
+    setToken('');
+    setMetadata({});
+    setChannelEditorLoading(true);
+    botAdminApi
+      .getSecretForEdit(status.secret_kind)
+      .then((secret) => {
+        const form = buildChannelFormFromSecret(status.channel, secret);
+        setToken(form.token);
+        setMetadata(form.metadata);
+      })
+      .catch(() => {
+        toast.error('Не удалось загрузить текущие значения канала');
+        setEditingChannel(null);
+      })
+      .finally(() => setChannelEditorLoading(false));
   };
 
   const saveChannelSecret = () => {
@@ -254,7 +266,7 @@ export function ChannelsAndSecretsTab() {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <Input value={status.webhook_url} readOnly className="font-mono text-xs" />
+                  <Input value={status.webhook_url} readOnly />
                   <Button
                     type="button"
                     variant="outline"
@@ -327,11 +339,24 @@ export function ChannelsAndSecretsTab() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!editingChannel} onOpenChange={(open) => !open && setEditingChannel(null)}>
+      <Dialog
+        open={!!editingChannel}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingChannel(null);
+            setToken('');
+            setMetadata({});
+            setChannelEditorLoading(false);
+          }
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingChannel ? CHANNEL_LABELS[editingChannel.channel] : 'Канал'}</DialogTitle>
           </DialogHeader>
+          {channelEditorLoading ? (
+            <p className="text-sm text-muted-foreground">Загрузка текущих значений…</p>
+          ) : (
           <div className="space-y-4">
             <div className="space-y-2">
               <FieldHint
@@ -339,23 +364,18 @@ export function ChannelsAndSecretsTab() {
                 htmlFor="channel-token"
                 hint={editingChannel ? CHANNEL_HINTS.token[editingChannel.channel] : ''}
               />
-              <Input
+              <RevealableSecretInput
                 id="channel-token"
-                type="password"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
-                placeholder={
-                  editingChannel?.configured
-                    ? 'Оставьте без изменений или введите новый токен'
-                    : 'Токен бота'
-                }
-                autoFocus
+                placeholder={token ? undefined : 'Токен бота'}
               />
             </div>
             {editingChannel &&
               CHANNEL_METADATA_FIELDS[editingChannel.channel].map((field) => {
                 const showGenerate = canGenerateWebhookSecret(editingChannel.channel, field.key);
                 const isPassword = isSensitiveMetadataField(field.key);
+                const fieldValue = metadata[field.key] ?? '';
                 return (
                   <div className="space-y-2" key={field.key}>
                     <FieldHint
@@ -364,13 +384,12 @@ export function ChannelsAndSecretsTab() {
                       hint={field.hint}
                     />
                     <div className="flex gap-2">
-                      <Input
+                      <RevealableSecretInput
                         id={`metadata-${field.key}`}
-                        type={isPassword ? 'password' : 'text'}
-                        value={metadata[field.key] ?? ''}
-                        placeholder={field.placeholder}
+                        secret={isPassword}
+                        value={fieldValue}
+                        placeholder={fieldValue ? undefined : field.placeholder}
                         onChange={(e) => setMetadata((m) => ({ ...m, [field.key]: e.target.value }))}
-                        className="font-mono text-xs"
                       />
                       {showGenerate && (
                         <Button
@@ -391,9 +410,13 @@ export function ChannelsAndSecretsTab() {
                 );
               })}
           </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingChannel(null)}>Отмена</Button>
-            <Button onClick={saveChannelSecret} disabled={!token.trim() || setSecret.isPending}>
+            <Button
+              onClick={saveChannelSecret}
+              disabled={channelEditorLoading || !token.trim() || setSecret.isPending}
+            >
               Сохранить
             </Button>
           </DialogFooter>

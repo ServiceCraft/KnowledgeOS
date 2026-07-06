@@ -1,5 +1,5 @@
 import client from './client';
-import type { BotSettings, ChannelStatus, TenantSecretStatus, UpdateBotSettingsRequest } from '@/types';
+import type { BotSettings, ChannelStatus, EditableTenantSecret, TenantSecretStatus, UpdateBotSettingsRequest } from '@/types';
 
 const base = '/admin/bot';
 
@@ -15,6 +15,8 @@ export const botAdminApi = {
     client.put(`/admin/bot/settings`, data).then((r) => r.data.data as BotSettings),
   listSecrets: () =>
     client.get(`${base}/secrets`).then((r) => r.data.data as TenantSecretStatus[]),
+  getSecretForEdit: (kind: string) =>
+    client.get(`${base}/secrets/${kind}/edit`).then((r) => r.data.data as EditableTenantSecret),
   getChannelStatus: () =>
     client.get(`${base}/channels/status`).then((r) => r.data.data as ChannelStatus[]),
   setSecret: (kind: string, data: SetSecretRequest) =>

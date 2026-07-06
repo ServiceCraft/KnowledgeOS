@@ -116,6 +116,61 @@ func TestMergeSecretMetadataDropsMaskedWithoutExisting(t *testing.T) {
 	}
 }
 
+func TestGetEditableReturnsPlaintext(t *testing.T) {
+	repo := newFakeSecretRepo()
+	cipher, err := secretcrypto.NewCipher("test-secret-key")
+	if err != nil {
+		t.Fatalf("NewCipher() error = %v", err)
+	}
+	svc := NewTenantSecretService(repo, cipher)
+	companyID := uuid.New()
+
+	if _, err := svc.Set(context.Background(), companyID, domain.SecretKindTelegram, SetTenantSecretRequest{
+		Value:    "real-bot-token",
+		Metadata: json.RawMessage(`{"webhook_secret":"hook-secret","handoff_notification_chat_id":"123"}`),
+	}); err != nil {
+		t.Fatalf("Set() error = %v", err)
+	}
+
+	editable, err := svc.GetEditable(context.Background(), companyID, domain.SecretKindTelegram)
+	if err != nil {
+		t.Fatalf("GetEditable() error = %v", err)
+	}
+	if !editable.IsSet {
+		t.Fatal("expected editable secret to be set")
+	}
+	if editable.Value != "real-bot-token" {
+		t.Fatalf("expected plaintext token, got %q", editable.Value)
+	}
+	var meta map[string]string
+	if err := json.Unmarshal(editable.Metadata, &meta); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if meta["webhook_secret"] != "hook-secret" {
+		t.Fatalf("expected plaintext webhook secret, got %q", meta["webhook_secret"])
+	}
+}
+
+func TestGetEditableMissingSecret(t *testing.T) {
+	repo := newFakeSecretRepo()
+	cipher, err := secretcrypto.NewCipher("test-secret-key")
+	if err != nil {
+		t.Fatalf("NewCipher() error = %v", err)
+	}
+	svc := NewTenantSecretService(repo, cipher)
+
+	editable, err := svc.GetEditable(context.Background(), uuid.New(), domain.SecretKindTelegram)
+	if err != nil {
+		t.Fatalf("GetEditable() error = %v", err)
+	}
+	if editable.IsSet {
+		t.Fatal("expected editable secret to be unset")
+	}
+	if editable.Value != "" {
+		t.Fatalf("expected empty value, got %q", editable.Value)
+	}
+}
+
 func TestSetPreservesMaskedTokenValue(t *testing.T) {
 	repo := newFakeSecretRepo()
 	cipher, err := secretcrypto.NewCipher("test-secret-key")

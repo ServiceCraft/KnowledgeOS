@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
@@ -26,6 +27,15 @@ func NewTenantSecretService(secrets domain.TenantSecretRepository, cipher *secre
 type SetTenantSecretRequest struct {
 	Value    string          `json:"value"`
 	Metadata json.RawMessage `json:"metadata"`
+}
+
+// EditableTenantSecret is returned to the admin UI when opening the secret editor.
+// Unlike TenantSecretStatus, it includes the decrypted token and unmasked metadata.
+type EditableTenantSecret struct {
+	Kind     domain.SecretKind `json:"kind"`
+	IsSet    bool              `json:"is_set"`
+	Value    string            `json:"value"`
+	Metadata json.RawMessage   `json:"metadata"`
 }
 
 // ListStatus executes the service.TenantSecretService.ListStatus operation.
@@ -62,6 +72,32 @@ func (s *TenantSecretService) ListStatus(ctx context.Context, companyID uuid.UUI
 		Int("total", len(statuses)).
 		Msg("tenant secret statuses listed")
 	return statuses, nil
+}
+
+// GetEditable returns the decrypted secret and full metadata for the admin editor.
+func (s *TenantSecretService) GetEditable(ctx context.Context, companyID uuid.UUID, kind domain.SecretKind) (*EditableTenantSecret, error) {
+	applog.TraceCall(ctx, "service.TenantSecretService.GetEditable")
+	if !domain.ValidSecretKind(kind) {
+		return nil, badRequest("invalid secret kind")
+	}
+	value, metadata, err := s.GetPlaintextWithMetadata(ctx, companyID, kind)
+	if err != nil {
+		if HTTPStatus(err) == http.StatusNotFound {
+			return &EditableTenantSecret{
+				Kind:     kind,
+				IsSet:    false,
+				Value:    "",
+				Metadata: json.RawMessage(`{}`),
+			}, nil
+		}
+		return nil, err
+	}
+	return &EditableTenantSecret{
+		Kind:     kind,
+		IsSet:    true,
+		Value:    value,
+		Metadata: normalizeJSONRaw(metadata),
+	}, nil
 }
 
 // Set executes the service.TenantSecretService.Set operation.

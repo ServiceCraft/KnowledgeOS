@@ -1,4 +1,4 @@
-import type { BotSettings, ChannelStatus, SecretKind } from '@/types';
+import type { BotSettings, ChannelStatus, EditableTenantSecret, SecretKind } from '@/types';
 
 export const BOOL_LABELS = { true: 'Да', false: 'Нет' } as const;
 
@@ -150,9 +150,53 @@ export function canGenerateWebhookSecret(channel: ChannelStatus['channel'], fiel
   return fieldKey === 'webhook_secret' && (channel === 'telegram' || channel === 'max');
 }
 
-export function generateWebhookSecret(byteLength = 32): string {
-  const bytes = new Uint8Array(byteLength);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+export function generateWebhookSecret(length = 12): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const arr = new Uint32Array(length);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (n) => chars[n % chars.length]).join('');
+}
+
+export function parseMetadataRecord(raw: unknown): Record<string, unknown> {
+  if (!raw) return {};
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return {};
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+    return {};
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  return {};
+}
+
+export function metadataFieldString(value: unknown): string {
+  if (value == null || value === '') return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+
+export function buildChannelFormFromSecret(
+  channel: ChannelStatus['channel'],
+  secret: Pick<EditableTenantSecret, 'value' | 'metadata'>,
+): { token: string; metadata: Record<string, string> } {
+  const mergedMeta = parseMetadataRecord(secret.metadata);
+  const metadata: Record<string, string> = {};
+  for (const field of CHANNEL_METADATA_FIELDS[channel]) {
+    metadata[field.key] = metadataFieldString(mergedMeta[field.key]);
+  }
+  return {
+    token: secret.value,
+    metadata,
+  };
 }
 

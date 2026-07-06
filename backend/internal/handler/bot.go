@@ -61,6 +61,23 @@ func (h *BotHandler) ListSecrets(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, statuses)
 }
 
+// GetSecretForEdit returns the decrypted secret for the admin editor.
+func (h *BotHandler) GetSecretForEdit(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.BotHandler.GetSecretForEdit")
+	kind := domain.SecretKind(chi.URLParam(r, "kind"))
+	if !domain.ValidSecretKind(kind) {
+		Error(w, http.StatusBadRequest, "invalid secret kind")
+		return
+	}
+	companyID := middleware.GetCompanyID(r.Context())
+	secret, err := h.secrets.GetEditable(r.Context(), companyID, kind)
+	if err != nil {
+		ServiceError(w, r, err)
+		return
+	}
+	JSON(w, http.StatusOK, secret)
+}
+
 // SetSecret executes the handler.BotHandler.SetSecret operation.
 func (h *BotHandler) SetSecret(w http.ResponseWriter, r *http.Request) {
 	applog.TraceCall(r.Context(), "handler.BotHandler.SetSecret")
