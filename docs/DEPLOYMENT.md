@@ -7,19 +7,17 @@ shared test stand and replaces the previous test deployment.
 ## Pipeline
 
 1. Checks run in parallel for pull requests and pushes:
-   - `backend-ci`: `go test ./...` in `backend` and `backup-service` (in
-     parallel), plus `golangci-lint run ./...` in `backend`
+   - `backend-ci`: `go test ./...` in `backend` and `backup-service`, plus
+     `golangci-lint run ./...` in `backend` — tests and lint run concurrently
    - `frontend-ci`: `cd frontend && npm ci && npm run lint && npm run build`,
      then uploads `frontend/dist` as a workflow artifact
 2. Build jobs run only for pushes (in parallel after checks):
-   - `build-backend`: `ghcr.io/<owner>/<repo>/backend:sha-<commit>` with GHA
-     layer cache
-   - `build-frontend`: packages the CI artifact with
-     [`frontend/Dockerfile.deploy`](../frontend/Dockerfile.deploy) (no second
-     npm build in Docker)
+   - `build-backend`: publishes `backend` when `backend/**` changed; otherwise
+     deploy reuses `:test-latest` or `:prod-latest`
+   - `build-frontend`: packages the CI artifact when `frontend/**` changed;
+     otherwise deploy reuses `:test-latest` or `:prod-latest`
    - `build-backup`: publishes `backup-service` only when `backup-service/**`
      changed; otherwise deploy reuses `:test-latest` or `:prod-latest`
-   - `build-meta`: aggregates image tags for deploy
 3. `deploy_test` runs for non-`main` branches with GitHub Environment `test`.
 4. `deploy_prod` runs for `main` with GitHub Environment `prod`.
 

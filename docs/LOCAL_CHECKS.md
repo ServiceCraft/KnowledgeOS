@@ -82,7 +82,7 @@ environment.
 
 Install these locally:
 
-- Go 1.25.x.
+- Go 1.26.x.
 - A Go toolchain capable of running the pinned `golangci-lint` from `Makefile`.
 - Node.js 20 and npm.
 - Docker Engine with Docker Compose plugin.
