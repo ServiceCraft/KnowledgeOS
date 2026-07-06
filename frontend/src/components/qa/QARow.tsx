@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
@@ -50,14 +50,10 @@ export function QARow({
   isSavingAnswer,
   isReviewing,
 }: QARowProps) {
-  const [answer, setAnswer] = useState(item.answer || '');
-  const [answerDirty, setAnswerDirty] = useState(false);
-
-  useEffect(() => {
-    setAnswer(item.answer || '');
-    setAnswerDirty(false);
-  }, [item.answer]);
-
+  const sourceAnswer = item.answer || '';
+  const [answerDraft, setAnswerDraft] = useState<{ source: string; value: string } | null>(null);
+  const answer = answerDraft?.source === sourceAnswer ? answerDraft.value : sourceAnswer;
+  const answerDirty = answer !== sourceAnswer;
   const isPending = item.ai_status === 'pending';
 
   return (
@@ -115,8 +111,7 @@ export function QARow({
             <Textarea
               value={answer}
               onChange={(e) => {
-                setAnswer(e.target.value);
-                setAnswerDirty(true);
+                setAnswerDraft({ source: sourceAnswer, value: e.target.value });
               }}
               placeholder="Введите ответ..."
               rows={2}

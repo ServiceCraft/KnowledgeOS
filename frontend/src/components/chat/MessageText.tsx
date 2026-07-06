@@ -5,7 +5,7 @@ interface MessageTextProps {
   className?: string;
 }
 
-export function plainTextForClipboard(text: string): string {
+function plainTextForClipboard(text: string): string {
   return text.replace(/\n+$/, '').replace(/^\n+/, '');
 }
 

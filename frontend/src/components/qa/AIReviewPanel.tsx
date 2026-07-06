@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Bot, Check, Pencil, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -23,13 +23,9 @@ export function AIReviewPanel({
   onEditSave,
 }: AIReviewPanelProps) {
   const [editingAI, setEditingAI] = useState(false);
-  const [editedAIAnswer, setEditedAIAnswer] = useState(item.ai_answer || '');
-
-  useEffect(() => {
-    if (item.ai_answer) {
-      setEditedAIAnswer(item.ai_answer);
-    }
-  }, [item.ai_answer]);
+  const sourceAIAnswer = item.ai_answer || '';
+  const [editedAI, setEditedAI] = useState<{ source: string; value: string } | null>(null);
+  const editedAIAnswer = editedAI?.source === sourceAIAnswer ? editedAI.value : sourceAIAnswer;
 
   if (item.ai_status !== 'pending' || !canWrite) return null;
 
@@ -49,7 +45,7 @@ export function AIReviewPanel({
         <div className="space-y-2">
           <Textarea
             value={editedAIAnswer}
-            onChange={(e) => setEditedAIAnswer(e.target.value)}
+            onChange={(e) => setEditedAI({ source: sourceAIAnswer, value: e.target.value })}
             rows={3}
             className="text-sm resize-y"
           />
@@ -67,7 +63,7 @@ export function AIReviewPanel({
               variant="outline"
               onClick={() => {
                 setEditingAI(false);
-                setEditedAIAnswer(item.ai_answer || '');
+                setEditedAI(null);
               }}
             >
               Отмена

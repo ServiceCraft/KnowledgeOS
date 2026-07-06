@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -45,14 +45,6 @@ export function QAListPage() {
   const [newQuestion, setNewQuestion] = useState('');
   const [newAnswer, setNewAnswer] = useState('');
   const [newThemeId, setNewThemeId] = useState<string>('');
-
-  useEffect(() => {
-    const themeFromUrl = searchParams.get('theme');
-    if (themeFromUrl) {
-      setThemeId(themeFromUrl);
-      setPage(1);
-    }
-  }, [searchParams]);
 
   const limit = 20;
   const { data, isLoading, isError } = useQAList({

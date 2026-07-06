@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -44,32 +44,24 @@ export function PricingNodeForm({
   parentId,
   nodes,
 }: PricingNodeFormProps) {
-  const [name, setName] = useState('');
-  const [nodeType, setNodeType] = useState('category');
-  const [price, setPrice] = useState('');
-  const [selectedParentId, setSelectedParentId] = useState<string>('');
-
-  useEffect(() => {
-    if (initialData) {
-      setName(initialData.name);
-      setNodeType(initialData.node_type);
-      setPrice(initialData.price != null ? String(initialData.price) : '');
-      setSelectedParentId(initialData.parent_id ?? '');
-    } else {
-      setName('');
-      setNodeType('category');
-      setPrice('');
-      setSelectedParentId(parentId ?? '');
-    }
-  }, [initialData, parentId, open]);
+  const sourceKey = `${open ? 'open' : 'closed'}:${initialData?.id ?? 'new'}:${parentId ?? ''}`;
+  const sourceForm = {
+    key: sourceKey,
+    name: initialData?.name ?? '',
+    nodeType: initialData?.node_type ?? 'category',
+    price: initialData?.price != null ? String(initialData.price) : '',
+    selectedParentId: initialData?.parent_id ?? parentId ?? '',
+  };
+  const [draft, setDraft] = useState(sourceForm);
+  const form = draft.key === sourceKey ? draft : sourceForm;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit({
-      name,
-      node_type: nodeType,
-      price: price ? parseFloat(price) : undefined,
-      parent_id: selectedParentId || undefined,
+      name: form.name,
+      node_type: form.nodeType,
+      price: form.price ? parseFloat(form.price) : undefined,
+      parent_id: form.selectedParentId || undefined,
     });
   };
 
@@ -82,13 +74,18 @@ export function PricingNodeForm({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Название</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+            <Input
+              id="name"
+              value={form.name}
+              onChange={(e) => setDraft({ ...form, name: e.target.value })}
+              required
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="nodeType">Тип</Label>
-            <Select value={nodeType} onValueChange={(v) => v && setNodeType(v)}>
+            <Select value={form.nodeType} onValueChange={(v) => v && setDraft({ ...form, nodeType: v })}>
               <SelectTrigger>
-                <SelectValue>{NODE_TYPE_LABELS[nodeType] ?? nodeType}</SelectValue>
+                <SelectValue>{NODE_TYPE_LABELS[form.nodeType] ?? form.nodeType}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {NODE_TYPES.map((t) => (
@@ -105,17 +102,17 @@ export function PricingNodeForm({
               id="price"
               type="number"
               step="0.01"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
+              value={form.price}
+              onChange={(e) => setDraft({ ...form, price: e.target.value })}
               placeholder="Необязательно"
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="parent">Родительский узел</Label>
-            <Select value={selectedParentId} onValueChange={(v) => setSelectedParentId(v ?? '')}>
+            <Select value={form.selectedParentId} onValueChange={(v) => setDraft({ ...form, selectedParentId: v ?? '' })}>
               <SelectTrigger>
                 <SelectValue placeholder="Нет (корневой)">
-                  {selectedParentId ? nodes.find((n) => n.id === selectedParentId)?.name ?? 'Нет (корневой)' : 'Нет (корневой)'}
+                  {form.selectedParentId ? nodes.find((n) => n.id === form.selectedParentId)?.name ?? 'Нет (корневой)' : 'Нет (корневой)'}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -134,7 +131,7 @@ export function PricingNodeForm({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Отмена
             </Button>
-            <Button type="submit" disabled={loading || !name.trim()}>
+            <Button type="submit" disabled={loading || !form.name.trim()}>
               {loading ? 'Сохранение...' : 'Сохранить'}
             </Button>
           </DialogFooter>

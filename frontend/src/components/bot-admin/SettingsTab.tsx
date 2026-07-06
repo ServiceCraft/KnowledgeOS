@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
@@ -27,14 +27,12 @@ import { handoffModule, handoffFallbackText } from '@/components/bot-admin/modul
 export function SettingsTab() {
   const { data, isLoading, isError } = useBotSettings();
   const update = useUpdateBotSettings();
-  const [form, setForm] = useState<Partial<BotSettings>>({});
-
-  useEffect(() => {
-    if (data) setForm(data);
-  }, [data]);
+  const [draft, setDraft] = useState<Partial<BotSettings>>({});
 
   if (isLoading) return <LoadingState />;
   if (isError || !data) return <ErrorState message="Не удалось загрузить настройки бота." />;
+
+  const form: BotSettings = { ...data, ...draft };
 
   const save = () => {
     update.mutate(
@@ -56,27 +54,30 @@ export function SettingsTab() {
         allowed_theme_ids: Array.isArray(form.allowed_theme_ids) ? form.allowed_theme_ids : [],
       },
       {
-        onSuccess: () => toast.success('Настройки сохранены'),
+        onSuccess: () => {
+          setDraft({});
+          toast.success('Настройки сохранены');
+        },
         onError: () => toast.error('Не удалось сохранить настройки'),
       }
     );
   };
 
   const setHandoffEnabled = (enabled: boolean) => {
-    setForm((f) => ({
+    setDraft((f) => ({
       ...f,
       enabled_modules: {
-        ...(f.enabled_modules ?? {}),
+        ...(f.enabled_modules ?? data.enabled_modules ?? {}),
         handoff: enabled,
       },
     }));
   };
 
   const setHandoffText = (text: string) => {
-    setForm((f) => ({
+    setDraft((f) => ({
       ...f,
       enabled_modules: {
-        ...(f.enabled_modules ?? {}),
+        ...(f.enabled_modules ?? data.enabled_modules ?? {}),
         handoff_fallback_text: text,
       },
     }));
@@ -93,7 +94,7 @@ export function SettingsTab() {
             <FieldHint label="Бот включён" hint={SETTING_HINTS.enabled} />
             <Select
               value={form.enabled ? 'true' : 'false'}
-              onValueChange={(v) => setForm((f) => ({ ...f, enabled: v === 'true' }))}
+              onValueChange={(v) => setDraft((f) => ({ ...f, enabled: v === 'true' }))}
             >
               <SelectTrigger className="w-32">
                 <SelectValue>
@@ -111,7 +112,7 @@ export function SettingsTab() {
               <FieldHint label="Тариф модели" hint={SETTING_HINTS.model_tier} />
               <Select
                 value={form.model_tier ?? 'lite'}
-                onValueChange={(v) => setForm((f) => ({ ...f, model_tier: v as BotSettings['model_tier'] }))}
+                onValueChange={(v) => setDraft((f) => ({ ...f, model_tier: v as BotSettings['model_tier'] }))}
               >
                 <SelectTrigger>
                   <SelectValue>
@@ -129,7 +130,7 @@ export function SettingsTab() {
               <Input
                 id="model"
                 value={form.model ?? ''}
-                onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
+                onChange={(e) => setDraft((f) => ({ ...f, model: e.target.value }))}
                 placeholder="По умолчанию"
               />
             </div>
@@ -143,7 +144,7 @@ export function SettingsTab() {
                 min={0}
                 max={2}
                 value={form.temperature ?? 0.2}
-                onChange={(temperature) => setForm((f) => ({ ...f, temperature }))}
+                onChange={(temperature) => setDraft((f) => ({ ...f, temperature }))}
               />
             </div>
             <div className="space-y-2">
@@ -153,7 +154,7 @@ export function SettingsTab() {
                 min={1}
                 max={8192}
                 value={form.max_tokens ?? 1024}
-                onChange={(max_tokens) => setForm((f) => ({ ...f, max_tokens }))}
+                onChange={(max_tokens) => setDraft((f) => ({ ...f, max_tokens }))}
               />
             </div>
           </div>
@@ -200,7 +201,7 @@ export function SettingsTab() {
             <Input
               id="persona_name"
               value={form.persona_name ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, persona_name: e.target.value }))}
+              onChange={(e) => setDraft((f) => ({ ...f, persona_name: e.target.value }))}
             />
           </div>
           <div className="space-y-2">
@@ -208,7 +209,7 @@ export function SettingsTab() {
             <Input
               id="persona_tone"
               value={form.persona_tone ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, persona_tone: e.target.value }))}
+              onChange={(e) => setDraft((f) => ({ ...f, persona_tone: e.target.value }))}
             />
           </div>
           <div className="space-y-2">
@@ -216,7 +217,7 @@ export function SettingsTab() {
             <Textarea
               id="persona_rules"
               value={form.persona_rules ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, persona_rules: e.target.value }))}
+              onChange={(e) => setDraft((f) => ({ ...f, persona_rules: e.target.value }))}
               rows={4}
             />
           </div>
@@ -237,7 +238,7 @@ export function SettingsTab() {
                 min={0}
                 max={1}
                 value={form.min_retrieval_score ?? 0}
-                onChange={(min_retrieval_score) => setForm((f) => ({ ...f, min_retrieval_score }))}
+                onChange={(min_retrieval_score) => setDraft((f) => ({ ...f, min_retrieval_score }))}
               />
             </div>
             <div className="space-y-2">
@@ -248,7 +249,7 @@ export function SettingsTab() {
                 min={0}
                 max={1}
                 value={form.min_confidence ?? 0}
-                onChange={(min_confidence) => setForm((f) => ({ ...f, min_confidence }))}
+                onChange={(min_confidence) => setDraft((f) => ({ ...f, min_confidence }))}
               />
             </div>
           </div>
@@ -257,7 +258,7 @@ export function SettingsTab() {
               <input
                 type="checkbox"
                 checked={form.escalate_on_low_confidence ?? false}
-                onChange={(e) => setForm((f) => ({ ...f, escalate_on_low_confidence: e.target.checked }))}
+                onChange={(e) => setDraft((f) => ({ ...f, escalate_on_low_confidence: e.target.checked }))}
               />
               <FieldHint label="Эскалация при низкой уверенности" hint={SETTING_HINTS.escalate} />
             </label>
@@ -265,7 +266,7 @@ export function SettingsTab() {
               <input
                 type="checkbox"
                 checked={form.require_citations ?? false}
-                onChange={(e) => setForm((f) => ({ ...f, require_citations: e.target.checked }))}
+                onChange={(e) => setDraft((f) => ({ ...f, require_citations: e.target.checked }))}
               />
               <FieldHint label="Требовать цитирование" hint={SETTING_HINTS.citations} />
             </label>
