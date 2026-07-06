@@ -8,7 +8,6 @@ required_vars=(
   SSH_PORT
   SSH_USER
   SSH_PRIVATE_KEY
-  APP_ENV_FILE
   FRONTEND_IMAGE
   BACKEND_IMAGE
   IMAGE_TAG
@@ -58,9 +57,13 @@ scp_base=(
 )
 
 "${ssh_base[@]}" "mkdir -p $remote_path"
+if ! "${ssh_base[@]}" "test -f $remote_path/.env"; then
+  echo "Missing $DEPLOY_PATH/.env on the server. Create it once before the first deploy." >&2
+  exit 1
+fi
+
 "${scp_base[@]}" "$bundle_file" "$SSH_USER@$SSH_HOST:$remote_bundle"
 "${ssh_base[@]}" "tar -xzf $(shell_quote "$remote_bundle") -C $remote_path && chmod +x $remote_path/scripts/deploy-compose.sh"
-printf '%s\n' "$APP_ENV_FILE" | "${ssh_base[@]}" "cat > $remote_path/.env && chmod 600 $remote_path/.env"
 
 remote_command=$(cat <<EOF
 cd $remote_path

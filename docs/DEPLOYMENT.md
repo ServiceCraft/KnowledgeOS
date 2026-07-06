@@ -31,13 +31,29 @@ sudo mkdir -p /opt/knowledgeos/test
 sudo chown -R deploy:deploy /opt/knowledgeos
 ```
 
+Create `.env` on each server once and keep it there. CI/CD does not upload or
+overwrite runtime env files.
+
+Example for production:
+
+```bash
+sudo -u deploy cp /path/to/.env.example /opt/knowledgeos/prod/.env
+sudo -u deploy chmod 600 /opt/knowledgeos/prod/.env
+sudo -u deploy $EDITOR /opt/knowledgeos/prod/.env
+```
+
+Repeat for test with different passwords, ports, and domains.
+
 GitHub Actions uploads these files to the target directory before every deploy:
 
 - `docker-compose.deploy.yml`
 - `nginx/nginx.conf`
 - `scripts/deploy-compose.sh`
-- `.env` generated from the GitHub Environment secret `APP_ENV_FILE`
 - `.env.images` generated on the server with the image tags for the current run
+
+The server must already contain:
+
+- `.env` with runtime application settings
 
 The server must have Docker Engine and the Docker Compose plugin installed.
 
@@ -52,7 +68,6 @@ Add these secrets to each environment:
 - `SSH_USER`: deploy user.
 - `SSH_PRIVATE_KEY`: private key for the deploy user.
 - `DEPLOY_PATH`: target directory, for example `/opt/knowledgeos/prod`.
-- `APP_ENV_FILE`: full runtime `.env` content for this environment.
 - `REGISTRY_USERNAME`: registry user. For GHCR this can be a GitHub username.
 - `REGISTRY_TOKEN`: token with package read permission from the server.
 
@@ -63,8 +78,11 @@ Add these optional environment variables:
 
 ## Runtime Environment
 
-`APP_ENV_FILE` should be based on `.env.example` and must be different for
-production and test.
+`.env` lives only on the server in `DEPLOY_PATH/.env`. Use `.env.example` in the
+repository as a template when creating it for the first time.
+
+Edit server `.env` directly when you change passwords, API keys, ports, or other
+runtime settings. Deploy does not replace this file.
 
 Required application values:
 

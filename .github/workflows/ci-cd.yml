@@ -185,7 +185,6 @@ jobs:
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          APP_ENV_FILE: ${{ secrets.APP_ENV_FILE }}
           REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME || github.actor }}
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN || github.token }}
           COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME || 'knowledgeos-test' }}
@@ -218,7 +217,6 @@ jobs:
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          APP_ENV_FILE: ${{ secrets.APP_ENV_FILE }}
           REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME || github.actor }}
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN || github.token }}
           COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME || 'knowledgeos-prod' }}

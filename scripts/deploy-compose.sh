@@ -16,6 +16,11 @@ REGISTRY="${REGISTRY:-ghcr.io}"
 : "${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}"
 : "${BACKEND_IMAGE:?BACKEND_IMAGE is required}"
 
+if [ ! -f "$ENV_FILE" ]; then
+  echo "$ENV_FILE is required on the server. Create it once before deploy." >&2
+  exit 2
+fi
+
 if [ -n "${REGISTRY_TOKEN:-}" ]; then
   : "${REGISTRY_USERNAME:?REGISTRY_USERNAME is required when REGISTRY_TOKEN is set}"
   printf '%s' "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
