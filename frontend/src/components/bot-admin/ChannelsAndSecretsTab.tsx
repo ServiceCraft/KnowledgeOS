@@ -32,6 +32,7 @@ import {
   CHANNEL_LABELS,
   CHANNEL_METADATA_FIELDS,
   SERVICE_SECRET_HINTS,
+  SERVICE_SECRET_METADATA_FIELDS,
   CHANNEL_HINTS,
   CHANNEL_SECRET_KINDS,
   SERVICE_SECRET_KINDS,
@@ -40,6 +41,8 @@ import {
   canGenerateWebhookSecret,
   generateWebhookSecret,
   buildChannelFormFromSecret,
+  parseMetadataRecord,
+  metadataFieldString,
 } from '@/components/bot-admin/constants';
 import { FieldHint } from '@/components/bot-admin/FieldHint';
 import { RevealableSecretInput } from '@/components/bot-admin/RevealableSecretInput';
@@ -57,6 +60,8 @@ export function ChannelsAndSecretsTab() {
   const [editingService, setEditingService] = useState<TenantSecretStatus | null>(null);
   const [editingChannel, setEditingChannel] = useState<ChannelStatus | null>(null);
   const [serviceValue, setServiceValue] = useState('');
+  const [serviceMetadata, setServiceMetadata] = useState<Record<string, string>>({});
+  const [serviceEditorLoading, setServiceEditorLoading] = useState(false);
   const [token, setToken] = useState('');
   const [metadata, setMetadata] = useState<Record<string, string>>({});
   const [channelEditorLoading, setChannelEditorLoading] = useState(false);
@@ -110,14 +115,57 @@ export function ChannelsAndSecretsTab() {
     );
   };
 
+  const openServiceEditor = (status: TenantSecretStatus) => {
+    setEditingService(status);
+    setServiceValue('');
+    setServiceMetadata({});
+    const fields = SERVICE_SECRET_METADATA_FIELDS[status.kind];
+    // Only secrets with extra config fields need the stored values prefilled;
+    // value-only secrets (llm) keep the blank re-entry behaviour.
+    if (!fields || !status.is_set) return;
+    setServiceEditorLoading(true);
+    botAdminApi
+      .getSecretForEdit(status.kind)
+      .then((secret) => {
+        setServiceValue(secret.value);
+        const meta = parseMetadataRecord(secret.metadata);
+        setServiceMetadata(
+          Object.fromEntries(fields.map((f) => [f.key, metadataFieldString(meta[f.key])]))
+        );
+      })
+      .catch(() => {
+        toast.error('Не удалось загрузить текущие значения интеграции');
+        setEditingService(null);
+      })
+      .finally(() => setServiceEditorLoading(false));
+  };
+
+  const serviceMetadataValid = () => {
+    if (!editingService) return false;
+    const fields = SERVICE_SECRET_METADATA_FIELDS[editingService.kind] ?? [];
+    return fields.every((f) => !f.required || (serviceMetadata[f.key] ?? '').trim());
+  };
+
   const saveServiceSecret = () => {
-    if (!editingService || !serviceValue.trim()) return;
+    if (!editingService || !serviceValue.trim() || !serviceMetadataValid()) return;
+    const fields = SERVICE_SECRET_METADATA_FIELDS[editingService.kind];
+    const cleanMetadata = fields
+      ? Object.fromEntries(
+          Object.entries(serviceMetadata)
+            .map(([key, value]) => [key, value.trim()])
+            .filter(([, value]) => value && value !== MASKED_SECRET_VALUE)
+        )
+      : undefined;
     setSecret.mutate(
-      { kind: editingService.kind, data: { value: serviceValue } },
+      {
+        kind: editingService.kind,
+        data: cleanMetadata ? { value: serviceValue, metadata: cleanMetadata } : { value: serviceValue },
+      },
       {
         onSuccess: () => {
           setEditingService(null);
           setServiceValue('');
+          setServiceMetadata({});
           toast.success('Секрет сохранён');
         },
         onError: () => toast.error('Не удалось сохранить секрет'),
@@ -191,7 +239,7 @@ export function ChannelsAndSecretsTab() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => { setEditingService(s); setServiceValue(''); }}>
+                <Button variant="outline" size="sm" onClick={() => openServiceEditor(s)}>
                   {s.is_set ? 'Обновить' : 'Задать'}
                 </Button>
                 {s.is_set && (
@@ -288,30 +336,67 @@ export function ChannelsAndSecretsTab() {
         ))}
       </div>
 
-      <Dialog open={!!editingService} onOpenChange={(open) => !open && setEditingService(null)}>
+      <Dialog
+        open={!!editingService}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingService(null);
+            setServiceValue('');
+            setServiceMetadata({});
+            setServiceEditorLoading(false);
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
               {editingService ? SECRET_LABELS[editingService.kind] : 'Секрет'}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-2">
-            <FieldHint
-              label={<RequiredLabel>Значение</RequiredLabel>}
-              htmlFor="service-secret-value"
-              hint={editingService ? (SERVICE_SECRET_HINTS[editingService.kind] ?? '') : ''}
-            />
-            <Input
-              id="service-secret-value"
-              type="password"
-              value={serviceValue}
-              onChange={(e) => setServiceValue(e.target.value)}
-              autoFocus
-            />
-          </div>
+          {serviceEditorLoading ? (
+            <p className="text-sm text-muted-foreground">Загрузка текущих значений…</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <FieldHint
+                  label={<RequiredLabel>Значение</RequiredLabel>}
+                  htmlFor="service-secret-value"
+                  hint={editingService ? (SERVICE_SECRET_HINTS[editingService.kind] ?? '') : ''}
+                />
+                <Input
+                  id="service-secret-value"
+                  type="password"
+                  value={serviceValue}
+                  onChange={(e) => setServiceValue(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              {editingService &&
+                (SERVICE_SECRET_METADATA_FIELDS[editingService.kind] ?? []).map((field) => (
+                  <div className="space-y-2" key={field.key}>
+                    <FieldHint
+                      label={field.required ? <RequiredLabel>{field.label}</RequiredLabel> : field.label}
+                      htmlFor={`service-metadata-${field.key}`}
+                      hint={field.hint}
+                    />
+                    <Input
+                      id={`service-metadata-${field.key}`}
+                      value={serviceMetadata[field.key] ?? ''}
+                      placeholder={field.placeholder}
+                      onChange={(e) =>
+                        setServiceMetadata((m) => ({ ...m, [field.key]: e.target.value }))
+                      }
+                    />
+                  </div>
+                ))}
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingService(null)}>Отмена</Button>
-            <Button onClick={saveServiceSecret} disabled={!serviceValue.trim() || setSecret.isPending}>
+            <Button
+              onClick={saveServiceSecret}
+              disabled={serviceEditorLoading || !serviceValue.trim() || !serviceMetadataValid() || setSecret.isPending}
+            >
               Сохранить
             </Button>
           </DialogFooter>

@@ -248,7 +248,7 @@ export interface ChatExchange {
 
 export type BotProvider = 'yandex';
 export type BotModelTier = 'lite' | 'pro';
-export type SecretKind = 'llm' | 'telegram' | 'max' | 'vk' | 'bitrix24';
+export type SecretKind = 'llm' | 'telegram' | 'max' | 'vk' | 'yclients';
 
 export interface BotSettings {
   company_id: string;

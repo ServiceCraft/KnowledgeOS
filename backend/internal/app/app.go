@@ -24,6 +24,7 @@ import (
 	"github.com/knowledgeos/backend/internal/database"
 	"github.com/knowledgeos/backend/internal/domain"
 	"github.com/knowledgeos/backend/internal/handler"
+	"github.com/knowledgeos/backend/internal/integrations/yclients"
 	applog "github.com/knowledgeos/backend/internal/logger"
 	"github.com/knowledgeos/backend/internal/service"
 	"github.com/knowledgeos/backend/internal/store"
@@ -118,11 +119,18 @@ func New(cfg *config.Config) (*App, error) {
 	linkSvc := service.NewLinkService(linkStore, qaStore, articleStore, pricingStore)
 	searchSvc := service.NewSearchService(searchStore)
 	retrieverSvc := service.NewRetrieverService(kbEmbeddingStore, searchStore, llmFactory, cfg.RAGVectorTopK, cfg.RAGHybridTopK)
+	yclientsFactory := func(partnerToken, baseURL string) tools.YClientsAPI {
+		return yclients.NewClient(nil, yclients.Config{PartnerToken: partnerToken, BaseURL: baseURL})
+	}
 	chatTools := tools.NewRegistry(
 		tools.NewSearchKnowledgeTool(retrieverSvc, cfg.RAGHybridTopK),
 		tools.NewGetPricingTool(pricingSvc),
 		tools.NewGetServiceInfoTool(articleSvc, qaSvc, pricingSvc),
 		tools.NewRequestHandoffTool(),
+		tools.NewGetYClientsServicesTool(tenantSecretSvc, yclientsFactory),
+		tools.NewGetYClientsStaffTool(tenantSecretSvc, yclientsFactory),
+		tools.NewGetYClientsTimesTool(tenantSecretSvc, yclientsFactory),
+		tools.NewCreateYClientsBookingTool(tenantSecretSvc, yclientsFactory),
 	)
 	chatSvc := service.NewChatService(chatStore, botSettingsSvc, retrieverSvc, llmFactory, chatTools, cfg.BotChatDebugLog)
 	maxClient, err := maxHTTPClient(cfg)

@@ -12,7 +12,7 @@ export const SECRET_LABELS: Record<SecretKind, string> = {
   telegram: 'Telegram',
   max: 'MAX',
   vk: 'ВКонтакте',
-  bitrix24: 'Битрикс24',
+  yclients: 'YClients',
 };
 
 export const CHANNEL_LABELS: Record<ChannelStatus['channel'], string> = {
@@ -93,7 +93,24 @@ export const CHANNEL_METADATA_FIELDS: Record<
 
 export const SERVICE_SECRET_HINTS: Partial<Record<SecretKind, string>> = {
   llm: 'IAM-токен или API-ключ сервисного аккаунта Yandex Cloud для YandexGPT. Где взять: console.cloud.yandex.ru → Сервисные аккаунты → Создать API-ключ или получить IAM-токен. Без этого секрета бот не сможет генерировать ответы.',
-  bitrix24: 'Webhook URL или токен входящего webhook Bitrix24 для интеграции CRM. Где взять: Bitrix24 → Приложения → Webhooks → Входящий webhook. Нужен только если включён модуль bitrix24.',
+  yclients: 'Партнёрский токен YClients (Bearer) для онлайн-записи клиентов. Где взять: developers.yclients.com → раздел для партнёров. Плюс укажите ID филиала (company_id). Работает только при включённом модуле «Запись в YClients».',
+};
+
+// SERVICE_SECRET_METADATA_FIELDS defines extra config fields (beyond the secret
+// value) for service secrets that need them, e.g. the YClients company_id. The
+// service-secret editor renders these below the value input.
+export const SERVICE_SECRET_METADATA_FIELDS: Partial<
+  Record<SecretKind, Array<{ key: string; label: string; placeholder?: string; hint: string; required?: boolean }>>
+> = {
+  yclients: [
+    {
+      key: 'company_id',
+      label: 'ID филиала (company_id)',
+      placeholder: 'Например 123456',
+      hint: 'Числовой идентификатор филиала YClients, в который создаются записи. Виден в URL кабинета YClients и в настройках филиала.',
+      required: true,
+    },
+  ],
 };
 
 export const CHANNEL_HINTS = {
@@ -118,6 +135,8 @@ export const SETTING_HINTS = {
     'Включает передачу диалога оператору: очередь в /bot/handoff, эскалация при пустой базе и по запросу клиента.',
   handoff_text:
     'Сообщение клиенту при эскалации. Показывается вместо ответа бота, когда диалог передаётся оператору.',
+  yclients_booking:
+    'Разрешает боту записывать клиентов в YClients: смотреть услуги, мастеров, свободные слоты и создавать запись. Требует заданного секрета YClients (партнёрский токен + company_id).',
   persona_name: 'Имя бота в системном промпте, например «Администратор» или имя вашей компании.',
   persona_tone: 'Стиль общения: friendly, professional и т.д. — попадает в инструкцию модели.',
   persona_rules: 'Дополнительные правила поведения бота: что можно/нельзя отвечать, формат ответов.',
@@ -136,7 +155,7 @@ export const SETTING_HINTS = {
 export const MASKED_SECRET_VALUE = '********';
 
 export const CHANNEL_SECRET_KINDS: SecretKind[] = ['telegram', 'max', 'vk'];
-export const SERVICE_SECRET_KINDS: SecretKind[] = ['llm', 'bitrix24'];
+export const SERVICE_SECRET_KINDS: SecretKind[] = ['llm', 'yclients'];
 
 const SENSITIVE_METADATA_KEY_MARKERS = ['secret', 'password', 'token', 'api_key', 'access_key', 'private'] as const;
 

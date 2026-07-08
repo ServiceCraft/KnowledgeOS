@@ -86,11 +86,49 @@ func (s *ChatService) SetHandoffEscalator(handoff chatHandoffEscalator) {
 	s.handoff = handoff
 }
 
-func (s *ChatService) toolDefinitions() []llm.Tool {
+// moduleGatedTools maps a tool name to the EnabledModules key that must be
+// truthy for the tool to be advertised and executed. Tools not listed here are
+// always available to every company.
+var moduleGatedTools = map[string]string{
+	tools.ToolYClientsGetServices:   tools.ModuleYClientsBooking,
+	tools.ToolYClientsGetStaff:      tools.ModuleYClientsBooking,
+	tools.ToolYClientsGetTimes:      tools.ModuleYClientsBooking,
+	tools.ToolYClientsCreateBooking: tools.ModuleYClientsBooking,
+}
+
+func (s *ChatService) toolDefinitions(settings *domain.BotSettings) []llm.Tool {
 	if s.toolset == nil {
 		return nil
 	}
-	return s.toolset.Definitions()
+	defs := s.toolset.Definitions()
+	if len(moduleGatedTools) == 0 {
+		return defs
+	}
+	out := make([]llm.Tool, 0, len(defs))
+	for _, d := range defs {
+		if module, gated := moduleGatedTools[d.Name]; gated && !moduleEnabled(settings.EnabledModules, module) {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// moduleEnabled reports whether EnabledModules[key] is a truthy boolean.
+func moduleEnabled(raw json.RawMessage, key string) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var modules map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &modules); err != nil {
+		return false
+	}
+	value, ok := modules[key]
+	if !ok || len(value) == 0 {
+		return false
+	}
+	var enabled bool
+	return json.Unmarshal(value, &enabled) == nil && enabled
 }
 
 type CreateChatSessionRequest struct {
@@ -412,7 +450,7 @@ func (s *ChatService) generate(ctx context.Context, companyID, sessionID uuid.UU
 		cfg.escalate = false
 		cfg.escalationText = ""
 	}
-	toolDefs := s.toolDefinitions()
+	toolDefs := s.toolDefinitions(settings)
 	hasTools := len(toolDefs) > 0
 
 	query := latestUserContent(history)
@@ -581,7 +619,7 @@ func (s *ChatService) runToolLoop(ctx context.Context, companyID, sessionID uuid
 		llmMessages = append(llmMessages, llm.Message{Role: llm.RoleAssistant, Content: resp.Message.Content, ToolCalls: calls})
 
 		for _, call := range calls {
-			content, srcs := s.executeToolCall(ctx, companyID, call)
+			content, srcs := s.executeToolCall(ctx, companyID, settings, call)
 			if call.Name == tools.RequestHandoffToolName {
 				handoffRequested = true
 				if handoffReason == "" {
@@ -608,8 +646,14 @@ func (s *ChatService) runToolLoop(ctx context.Context, companyID, sessionID uuid
 	}, nil
 }
 
-func (s *ChatService) executeToolCall(ctx context.Context, companyID uuid.UUID, call llm.ToolCall) (string, []domain.ChatSource) {
+func (s *ChatService) executeToolCall(ctx context.Context, companyID uuid.UUID, settings *domain.BotSettings, call llm.ToolCall) (string, []domain.ChatSource) {
 	applog.TraceCall(ctx, "service.ChatService.executeToolCall")
+	// Defensive gate: a module-gated tool must not run if its module is off,
+	// even if the model hallucinates a call the definitions withheld.
+	if module, gated := moduleGatedTools[call.Name]; gated && !moduleEnabled(settings.EnabledModules, module) {
+		payload, _ := json.Marshal(map[string]string{"error": "tool is disabled for this company"})
+		return string(payload), nil
+	}
 	result, err := s.toolset.Execute(ctx, companyID, call)
 	if err != nil {
 		// Tool errors can echo user-supplied arguments, so mask PII before it
