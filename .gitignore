@@ -37,3 +37,12 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Cursor local config (plans already tracked separately)
+.cursor/mcp.json
+
+# Optional test/build artifacts
+coverage/
+storybook-static/
+frontend/playwright-report/
+frontend/blob-report/

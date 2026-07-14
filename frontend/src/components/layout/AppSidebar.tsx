@@ -16,6 +16,7 @@ import {
   BookOpen,
   FileText,
   DollarSign,
+  Layers,
   Search,
   Users,
   Download,
@@ -30,6 +31,7 @@ import { isTenantReady } from '@/lib/tenantContext';
 import { hasMinRole } from '@/lib/roles';
 
 const kbLinks = [
+  { to: '/kb/themes', label: 'Темы', icon: Layers },
   { to: '/kb/qa', label: 'Вопросы и ответы', icon: HelpCircle },
   { to: '/kb/articles', label: 'Статьи', icon: FileText },
   { to: '/kb/faq', label: 'FAQ', icon: MessageSquareQuote },
