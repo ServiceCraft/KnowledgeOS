@@ -33,9 +33,11 @@ export function FAQPage() {
         <div className="space-y-2">
           {items.map((item) => (
             <Collapsible key={item.id}>
-              <Card>
+              {/* py-0/gap-0 у Card: вертикальный паддинг перенесён в триггер,
+                  чтобы кликабельной была ВСЯ свёрнутая плашка, а не только центр. */}
+              <Card className="gap-0 py-0">
                 <CollapsibleTrigger
-                  render={<CardHeader className="block w-full cursor-pointer text-left hover:bg-muted/50 transition-colors" />}
+                  render={<CardHeader className="block w-full cursor-pointer py-4 text-left hover:bg-muted/50 transition-colors" />}
                 >
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base font-medium">{item.question}</CardTitle>
@@ -43,7 +45,7 @@ export function FAQPage() {
                   </div>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <CardContent className="pt-0">
+                  <CardContent className="pt-1 pb-4">
                     <p className="text-muted-foreground whitespace-pre-wrap">{item.answer}</p>
                   </CardContent>
                 </CollapsibleContent>
