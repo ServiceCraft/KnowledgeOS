@@ -99,6 +99,10 @@ type RetrieveRequest struct {
 	VectorTopK int
 	HybridTopK int
 	Rewrite    bool
+	// DialogHint carries the tail of the conversation so the query rewriter can
+	// resolve follow-ups («а для щенка тоже самое?») into self-contained search
+	// queries. Used only for rewriting, never searched directly.
+	DialogHint string
 }
 
 type RetrieveResult struct {

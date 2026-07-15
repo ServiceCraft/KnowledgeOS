@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { guardrailReasonLabel, mapChatStreamError, STATE_LABELS } from '@/lib/chatUi';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { apiErrorLabel } from '@/lib/apiError';
 import { ChatAnswerContent } from '@/components/chat/ChatCitations';
 import { BotTypingIndicator } from '@/components/chat/BotTypingIndicator';
 import { ChatComposer } from '@/components/chat/ChatComposer';
@@ -228,7 +229,7 @@ export function BotPlaygroundPage() {
             {sessionsQuery.isLoading ? (
               <LoadingState />
             ) : sessionsQuery.isError ? (
-              <ErrorState message="Не удалось загрузить сессии." />
+              <ErrorState message={apiErrorLabel(sessionsQuery.error, 'Не удалось загрузить сессии.')} />
             ) : (
             <div className="space-y-2 pr-2">
               {sessions.map((session) => (

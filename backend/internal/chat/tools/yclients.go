@@ -321,6 +321,22 @@ func (t *CreateYClientsBookingTool) Execute(ctx context.Context, companyID uuid.
 	if errResult != nil {
 		return *errResult, nil
 	}
+	// The model must book real services, not guessed ids: verify service_id
+	// against the live list before creating the record.
+	services, err := api.GetServices(ctx, ycCompany)
+	if err != nil {
+		return *yclientsErr(err.Error()), nil
+	}
+	validService := false
+	for _, s := range services {
+		if s.ID == in.ServiceID {
+			validService = true
+			break
+		}
+	}
+	if !validService {
+		return *yclientsErr(fmt.Sprintf("service_id %d не найден среди услуг компании — вызови yclients_get_services и используй реальный id услуги", in.ServiceID)), nil
+	}
 	results, err := api.CreateBookRecord(ctx, ycCompany, yclients.BookRequest{
 		Phone:    phone,
 		Fullname: strings.TrimSpace(in.Fullname),

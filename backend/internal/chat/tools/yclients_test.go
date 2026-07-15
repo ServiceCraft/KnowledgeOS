@@ -52,7 +52,10 @@ func factoryFor(api YClientsAPI) YClientsClientFactory {
 }
 
 func TestYClientsCreateBookingHappyPath(t *testing.T) {
-	api := &fakeYClientsAPI{bookResult: []yclients.BookResult{{RecordID: 99}}}
+	api := &fakeYClientsAPI{
+		services:   []yclients.Service{{ID: 7, Title: "УЗИ"}},
+		bookResult: []yclients.BookResult{{RecordID: 99}},
+	}
 	secrets := fakeSecretReader{token: "partner", meta: json.RawMessage(`{"company_id":"777"}`)}
 	tool := NewCreateYClientsBookingTool(secrets, factoryFor(api))
 
@@ -72,6 +75,29 @@ func TestYClientsCreateBookingHappyPath(t *testing.T) {
 	}
 	if len(api.lastReq.Appointments) != 1 || api.lastReq.Appointments[0].Services[0] != 7 {
 		t.Errorf("unexpected appointment: %+v", api.lastReq.Appointments)
+	}
+}
+
+func TestYClientsCreateBookingRejectsUnknownService(t *testing.T) {
+	// Модель не должна создавать запись с выдуманным service_id: инструмент
+	// сверяет id с реальным списком услуг и возвращает ошибку-подсказку.
+	api := &fakeYClientsAPI{
+		services:   []yclients.Service{{ID: 7, Title: "УЗИ"}},
+		bookResult: []yclients.BookResult{{RecordID: 99}},
+	}
+	secrets := fakeSecretReader{token: "partner", meta: json.RawMessage(`{"company_id":"777"}`)}
+	tool := NewCreateYClientsBookingTool(secrets, factoryFor(api))
+
+	args := json.RawMessage(`{"fullname":"Иван","phone":"+79991234567","service_id":1,"staff_id":3,"datetime":"2026-07-10T10:00:00+03:00"}`)
+	res, err := tool.Execute(context.Background(), uuid.New(), args)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(res.Content, "не найден среди услуг") {
+		t.Fatalf("expected unknown-service error, got: %s", res.Content)
+	}
+	if api.lastReq.Phone != "" {
+		t.Fatalf("booking must not be created for unknown service, got request: %+v", api.lastReq)
 	}
 }
 

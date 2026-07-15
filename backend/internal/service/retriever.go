@@ -65,7 +65,7 @@ func (s *RetrieverService) Search(ctx context.Context, companyID uuid.UUID, req 
 	searchQuery := req.Query
 	rewritten := ""
 	if llmErr == nil && req.Rewrite {
-		if candidate := s.rewriteQuery(ctx, provider, req.Query); candidate != "" {
+		if candidate := s.rewriteQuery(ctx, provider, rewriteInput(req.Query, req.DialogHint)); candidate != "" {
 			rewritten = candidate
 			searchQuery = candidate
 			log.Debug().Msg("retriever query rewritten")
@@ -106,11 +106,37 @@ func (s *RetrieverService) Search(ctx context.Context, companyID uuid.UUID, req 
 	}, nil
 }
 
+// rewriteRefusalMarkers detect the model refusing to rewrite (safety filters
+// misfire on harmless queries, e.g. pet health questions). Searching with the
+// refusal text as the query poisons retrieval, so such rewrites are discarded.
+var rewriteRefusalMarkers = []string{
+	"не могу",
+	"не буду",
+	"не готов",
+	"давайте поговорим",
+	"сменим тему",
+	"поговорим о чём-нибудь",
+	"обсуждать эту тему",
+	"i can't",
+	"i cannot",
+	"sorry",
+}
+
+// rewriteInput frames the user's latest message with recent dialog so the
+// rewriter can expand follow-ups («а для щенка тоже самое?») into standalone
+// queries. Without a hint the raw message is passed as before.
+func rewriteInput(query, dialogHint string) string {
+	if strings.TrimSpace(dialogHint) == "" {
+		return query
+	}
+	return "Недавний диалог:\n" + dialogHint + "\n\nПоследняя реплика клиента (переформулируй именно её): " + query
+}
+
 func (s *RetrieverService) rewriteQuery(ctx context.Context, provider llm.Provider, query string) string {
 	applog.TraceCall(ctx, "service.RetrieverService.rewriteQuery")
 	resp, err := provider.Chat(ctx, llm.ChatRequest{
 		Messages: []llm.Message{
-			{Role: llm.RoleSystem, Content: "Переформулируй реплику пользователя в короткий самостоятельный поисковый запрос для базы знаний. Верни только запрос без пояснений."},
+			{Role: llm.RoleSystem, Content: "Переформулируй последнюю реплику клиента в короткий самостоятельный поисковый запрос для базы знаний. Подставь в запрос предмет разговора из контекста, если реплика на него ссылается. Верни только запрос без пояснений."},
 			{Role: llm.RoleUser, Content: query},
 		},
 		GenerationParams: llm.GenerationParams{Temperature: 0, MaxTokens: 64},
@@ -121,6 +147,13 @@ func (s *RetrieverService) rewriteQuery(ctx context.Context, provider llm.Provid
 	out := strings.TrimSpace(resp.Message.Content)
 	if out == "" || len([]rune(out)) > 300 {
 		return ""
+	}
+	lower := strings.ToLower(out)
+	for _, marker := range rewriteRefusalMarkers {
+		if strings.Contains(lower, marker) {
+			applog.From(ctx).Debug().Msg("retriever query rewrite looked like a refusal, using original query")
+			return ""
+		}
 	}
 	return out
 }

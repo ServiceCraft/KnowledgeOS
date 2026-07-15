@@ -4,6 +4,7 @@ import type { ChatChannel, ChatMessage, ChatSession, ChatState } from '@/types';
 import { guardrailReasonLabel, STATE_LABELS } from '@/lib/chatUi';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { apiErrorLabel } from '@/lib/apiError';
 import {
   useClaimHandoffSession,
   useCloseHandoffSession,
@@ -85,8 +86,15 @@ export function HandoffPage() {
 
   const claimSelected = () => {
     if (!selected || !canClaim) return;
-    claim.mutate(selected.id, {
-      onSuccess: () => toast.success('Диалог назначен на вас'),
+    const claimedId = selected.id;
+    claim.mutate(claimedId, {
+      onSuccess: () => {
+        // Взятый диалог выпадает из фильтра «Ожидают» — переключаемся на «Мои»
+        // и сохраняем выбор, чтобы оператор сразу мог ответить клиенту.
+        setFilter('mine');
+        setSelectedSessionId(claimedId);
+        toast.success('Диалог назначен на вас');
+      },
       onError: () => toast.error('Не удалось взять диалог'),
     });
   };
@@ -159,7 +167,7 @@ export function HandoffPage() {
               />
             ))}
             {sessionsQuery.isError ? (
-              <ErrorState message="Не удалось загрузить очередь диалогов." />
+              <ErrorState message={apiErrorLabel(sessionsQuery.error, 'Не удалось загрузить очередь диалогов.')} />
             ) : sessionsQuery.isLoading ? (
               <LoadingState />
             ) : sessions.length === 0 ? (
@@ -187,7 +195,7 @@ export function HandoffPage() {
                     disabled={claim.isPending}
                   >
                     <Headphones className="h-4 w-4" />
-                    Взять
+                    Взять диалог
                   </Button>
                 )}
                 {canRelease && (
@@ -209,13 +217,13 @@ export function HandoffPage() {
                     size="sm"
                     variant="outline"
                     onClick={() => close.mutate(selected.id, {
-                      onSuccess: () => toast.success('Диалог закрыт'),
-                      onError: () => toast.error('Не удалось закрыть диалог'),
+                      onSuccess: () => toast.success('Диалог завершён'),
+                      onError: () => toast.error('Не удалось завершить диалог'),
                     })}
                     disabled={close.isPending}
                   >
                     <CheckCircle2 className="h-4 w-4" />
-                    Закрыть
+                    Завершить диалог
                   </Button>
                 )}
               </div>
@@ -262,12 +270,6 @@ export function HandoffPage() {
               disabled={!canSend || send.isPending}
               placeholder={composerPlaceholder}
             />
-            {canClaim && (
-              <Button variant="outline" onClick={claimSelected} disabled={claim.isPending}>
-                <Headphones className="h-4 w-4" />
-                Взять
-              </Button>
-            )}
             <Button onClick={sendMessage} disabled={!draft.trim() || !canSend || send.isPending}>
               <Send className="h-4 w-4" />
               Отправить

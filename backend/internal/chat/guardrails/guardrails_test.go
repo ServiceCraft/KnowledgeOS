@@ -93,9 +93,67 @@ func TestStripCitationMarkers(t *testing.T) {
 	sourceID := "qa:11111111-1111-1111-1111-111111111111:0"
 	raw := "Стерилизация стоит 3500 рублей [" + sourceID + "].\n\nИспользованные источники: [" + sourceID + "]."
 	got := StripCitationMarkers(raw)
-	want := "Стерилизация стоит 3500 рублей ."
+	want := "Стерилизация стоит 3500 рублей."
 	if got != want {
 		t.Fatalf("StripCitationMarkers() = %q, want %q", got, want)
+	}
+}
+
+func TestStripCitationMarkersSourcesFooterWithoutSourceIDs(t *testing.T) {
+	// Small models cite non-source-id references; the whole trailing footer
+	// must still be removed from the user-facing text.
+	raw := "Стоимость зависит от веса и породы.\n\nИсточники: \n\n[price.zoomedic.ru]"
+	got := StripCitationMarkers(raw)
+	want := "Стоимость зависит от веса и породы."
+	if got != want {
+		t.Fatalf("StripCitationMarkers() = %q, want %q", got, want)
+	}
+}
+
+func TestStripCitationMarkersSourcesFooterInline(t *testing.T) {
+	sourceID := "qa:11111111-1111-1111-1111-111111111111:0"
+	raw := "Приём терапевта стоит 800 рублей.\nИсточники: [" + sourceID + "]"
+	got := StripCitationMarkers(raw)
+	want := "Приём терапевта стоит 800 рублей."
+	if got != want {
+		t.Fatalf("StripCitationMarkers() = %q, want %q", got, want)
+	}
+}
+
+func TestStripCitationMarkersInlineSourcesTail(t *testing.T) {
+	cases := map[string]string{
+		"Чем я могу вам помочь? Источники: []":             "Чем я могу вам помочь?",
+		"Приём стоит 800 рублей. Источники: [qa:abc:0]":    "Приём стоит 800 рублей.",
+		"Готово! Использованные источники: [qa:abc:0], []": "Готово!",
+		// Точный текст из клиентского фидбека: вариант «Используемые» + пустые ссылки.
+		"Например, интересует ли вас груминг?\n\nИспользуемые источники: , .": "Например, интересует ли вас груминг?",
+		"Ответ по базе.\nИспользуемые источники: [qa:abc:0]":                  "Ответ по базе.",
+	}
+	for raw, want := range cases {
+		if got := StripCitationMarkers(raw); got != want {
+			t.Fatalf("StripCitationMarkers(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+func TestStripRepeatedGreeting(t *testing.T) {
+	cases := map[string]string{
+		"Добрый день! Для вакцинации доступны специалисты.": "Для вакцинации доступны специалисты.",
+		"Здравствуйте, запись подтверждена.":                "Запись подтверждена.",
+		"Свободное время: 10:00 и 12:30.":                   "Свободное время: 10:00 и 12:30.",
+		"Здравствуйте!":                                     "Здравствуйте!",
+	}
+	for raw, want := range cases {
+		if got := StripRepeatedGreeting(raw); got != want {
+			t.Fatalf("StripRepeatedGreeting(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+func TestStripCitationMarkersKeepsProseMentioningSources(t *testing.T) {
+	raw := "Мы указываем источники цен на сайте клиники."
+	if got := StripCitationMarkers(raw); got != raw {
+		t.Fatalf("StripCitationMarkers() = %q, want prose preserved", got)
 	}
 }
 
