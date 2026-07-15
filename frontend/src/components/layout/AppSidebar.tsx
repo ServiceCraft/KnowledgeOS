@@ -43,7 +43,9 @@ const toolLinks = [
 ];
 
 const botLinks = [
-  { to: '/bot/playground', label: 'Плейграунд', icon: Bot },
+  // Бэкенд пускает в плейграунд только editor+ (расход LLM-токенов);
+  // оператору (viewer) пункт не показываем — его рабочее место в эскалациях.
+  { to: '/bot/playground', label: 'Плейграунд', icon: Bot, minRole: 'editor' as const },
   { to: '/bot/handoff', label: 'Диалоги / Эскалации', icon: Headphones },
   { to: '/settings/bot', label: 'Настройки бота', icon: Settings, minRole: 'admin' as const },
 ];
