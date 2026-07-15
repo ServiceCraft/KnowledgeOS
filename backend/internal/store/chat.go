@@ -231,6 +231,23 @@ func (s *ChatStore) UpdateSession(ctx context.Context, companyID uuid.UUID, sess
 		}).Error
 }
 
+// DeleteSession permanently removes a session and (via the ON DELETE CASCADE on
+// chat_messages.session_id) all of its messages. Scoped to the company.
+func (s *ChatStore) DeleteSession(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error {
+	applog.TraceCall(ctx, "store.ChatStore.DeleteSession")
+	res := s.db.WithContext(ctx).
+		Scopes(tenantScope(companyID)).
+		Where("id = ?", id).
+		Delete(&domain.ChatSession{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // TransitionSession atomically changes a session state when its current state
 // is one of the allowed source states.
 func (s *ChatStore) TransitionSession(ctx context.Context, companyID, sessionID uuid.UUID, from []domain.ChatState, to domain.ChatState, operatorID *uuid.UUID) (*domain.ChatSession, error) {

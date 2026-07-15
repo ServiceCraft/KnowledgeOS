@@ -9,12 +9,19 @@ import {
   ShieldAlert,
   ShieldCheck,
   Square,
+  Trash2,
   User,
 } from 'lucide-react';
 import { botChatApi } from '@/api/botChat';
-import { useChatSession, useChatSessions, useCreateChatSession } from '@/hooks/useBotChat';
+import {
+  useChatSession,
+  useChatSessions,
+  useCreateChatSession,
+  useDeleteChatSession,
+} from '@/hooks/useBotChat';
 import { useEscalateHandoffSession } from '@/hooks/useBotHandoff';
-import type { ChatMessage } from '@/types';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import type { ChatMessage, ChatSession } from '@/types';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { formatMessageBody } from '@/lib/chatSources';
@@ -39,8 +46,10 @@ export function BotPlaygroundPage() {
   const [sessionsPage, setSessionsPage] = useState(1);
   const sessionsQuery = useChatSessions(sessionsPage);
   const createSession = useCreateChatSession();
+  const deleteSession = useDeleteChatSession();
   const escalateSession = useEscalateHandoffSession();
   const [selectedSessionId, setSelectedSessionId] = useState<string>();
+  const [sessionToDelete, setSessionToDelete] = useState<ChatSession>();
   const [draft, setDraft] = useState('');
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string>();
@@ -232,28 +241,41 @@ export function BotPlaygroundPage() {
             ) : (
             <div className="space-y-2 pr-2">
               {sessions.map((session) => (
-                <button
+                <div
                   key={session.id}
-                  type="button"
-                  onClick={() => setSelectedSessionId(session.id)}
                   className={cn(
-                    'w-full rounded-lg border p-3 text-left text-sm transition hover:bg-muted',
+                    'group relative rounded-lg border transition hover:bg-muted',
                     selectedSessionId === session.id && 'border-primary bg-muted'
                   )}
                 >
-                  <div className="flex items-center gap-2">
-                    <MessageSquare className="h-4 w-4 shrink-0" />
-                    <span className="truncate font-medium">{session.title || 'Новая сессия'}</span>
-                    {session.state !== 'bot' && (
-                      <Badge variant="secondary" className="ml-auto shrink-0 text-[10px]">
-                        {STATE_LABELS[session.state]}
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {session.last_message_at ? new Date(session.last_message_at).toLocaleString() : 'Без сообщений'}
-                  </p>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSessionId(session.id)}
+                    className="w-full rounded-lg p-3 pr-9 text-left text-sm"
+                  >
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4 shrink-0" />
+                      <span className="truncate font-medium">{session.title || 'Новая сессия'}</span>
+                      {session.state !== 'bot' && (
+                        <Badge variant="secondary" className="ml-auto shrink-0 text-[10px]">
+                          {STATE_LABELS[session.state]}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {session.last_message_at ? new Date(session.last_message_at).toLocaleString() : 'Без сообщений'}
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Удалить чат"
+                    title="Удалить чат"
+                    onClick={() => setSessionToDelete(session)}
+                    className="absolute right-1.5 top-2.5 rounded p-1 text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               ))}
               {sessions.length === 0 && (
                 <p className="px-1 text-sm text-muted-foreground">Создайте первую сессию для теста бота.</p>
@@ -374,6 +396,30 @@ export function BotPlaygroundPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={!!sessionToDelete}
+        onOpenChange={(open) => !open && setSessionToDelete(undefined)}
+        title="Удалить чат?"
+        description="Чат и все его сообщения будут удалены безвозвратно."
+        confirmLabel="Удалить"
+        loading={deleteSession.isPending}
+        onConfirm={async () => {
+          if (!sessionToDelete) return;
+          try {
+            await deleteSession.mutateAsync(sessionToDelete.id);
+            if (selectedSessionId === sessionToDelete.id) {
+              setSelectedSessionId(undefined);
+              setLocalMessages([]);
+            }
+            toast.success('Чат удалён');
+          } catch {
+            toast.error('Не удалось удалить чат');
+          } finally {
+            setSessionToDelete(undefined);
+          }
+        }}
+      />
     </div>
   );
 }

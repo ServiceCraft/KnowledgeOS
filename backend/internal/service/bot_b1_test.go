@@ -333,16 +333,18 @@ func TestLLMFactoryFallbackModelsAndAuthType(t *testing.T) {
 		t.Fatalf("fallback pro model = %q", got)
 	}
 
-	if _, _, err := factory.ForCompany(ctx, companyID); HTTPStatus(err) != 404 {
-		t.Fatalf("ForCompany() without secret status = %d, err = %v, want 404", HTTPStatus(err), err)
+	// Without a per-company LLM secret the bot is unusable: there is no global
+	// env fallback, so ForCompany reports a configuration conflict (409).
+	if _, _, err := factory.ForCompany(ctx, companyID); HTTPStatus(err) != 409 {
+		t.Fatalf("ForCompany() without secret status = %d, err = %v, want 409", HTTPStatus(err), err)
 	}
+	if _, _, err := factory.credentials(ctx, companyID); HTTPStatus(err) != 409 {
+		t.Fatalf("credentials() without secret status = %d, err = %v, want 409", HTTPStatus(err), err)
+	}
+	// Even when a global env key is configured it must NOT be used as a fallback.
 	envFactory := NewLLMFactory(&config.Config{YandexFolderID: "folder", YandexAPIKey: "env-api-key"}, settingsSvc, secretsSvc)
-	token, authType, err := envFactory.credentials(ctx, companyID)
-	if err != nil {
-		t.Fatalf("env credentials() error = %v", err)
-	}
-	if token != "env-api-key" || authType != "api_key" {
-		t.Fatalf("env credentials() = %q/%q", token, authType)
+	if _, _, err := envFactory.credentials(ctx, companyID); HTTPStatus(err) != 409 {
+		t.Fatalf("credentials() must ignore env key, status = %d, err = %v, want 409", HTTPStatus(err), err)
 	}
 	if _, err := secretsSvc.Set(ctx, companyID, domain.SecretKindLLM, SetTenantSecretRequest{
 		Value:    "api-key",
@@ -350,7 +352,7 @@ func TestLLMFactoryFallbackModelsAndAuthType(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
-	token, authType, err = factory.credentials(ctx, companyID)
+	token, authType, err := factory.credentials(ctx, companyID)
 	if err != nil {
 		t.Fatalf("credentials() error = %v", err)
 	}

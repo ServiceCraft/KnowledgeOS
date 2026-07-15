@@ -40,6 +40,8 @@ export const botChatApi = {
       .get<DataResponse<ChatSessionWithMessages>>(`${base}/sessions/${id}`)
       .then((r) => normalizeChatSessionWithMessages(r.data.data)),
 
+  deleteSession: (id: string) => client.delete(`${base}/sessions/${id}`).then(() => undefined),
+
   sendMessage: (sessionId: string, data: SendChatMessageRequest) =>
     client
       .post<DataResponse<ChatExchange>>(`${base}/sessions/${sessionId}/messages`, data)

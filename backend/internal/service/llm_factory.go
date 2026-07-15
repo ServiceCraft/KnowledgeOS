@@ -75,26 +75,26 @@ func (f *LLMFactory) ForCompany(ctx context.Context, companyID uuid.UUID) (llm.P
 	return client, client, nil
 }
 
+// credentials resolves the LLM token strictly from the company's own tenant
+// secret. There is no global/env fallback: a company without its own LLM token
+// cannot use the bot (the caller surfaces this as a configuration error).
 func (f *LLMFactory) credentials(ctx context.Context, companyID uuid.UUID) (string, string, error) {
 	applog.TraceCall(ctx, "service.LLMFactory.credentials")
 	statuses, err := f.secrets.ListStatus(ctx, companyID)
-	if err == nil {
-		for _, status := range statuses {
-			if status.Kind != domain.SecretKindLLM || !status.IsSet {
-				continue
-			}
-			token, err := f.secrets.GetPlaintext(ctx, companyID, domain.SecretKindLLM)
-			return token, authTypeFromMetadata(status.Metadata), err
-		}
-	}
-	if strings.TrimSpace(f.cfg.YandexAPIKey) != "" {
-		return strings.TrimSpace(f.cfg.YandexAPIKey), "api_key", nil
-	}
 	if err != nil {
 		return "", "", err
 	}
-	token, err := f.secrets.GetPlaintext(ctx, companyID, domain.SecretKindLLM)
-	return token, "iam", err
+	for _, status := range statuses {
+		if status.Kind != domain.SecretKindLLM || !status.IsSet {
+			continue
+		}
+		token, err := f.secrets.GetPlaintext(ctx, companyID, domain.SecretKindLLM)
+		if err != nil {
+			return "", "", err
+		}
+		return token, authTypeFromMetadata(status.Metadata), nil
+	}
+	return "", "", conflict("LLM token is not configured for this company")
 }
 
 func (f *LLMFactory) chatModel(settings *domain.BotSettings) string {

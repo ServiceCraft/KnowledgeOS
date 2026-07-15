@@ -68,6 +68,20 @@ func (h *ChatHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, result)
 }
 
+// DeleteSession permanently removes a chat session and all of its messages.
+func (h *ChatHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
+	applog.TraceCall(r.Context(), "handler.ChatHandler.DeleteSession")
+	sessionID, ok := chatSessionID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.svc.DeleteSession(r.Context(), middleware.GetCompanyID(r.Context()), sessionID); err != nil {
+		Error(w, service.HTTPStatus(err), err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // SendMessage executes the handler.ChatHandler.SendMessage operation.
 func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	applog.TraceCall(r.Context(), "handler.ChatHandler.SendMessage")

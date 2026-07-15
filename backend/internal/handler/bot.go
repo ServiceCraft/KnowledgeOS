@@ -1,8 +1,13 @@
 package handler
 
 import (
+	"bytes"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	applog "github.com/knowledgeos/backend/internal/logger"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/knowledgeos/backend/internal/domain"
@@ -87,6 +92,17 @@ func (h *BotHandler) SetSecret(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	// Telegram verifies webhooks via a secret token. Auto-generate one if the
+	// admin did not supply it, so registration and verification share a secret
+	// without manual setup.
+	if kind == domain.SecretKindTelegram {
+		meta, err := ensureTelegramWebhookSecret(req.Metadata)
+		if err != nil {
+			Error(w, http.StatusInternalServerError, "failed to generate webhook secret")
+			return
+		}
+		req.Metadata = meta
+	}
 	companyID := middleware.GetCompanyID(r.Context())
 	status, err := h.secrets.Set(r.Context(), companyID, kind, req)
 	if err != nil {
@@ -106,4 +122,48 @@ func (h *BotHandler) DeleteSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ensureTelegramWebhookSecret injects a random `webhook_secret` into the
+// secret metadata when one is not already present. Invalid (non-object)
+// metadata is returned untouched so the service layer can reject it.
+func ensureTelegramWebhookSecret(metadata json.RawMessage) (json.RawMessage, error) {
+	m := map[string]any{}
+	if trimmed := bytes.TrimSpace(metadata); len(trimmed) > 0 {
+		if err := json.Unmarshal(trimmed, &m); err != nil {
+			return metadata, nil // not an object; let TenantSecretService.Set reject it
+		}
+	}
+	if s, _ := m["webhook_secret"].(string); strings.TrimSpace(s) != "" {
+		return metadata, nil
+	}
+	secret, err := randomWebhookSecret()
+	if err != nil {
+		return nil, err
+	}
+	m["webhook_secret"] = secret
+	out, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// randomWebhookSecret returns a 64-char hex token (Telegram allows 1-256 chars
+// of A-Z, a-z, 0-9, _ and -).
+func randomWebhookSecret() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+func isChannelSecret(kind domain.SecretKind) bool {
+	switch kind {
+	case domain.SecretKindTelegram, domain.SecretKindMAX, domain.SecretKindVK:
+		return true
+	default:
+		return false
+	}
 }

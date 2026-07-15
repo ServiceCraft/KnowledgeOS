@@ -165,6 +165,18 @@ func (s *ChatService) GetSession(ctx context.Context, companyID, sessionID uuid.
 	return &domain.ChatSessionWithMessages{Session: session, Messages: messages}, nil
 }
 
+// DeleteSession permanently removes a chat session and all of its messages.
+func (s *ChatService) DeleteSession(ctx context.Context, companyID, sessionID uuid.UUID) error {
+	applog.TraceCall(ctx, "service.ChatService.DeleteSession")
+	if err := s.chats.DeleteSession(ctx, companyID, sessionID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return notFound("chat session not found")
+		}
+		return err
+	}
+	return nil
+}
+
 // SendMessage executes the service.ChatService.SendMessage operation.
 func (s *ChatService) SendMessage(ctx context.Context, companyID, sessionID uuid.UUID, req SendChatMessageRequest) (*ChatExchange, error) {
 	applog.TraceCall(ctx, "service.ChatService.SendMessage")

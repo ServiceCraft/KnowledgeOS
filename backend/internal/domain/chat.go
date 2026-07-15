@@ -134,6 +134,7 @@ type ChatRepository interface {
 	GetSession(ctx context.Context, companyID uuid.UUID, id uuid.UUID) (*ChatSession, error)
 	GetSessionByExternal(ctx context.Context, companyID uuid.UUID, channel ChatChannel, externalChatID string) (*ChatSession, error)
 	UpdateSession(ctx context.Context, companyID uuid.UUID, session *ChatSession) error
+	DeleteSession(ctx context.Context, companyID uuid.UUID, id uuid.UUID) error
 	AppendMessage(ctx context.Context, companyID uuid.UUID, message *ChatMessage) error
 	ListMessages(ctx context.Context, companyID uuid.UUID, sessionID uuid.UUID, limit int) ([]ChatMessage, error)
 }

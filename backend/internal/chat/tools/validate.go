@@ -38,8 +38,11 @@ func validateArguments(schemaRaw, args json.RawMessage) error {
 		return &ValidationError{Msg: "invalid tool schema"}
 	}
 
-	raw := args
-	if len(bytes.TrimSpace(raw)) == 0 {
+	// Treat missing/empty/null arguments as an empty object. Models sometimes
+	// emit `null` (or nothing) for no-argument tool calls; without this they
+	// would fail object validation with "arguments must be an object".
+	raw := bytes.TrimSpace(args)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
 		raw = []byte("{}")
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))

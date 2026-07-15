@@ -732,6 +732,40 @@ func (r *fakeChatRepo) UpdateSession(_ context.Context, companyID uuid.UUID, ses
 	return nil
 }
 
+func (r *fakeChatRepo) DeleteSession(_ context.Context, companyID uuid.UUID, id uuid.UUID) error {
+	if s, ok := r.sessions[id]; !ok || s.CompanyID != companyID {
+		return gorm.ErrRecordNotFound
+	}
+	delete(r.sessions, id)
+	return nil
+}
+
+func TestChatServiceDeleteSession(t *testing.T) {
+	ctx := context.Background()
+	company := uuid.New()
+	repo := &fakeChatRepo{sessions: map[uuid.UUID]*domain.ChatSession{}, messages: map[uuid.UUID][]domain.ChatMessage{}}
+	svc := &ChatService{chats: repo}
+
+	session := &domain.ChatSession{}
+	if err := repo.CreateSession(ctx, company, session); err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	// deleting another company's session must report not found (404)
+	if err := svc.DeleteSession(ctx, uuid.New(), session.ID); HTTPStatus(err) != 404 {
+		t.Fatalf("cross-tenant delete status = %d, err = %v, want 404", HTTPStatus(err), err)
+	}
+	if err := svc.DeleteSession(ctx, company, session.ID); err != nil {
+		t.Fatalf("DeleteSession() error = %v", err)
+	}
+	if _, ok := repo.sessions[session.ID]; ok {
+		t.Fatal("session still present after delete")
+	}
+	// deleting again is a 404
+	if err := svc.DeleteSession(ctx, company, session.ID); HTTPStatus(err) != 404 {
+		t.Fatalf("second delete status = %d, want 404", HTTPStatus(err))
+	}
+}
+
 func (r *fakeChatRepo) AppendMessage(_ context.Context, companyID uuid.UUID, message *domain.ChatMessage) error {
 	session, err := r.GetSession(context.Background(), companyID, message.SessionID)
 	if err != nil {
