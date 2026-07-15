@@ -35,7 +35,7 @@ export function FAQPage() {
             <Collapsible key={item.id}>
               <Card>
                 <CollapsibleTrigger
-                  render={<CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors" />}
+                  render={<CardHeader className="block w-full cursor-pointer text-left hover:bg-muted/50 transition-colors" />}
                 >
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base font-medium">{item.question}</CardTitle>

@@ -22,7 +22,7 @@ import {
   SETTING_HINTS,
 } from '@/components/bot-admin/constants';
 import { FieldHint } from '@/components/bot-admin/FieldHint';
-import { handoffModule, handoffFallbackText } from '@/components/bot-admin/moduleHelpers';
+import { handoffModule, handoffFallbackText, yclientsBookingModule } from '@/components/bot-admin/moduleHelpers';
 
 export function SettingsTab() {
   const { data, isLoading, isError } = useBotSettings();
@@ -79,6 +79,16 @@ export function SettingsTab() {
       enabled_modules: {
         ...(f.enabled_modules ?? data.enabled_modules ?? {}),
         handoff_fallback_text: text,
+      },
+    }));
+  };
+
+  const setYClientsBooking = (enabled: boolean) => {
+    setDraft((f) => ({
+      ...f,
+      enabled_modules: {
+        ...(f.enabled_modules ?? data.enabled_modules ?? {}),
+        yclients_booking: enabled,
       },
     }));
   };
@@ -188,6 +198,27 @@ export function SettingsTab() {
               Handoff включается только при сохранении настроек. Уведомления в Telegram-группу задаются в параметрах Telegram-канала.
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Интеграции</CardTitle>
+          <CardDescription>Запись клиентов во внешние сервисы прямо из диалога</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <FieldHint label="Запись в YClients" htmlFor="yclients-enabled" hint={SETTING_HINTS.yclients_booking} />
+            <input
+              id="yclients-enabled"
+              type="checkbox"
+              checked={yclientsBookingModule(form.enabled_modules)}
+              onChange={(e) => setYClientsBooking(e.target.checked)}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Токен YClients и ID филиала задаются в разделе «Каналы и секреты» → «Сервисные секреты». Модуль включается при сохранении настроек.
+          </p>
         </CardContent>
       </Card>
 

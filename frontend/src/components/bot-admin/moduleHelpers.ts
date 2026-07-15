@@ -22,3 +22,7 @@ export function handoffFallbackText(enabledModules?: Record<string, unknown>) {
   const value = enabledModules?.handoff_fallback_text;
   return typeof value === 'string' ? value : '';
 }
+
+export function yclientsBookingModule(enabledModules?: Record<string, unknown>) {
+  return enabledModules?.yclients_booking === true;
+}

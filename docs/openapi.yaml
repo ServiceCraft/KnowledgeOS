@@ -2484,7 +2484,7 @@ components:
         require_citations: { type: boolean }
     SecretKind:
       type: string
-      enum: [llm, telegram, max, vk, bitrix24]
+      enum: [llm, telegram, max, vk, yclients]
     SetTenantSecretRequest:
       type: object
       required: [value]

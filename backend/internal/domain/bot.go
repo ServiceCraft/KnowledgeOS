@@ -28,7 +28,7 @@ const (
 	SecretKindTelegram SecretKind = "telegram"
 	SecretKindMAX      SecretKind = "max"
 	SecretKindVK       SecretKind = "vk"
-	SecretKindBitrix24 SecretKind = "bitrix24"
+	SecretKindYClients SecretKind = "yclients"
 )
 
 type BotSettings struct {
@@ -93,7 +93,7 @@ func ValidBotModelTier(tier BotModelTier) bool {
 // ValidSecretKind executes the domain.ValidSecretKind operation.
 func ValidSecretKind(kind SecretKind) bool {
 	switch kind {
-	case SecretKindLLM, SecretKindTelegram, SecretKindMAX, SecretKindVK, SecretKindBitrix24:
+	case SecretKindLLM, SecretKindTelegram, SecretKindMAX, SecretKindVK, SecretKindYClients:
 		return true
 	default:
 		return false
@@ -102,7 +102,7 @@ func ValidSecretKind(kind SecretKind) bool {
 
 // SupportedSecretKinds executes the domain.SupportedSecretKinds operation.
 func SupportedSecretKinds() []SecretKind {
-	return []SecretKind{SecretKindLLM, SecretKindTelegram, SecretKindMAX, SecretKindVK, SecretKindBitrix24}
+	return []SecretKind{SecretKindLLM, SecretKindTelegram, SecretKindMAX, SecretKindVK, SecretKindYClients}
 }
 
 type BotSettingsRepository interface {

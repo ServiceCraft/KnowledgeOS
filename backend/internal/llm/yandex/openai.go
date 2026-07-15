@@ -1,7 +1,9 @@
 package yandex
 
 import (
+	"bytes"
 	"encoding/json"
+	"strings"
 
 	"github.com/knowledgeos/backend/internal/llm"
 )
@@ -88,11 +90,48 @@ func toOpenAIToolCalls(calls []llm.ToolCall) []openAIToolCall {
 			Type: "function",
 			Function: openAIToolFunction{
 				Name:      call.Name,
-				Arguments: call.Arguments,
+				Arguments: quoteToolArguments(call.Arguments),
 			},
 		})
 	}
 	return out
+}
+
+// quoteToolArguments encodes tool-call arguments as the JSON string the OpenAI
+// wire format expects. Internally arguments are stored as a raw JSON object, so
+// they must be re-wrapped before being echoed back in conversation history.
+func quoteToolArguments(raw json.RawMessage) json.RawMessage {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		trimmed = []byte("{}")
+	}
+	if trimmed[0] == '"' {
+		return trimmed
+	}
+	quoted, err := json.Marshal(string(trimmed))
+	if err != nil {
+		return trimmed
+	}
+	return quoted
+}
+
+// unquoteToolArguments unwraps the OpenAI wire format, where function.arguments
+// is a JSON-encoded string ("{\"a\":1}"), into the raw JSON object the tool
+// framework validates against. Raw objects pass through unchanged.
+func unquoteToolArguments(raw json.RawMessage) json.RawMessage {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '"' {
+		return raw
+	}
+	var inner string
+	if err := json.Unmarshal(trimmed, &inner); err != nil {
+		return raw
+	}
+	inner = strings.TrimSpace(inner)
+	if inner == "" {
+		return json.RawMessage("{}")
+	}
+	return json.RawMessage(inner)
 }
 
 func fromOpenAIToolCalls(calls []openAIToolCall) []llm.ToolCall {
@@ -104,7 +143,7 @@ func fromOpenAIToolCalls(calls []openAIToolCall) []llm.ToolCall {
 		out = append(out, llm.ToolCall{
 			ID:        call.ID,
 			Name:      call.Function.Name,
-			Arguments: call.Function.Arguments,
+			Arguments: unquoteToolArguments(call.Function.Arguments),
 		})
 	}
 	return out

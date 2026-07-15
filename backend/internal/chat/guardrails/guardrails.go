@@ -8,6 +8,7 @@ package guardrails
 import (
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/knowledgeos/backend/internal/domain"
@@ -85,7 +86,18 @@ func CheckCitations(answer string, validIDs map[string]bool) CitationResult {
 	return res
 }
 
-var usedSourcesFooterRe = regexp.MustCompile(`(?i)использованн`)
+// usedSourcesFooterRe matches a line that IS the service sources footer the
+// prompt asks the model to append («Источники: [...]», «Использованные
+// источники: ...»). Anchored so prose that merely mentions sources survives.
+var usedSourcesFooterRe = regexp.MustCompile(`(?i)^(использ[а-яё]+\s+)?источники?\s*[:：]`)
+
+var danglingSpaceRe = regexp.MustCompile(`[ \t]+([.,;:!?])`)
+
+// sourcesTailRe matches a sources footer glued to the end of a prose line
+// («… Чем могу помочь? Источники: []»), which the line-based footer stripper
+// cannot remove. Only bracketed tokens and punctuation may follow the header so
+// real prose is never eaten.
+var sourcesTailRe = regexp.MustCompile(`(?i)(использ[а-яё]+\s+)?источники\s*[:：](\s|\[[^\]\n]*\]|[.,;])*$`)
 
 // StripCitationMarkers removes machine-readable source_id citations from the
 // user-facing answer text. Call only after CheckCitations so guardrails still
@@ -93,6 +105,8 @@ var usedSourcesFooterRe = regexp.MustCompile(`(?i)использованн`)
 func StripCitationMarkers(answer string) string {
 	answer = stripInlineCitations(answer)
 	answer = stripCitationFooter(answer)
+	answer = sourcesTailRe.ReplaceAllString(answer, "")
+	answer = danglingSpaceRe.ReplaceAllString(answer, "$1")
 	return strings.TrimSpace(answer)
 }
 
@@ -143,12 +157,16 @@ func stripCitationFooter(answer string) string {
 	return strings.Join(lines, "\n")
 }
 
+// isCitationOnlyLine reports whether a trailing line carries no prose beyond
+// bracketed references. All bracket groups count here (not only source-id-like
+// ones): small models cite sources like «[price.example.ru]», and a trailing
+// bracket-only line is citation debris, not an answer.
 func isCitationOnlyLine(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" {
 		return true
 	}
-	without := stripInlineCitations(trimmed)
+	without := citationRe.ReplaceAllString(trimmed, "")
 	without = strings.Map(func(r rune) rune {
 		switch r {
 		case '.', ',', ';', ':', ' ':
@@ -158,6 +176,22 @@ func isCitationOnlyLine(line string) bool {
 		}
 	}, without)
 	return without == ""
+}
+
+var greetingPrefixRe = regexp.MustCompile(`(?i)^\s*(здравствуйте|добрый день|доброе утро|добрый вечер|приветствую|привет)[!.,\s]*`)
+
+// StripRepeatedGreeting removes a leading greeting from an answer inside an
+// ongoing dialog: a good administrator greets once, but small models re-greet
+// on every turn regardless of prompt instructions. When the greeting is the
+// whole message it is kept as is.
+func StripRepeatedGreeting(answer string) string {
+	stripped := strings.TrimSpace(greetingPrefixRe.ReplaceAllString(answer, ""))
+	if stripped == "" || stripped == answer {
+		return answer
+	}
+	runes := []rune(stripped)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
 }
 
 // ConfidenceInput carries the transparent signals used to score an answer.
@@ -197,10 +231,10 @@ var leakMarkers = []string{
 	"<context>",
 	"</context>",
 	"правила персоны",
+	"правила стиля",
 	"системный промпт",
 	"system prompt",
 	"ты — ",
-	"администратор колл-центра",
 }
 
 // LeaksSystemPrompt reports whether the answer appears to expose the system
