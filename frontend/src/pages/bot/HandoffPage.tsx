@@ -107,10 +107,9 @@ export function HandoffPage() {
     send.mutate(
       { sessionId: selected.id, data: { content } },
       {
-        onSuccess: () => {
-          setDraft('');
-          toast.success('Сообщение отправлено');
-        },
+        // Без success-тоста: сообщение сразу видно в ленте, а тост
+        // перекрывал кнопку отправки следующего сообщения.
+        onSuccess: () => setDraft(''),
         onError: () => toast.error('Не удалось отправить сообщение'),
       }
     );

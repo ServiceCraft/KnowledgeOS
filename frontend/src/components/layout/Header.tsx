@@ -44,6 +44,13 @@ const routeLabels: Record<string, string> = {
   companies: 'Компании',
 };
 
+// Названия для страниц, где последний сегмент сам по себе неинформативен
+// (крошки при вложенности < 3 схлопываются до одного заголовка).
+const pathLabels: Record<string, string> = {
+  '/settings/bot': 'Настройки бота',
+  '/settings/export': 'Экспорт / Импорт',
+};
+
 export function Header() {
   const location = useLocation();
   const user = useAuthStore((s) => s.user);
@@ -64,11 +71,18 @@ export function Header() {
     selectedCompanyId;
 
   const segments = location.pathname.split('/').filter(Boolean);
-  const breadcrumbs = segments.map((seg, i) => ({
-    label: routeLabels[seg] || seg,
-    path: '/' + segments.slice(0, i + 1).join('/'),
-    isLast: i === segments.length - 1,
-  }));
+  const allCrumbs = segments.map((seg, i) => {
+    const path = '/' + segments.slice(0, i + 1).join('/');
+    return {
+      label: pathLabels[path] || routeLabels[seg] || seg,
+      path,
+      isLast: i === segments.length - 1,
+    };
+  });
+  // При вложенности < 3 цепочка не нужна: промежуточных страниц нет,
+  // ссылка на «родителя» вела бы на редирект (/settings → /settings/users).
+  // На глубоких путях первый сегмент (/kb, /admin) — тоже редирект, убираем его.
+  const breadcrumbs = allCrumbs.length >= 3 ? allCrumbs.slice(1) : allCrumbs.slice(-1);
 
   const initials = user?.email
     ?.split('@')[0]
