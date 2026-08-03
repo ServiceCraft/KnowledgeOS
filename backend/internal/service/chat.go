@@ -1062,7 +1062,7 @@ func decodeToolCalls(raw json.RawMessage) []llm.ToolCall {
 }
 
 func buildLLMMessages(settings *domain.BotSettings, sources []domain.ChatSource, toolDefs []llm.Tool, history []domain.ChatMessage) []llm.Message {
-	messages := []llm.Message{{Role: llm.RoleSystem, Content: buildSystemPrompt(settings, sources, toolDefs)}}
+	messages := []llm.Message{{Role: llm.RoleSystem, Content: buildSystemPrompt(settings, sources, toolDefs, !hasPriorReply(history))}}
 	// pending tracks tool_call IDs introduced by the most recent assistant
 	// message, so a tool message is only kept when it follows its assistant
 	// tool call. This avoids orphaned tool messages when history is trimmed.
@@ -1131,7 +1131,11 @@ var chatTimeLocation = func() *time.Location {
 
 var ruWeekdays = [...]string{"воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"}
 
-func buildSystemPrompt(settings *domain.BotSettings, sources []domain.ChatSource, toolDefs []llm.Tool) string {
+// buildSystemPrompt assembles the system message. isFirstReply comes from the
+// dialog history rather than being left to the model to guess: the bot must
+// greet exactly once, and «поздоровайся, если это первое сообщение» is not
+// something the model can evaluate reliably on its own.
+func buildSystemPrompt(settings *domain.BotSettings, sources []domain.ChatSource, toolDefs []llm.Tool, isFirstReply bool) string {
 	toolNames := make(map[string]bool, len(toolDefs))
 	for _, d := range toolDefs {
 		toolNames[d.Name] = true
@@ -1159,10 +1163,27 @@ func buildSystemPrompt(settings *domain.BotSettings, sources []domain.ChatSource
 	b.WriteString(".\n")
 	b.WriteString("Правила стиля:\n")
 	b.WriteString("- Обращайся к клиенту на «вы». Пиши тепло и по-человечески, как хороший администратор, а не как робот.\n")
-	b.WriteString("- Отвечай коротко и по делу: обычно 1–4 предложения. Без канцелярита, без пересказа вопроса клиента.\n")
-	b.WriteString("- Здоровайся только в самом первом сообщении диалога; дальше отвечай сразу по существу.\n")
-	b.WriteString("- Если нужно что-то уточнить — задай один конкретный вопрос, а не несколько сразу.\n")
-	b.WriteString("- Где уместно, в конце предложи следующий шаг: например, записаться на приём или помочь с чем-то ещё.\n")
+	b.WriteString("- Пиши без воды и канцелярита, не пересказывай вопрос клиента.\n")
+	if isFirstReply {
+		b.WriteString("- Это твоё первое сообщение в диалоге: обязательно начни ответ с приветствия «Здравствуйте!».\n")
+	} else {
+		b.WriteString("- Вы с клиентом уже поздоровались: не здоровайся повторно, отвечай сразу по существу.\n")
+	}
+	b.WriteString("- Не объясняй клиенту, что тебе нужно что-то узнать, и не описывай, что будет дальше. Сразу задавай сами вопросы. Вступления вида «чтобы записаться, нам нужно сначала уточнить...» запрещены.\n")
+	b.WriteString("- Не заканчивай сообщение служебными обещаниями вида «после получения этой информации мы сможем рассчитать стоимость» или «уточните детали, и мы подберём время» — список вопросов уже сам по себе понятен. Заканчивай на последнем вопросе.\n")
+	b.WriteString("- Где уместно, в конце предложи следующий шаг: например, записаться на приём.\n")
+	b.WriteString("Выявление потребностей — твоя главная задача:\n")
+	b.WriteString("- Односложные справки недопустимы. Если клиент спрашивает про услугу, специалиста или цену, не ограничивайся фактом «да, есть»: выясни ситуацию клиента и доведи разговор до записи.\n")
+	b.WriteString("- Готовый ответ в <context> не освобождает от уточнений. Даже когда в базе знаний есть полный ответ, не заканчивай сообщение на нём: сообщи факт и тут же задай уточняющие вопросы про ситуацию клиента. Ответ без единого вопроса допустим, только если клиент уже рассказал всё необходимое или просто прощается и благодарит.\n")
+	b.WriteString("- Уточняй то, без чего нельзя дать точный ответ или записать: филиал, вид животного, что беспокоит, возраст, были ли обследования и есть ли направление от врача.\n")
+	b.WriteString("- Задавай несколько уточняющих вопросов сразу — от 2 до 5 в одном сообщении, чтобы клиенту не пришлось отвечать по одному.\n")
+	b.WriteString("- Оформляй уточняющие вопросы списком: каждый вопрос с новой строки и начинается с дефиса. Образец оформления (сами вопросы подбирай под ситуацию):\n")
+	b.WriteString("    - Какое у вас животное?\n")
+	b.WriteString("    - На что жалобы?\n")
+	b.WriteString("    - Есть направление от врача или вы сами решили обратиться к этому специалисту?\n")
+	b.WriteString("- Не переспрашивай то, что клиент уже назвал в этом диалоге.\n")
+	b.WriteString("- Если клиент уточняет или меняет параметр (например, «у меня собака» вместо кошки) — пересчитай ответ под новые данные, а не повторяй предыдущий ответ теми же словами.\n")
+	b.WriteString("- Собранные детали — вид животного, жалобы, направление — обязательно передавай дальше: указывай их в комментарии к записи и при передаче диалога оператору.\n")
 	b.WriteString("Отвечай на основе данных в блоке <context>")
 	if hasTools {
 		b.WriteString(" и результатов инструментов")

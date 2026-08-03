@@ -37,6 +37,8 @@ services:
       - LOG_FORMAT=${LOG_FORMAT:-json}
       # Bot / YandexGPT
       - SECRETS_ENCRYPTION_KEY=${SECRETS_ENCRYPTION_KEY:-}
+      # Public HTTPS origin used to register channel webhooks (Telegram/MAX).
+      - PUBLIC_WEBHOOK_BASE_URL=${PUBLIC_WEBHOOK_BASE_URL:-}
       - YANDEX_ENDPOINT=${YANDEX_ENDPOINT:-https://ai.api.cloud.yandex.net/v1}
       - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID:-}
       - YANDEX_API_KEY=${YANDEX_API_KEY:-}

@@ -87,6 +87,14 @@ func TestLeaksSystemPrompt(t *testing.T) {
 	if LeaksSystemPrompt("Стерилизация кошки стоит 3500 рублей.") {
 		t.Fatalf("false positive on a normal answer")
 	}
+	if !LeaksSystemPrompt("Ты — Администратор, администратор компании.") {
+		t.Fatalf("expected leak detection when the answer opens with the persona line")
+	}
+	// The persona line is only a leak at the start; mid-sentence «ты — » is
+	// ordinary Russian and used to get valid answers refused.
+	if LeaksSystemPrompt("Если ты — владелец собаки, приходите на консультацию.") {
+		t.Fatalf("false positive on mid-sentence «ты — »")
+	}
 }
 
 func TestStripCitationMarkers(t *testing.T) {

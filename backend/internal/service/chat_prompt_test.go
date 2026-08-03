@@ -17,11 +17,11 @@ func promptSettings() *domain.BotSettings {
 }
 
 func TestBuildSystemPromptAdministratorStyle(t *testing.T) {
-	prompt := buildSystemPrompt(promptSettings(), nil, nil)
+	prompt := buildSystemPrompt(promptSettings(), nil, nil, true)
 	for _, want := range []string{
 		"администратор компании",
 		"на «вы»",
-		"Здоровайся только в самом первом сообщении",
+		"начни ответ с приветствия",
 		"дружелюбный и профессиональный",
 		"Не выдумывай цены, адреса, часы работы и услуги",
 	} {
@@ -43,7 +43,7 @@ func TestBuildSystemPromptAdministratorStyle(t *testing.T) {
 func TestBuildSystemPromptUnknownTonePassesThrough(t *testing.T) {
 	settings := promptSettings()
 	settings.PersonaTone = "строгий, но справедливый"
-	prompt := buildSystemPrompt(settings, nil, nil)
+	prompt := buildSystemPrompt(settings, nil, nil, true)
 	if !strings.Contains(prompt, "строгий, но справедливый") {
 		t.Fatalf("free-text tone must pass through:\n%s", prompt)
 	}
@@ -58,7 +58,7 @@ func TestBuildSystemPromptWithBookingTools(t *testing.T) {
 		{Name: tools.ToolYClientsGetTimes},
 		{Name: tools.ToolYClientsCreateBooking},
 	}
-	prompt := buildSystemPrompt(promptSettings(), nil, defs)
+	prompt := buildSystemPrompt(promptSettings(), nil, defs, true)
 	for _, want := range []string{
 		"записываешь клиентов на приём",
 		"yclients_get_services",
@@ -78,7 +78,7 @@ func TestBuildSystemPromptToolsWithoutBooking(t *testing.T) {
 		{Name: "search_knowledge"},
 		{Name: tools.RequestHandoffToolName},
 	}
-	prompt := buildSystemPrompt(promptSettings(), nil, defs)
+	prompt := buildSystemPrompt(promptSettings(), nil, defs, true)
 	if strings.Contains(prompt, "yclients") {
 		t.Fatalf("prompt must not mention yclients when booking module is off:\n%s", prompt)
 	}
@@ -87,11 +87,59 @@ func TestBuildSystemPromptToolsWithoutBooking(t *testing.T) {
 	}
 }
 
+// The greeting is decided in Go from the dialog history, not guessed by the
+// model: the client complained the bot never greeted on the opening turn.
+func TestBuildSystemPromptGreetsOnlyOnFirstReply(t *testing.T) {
+	first := buildSystemPrompt(promptSettings(), nil, nil, true)
+	if !strings.Contains(first, "начни ответ с приветствия") {
+		t.Fatalf("first reply must instruct to greet:\n%s", first)
+	}
+	if strings.Contains(first, "не здоровайся повторно") {
+		t.Fatalf("first reply must not suppress the greeting:\n%s", first)
+	}
+
+	later := buildSystemPrompt(promptSettings(), nil, nil, false)
+	if !strings.Contains(later, "не здоровайся повторно") {
+		t.Fatalf("later replies must suppress the greeting:\n%s", later)
+	}
+	if strings.Contains(later, "начни ответ с приветствия") {
+		t.Fatalf("later replies must not ask for a greeting:\n%s", later)
+	}
+}
+
+// Needs discovery: the client rejected one-line lookups and asked for several
+// questions at once, each on its own line with a dash.
+func TestBuildSystemPromptRequiresNeedsDiscovery(t *testing.T) {
+	prompt := buildSystemPrompt(promptSettings(), nil, nil, true)
+	for _, want := range []string{
+		"Выявление потребностей",
+		"Односложные справки недопустимы",
+		"от 2 до 5 в одном сообщении",
+		"каждый вопрос с новой строки и начинается с дефиса",
+		"Не переспрашивай то, что клиент уже назвал",
+		"пересчитай ответ под новые данные",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+
+	// The old rule directly contradicted the requirement and must stay removed.
+	for _, absent := range []string{
+		"задай один конкретный вопрос",
+		"обычно 1–4 предложения",
+	} {
+		if strings.Contains(prompt, absent) {
+			t.Fatalf("prompt must no longer contain %q:\n%s", absent, prompt)
+		}
+	}
+}
+
 func TestBuildSystemPromptContextAndPersonaRules(t *testing.T) {
 	settings := promptSettings()
 	settings.PersonaRules = "Ты работаешь в ветеринарной клинике."
 	sources := []domain.ChatSource{{SourceID: "qa:abc:0", Title: "Цена", Content: "800 рублей"}}
-	prompt := buildSystemPrompt(settings, sources, nil)
+	prompt := buildSystemPrompt(settings, sources, nil, true)
 	for _, want := range []string{
 		"Правила персоны:\nТы работаешь в ветеринарной клинике.",
 		"[qa:abc:0] Цена\n800 рублей",

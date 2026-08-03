@@ -65,10 +65,31 @@ func (c *Chunker) ChunksForArticle(companyID uuid.UUID, article *domain.Article)
 	return chunks
 }
 
+// reviewedAIStatuses are the ai_status values that mark an AI-drafted answer as
+// vetted by a human. Only those may reach the knowledge base: an unreviewed
+// draft must never be spoken to a client.
+var reviewedAIStatuses = map[string]bool{"accepted": true, "edited": true}
+
+// qaAnswer returns the answer to index. The human-written answer always wins;
+// a reviewed AI answer is the fallback for the many QA pairs whose `answer` was
+// never filled in, which otherwise stay invisible to the retriever.
+func qaAnswer(qa *domain.QAPair) string {
+	if answer := strings.TrimSpace(qa.Answer); answer != "" {
+		return answer
+	}
+	if qa.AIAnswer == nil || qa.AIStatus == nil {
+		return ""
+	}
+	if !reviewedAIStatuses[strings.TrimSpace(*qa.AIStatus)] {
+		return ""
+	}
+	return strings.TrimSpace(*qa.AIAnswer)
+}
+
 // ChunksForQA executes the indexer.Chunker.ChunksForQA operation.
 func (c *Chunker) ChunksForQA(companyID uuid.UUID, qa *domain.QAPair) []domain.RAGChunk {
 	question := strings.TrimSpace(qa.Question)
-	answer := strings.TrimSpace(qa.Answer)
+	answer := qaAnswer(qa)
 	if question == "" && answer == "" {
 		return nil
 	}

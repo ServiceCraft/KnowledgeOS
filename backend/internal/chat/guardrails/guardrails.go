@@ -234,8 +234,14 @@ var leakMarkers = []string{
 	"правила стиля",
 	"системный промпт",
 	"system prompt",
-	"ты — ",
+	"выявление потребностей —",
 }
+
+// personaEchoPrefixes open our own system prompt («Ты — {имя}, администратор
+// компании»). They are only a leak at the very start of the answer: matching
+// them anywhere would brand ordinary prose («значит, ты — владелец собаки»)
+// as a leak and silently refuse a perfectly good reply.
+var personaEchoPrefixes = []string{"ты — ", "ты - ", "ты—", "ты-"}
 
 // LeaksSystemPrompt reports whether the answer appears to expose the system
 // prompt, persona scaffolding or context delimiters.
@@ -243,6 +249,12 @@ func LeaksSystemPrompt(answer string) bool {
 	lower := strings.ToLower(answer)
 	for _, marker := range leakMarkers {
 		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	trimmed := strings.TrimSpace(lower)
+	for _, prefix := range personaEchoPrefixes {
+		if strings.HasPrefix(trimmed, prefix) {
 			return true
 		}
 	}
