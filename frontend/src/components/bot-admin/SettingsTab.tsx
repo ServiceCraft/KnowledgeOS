@@ -22,7 +22,7 @@ import {
   SETTING_HINTS,
 } from '@/components/bot-admin/constants';
 import { FieldHint } from '@/components/bot-admin/FieldHint';
-import { handoffModule, handoffFallbackText, yclientsBookingModule } from '@/components/bot-admin/moduleHelpers';
+import { handoffModule, handoffFallbackText, yclientsBookingModule, yclientsAutobookModule } from '@/components/bot-admin/moduleHelpers';
 
 export function SettingsTab() {
   const { data, isLoading, isError } = useBotSettings();
@@ -89,6 +89,18 @@ export function SettingsTab() {
       enabled_modules: {
         ...(f.enabled_modules ?? data.enabled_modules ?? {}),
         yclients_booking: enabled,
+        // Turning off read access also disarms autobook — it can't work without it.
+        ...(enabled ? {} : { yclients_autobook: false }),
+      },
+    }));
+  };
+
+  const setYClientsAutobook = (enabled: boolean) => {
+    setDraft((f) => ({
+      ...f,
+      enabled_modules: {
+        ...(f.enabled_modules ?? data.enabled_modules ?? {}),
+        yclients_autobook: enabled,
       },
     }));
   };
@@ -208,7 +220,7 @@ export function SettingsTab() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3">
-            <FieldHint label="Запись в YClients" htmlFor="yclients-enabled" hint={SETTING_HINTS.yclients_booking} />
+            <FieldHint label="Слоты YClients (чтение)" htmlFor="yclients-enabled" hint={SETTING_HINTS.yclients_booking} />
             <input
               id="yclients-enabled"
               type="checkbox"
@@ -216,8 +228,19 @@ export function SettingsTab() {
               onChange={(e) => setYClientsBooking(e.target.checked)}
             />
           </div>
+          <div className="flex items-center gap-3">
+            <FieldHint label="Автозапись в YClients" htmlFor="yclients-autobook" hint={SETTING_HINTS.yclients_autobook} />
+            <input
+              id="yclients-autobook"
+              type="checkbox"
+              disabled={!yclientsBookingModule(form.enabled_modules)}
+              checked={yclientsAutobookModule(form.enabled_modules)}
+              onChange={(e) => setYClientsAutobook(e.target.checked)}
+            />
+          </div>
           <p className="text-xs text-muted-foreground">
             Токен YClients и ID филиала задаются в разделе «Каналы и секреты» → «Сервисные секреты». Модуль включается при сохранении настроек.
+            При выключенной автозаписи бот показывает слоты и передаёт диалог оператору для ручной записи.
           </p>
         </CardContent>
       </Card>

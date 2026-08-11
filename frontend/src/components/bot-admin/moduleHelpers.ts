@@ -26,3 +26,7 @@ export function handoffFallbackText(enabledModules?: Record<string, unknown>) {
 export function yclientsBookingModule(enabledModules?: Record<string, unknown>) {
   return enabledModules?.yclients_booking === true;
 }
+
+export function yclientsAutobookModule(enabledModules?: Record<string, unknown>) {
+  return enabledModules?.yclients_autobook === true;
+}

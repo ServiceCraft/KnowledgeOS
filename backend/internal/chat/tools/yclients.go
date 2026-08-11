@@ -12,16 +12,19 @@ import (
 	applog "github.com/knowledgeos/backend/internal/logger"
 )
 
-// YClients tool names and the EnabledModules key that gates them. The chat
-// service uses ModuleYClientsBooking to advertise/execute these tools only for
-// companies that have the booking module switched on.
+// YClients tool names and the EnabledModules keys that gate them. Read-only
+// tools (services/staff/times) are gated by ModuleYClientsBooking so the bot can
+// show real availability. Writing a booking is gated separately by
+// ModuleYClientsAutobook: when it is off, the bot has no create tool and falls
+// back to handoff, letting an operator enter the record manually (phase-1 mode).
 const (
 	ToolYClientsGetServices   = "yclients_get_services"
 	ToolYClientsGetStaff      = "yclients_get_staff"
 	ToolYClientsGetTimes      = "yclients_get_times"
 	ToolYClientsCreateBooking = "yclients_create_booking"
 
-	ModuleYClientsBooking = "yclients_booking"
+	ModuleYClientsBooking  = "yclients_booking"
+	ModuleYClientsAutobook = "yclients_autobook"
 )
 
 // YClientsAPI is the subset of the YCLIENTS client used by the booking tools.

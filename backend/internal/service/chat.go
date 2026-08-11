@@ -96,7 +96,7 @@ var moduleGatedTools = map[string]string{
 	tools.ToolYClientsGetServices:   tools.ModuleYClientsBooking,
 	tools.ToolYClientsGetStaff:      tools.ModuleYClientsBooking,
 	tools.ToolYClientsGetTimes:      tools.ModuleYClientsBooking,
-	tools.ToolYClientsCreateBooking: tools.ModuleYClientsBooking,
+	tools.ToolYClientsCreateBooking: tools.ModuleYClientsAutobook,
 }
 
 func (s *ChatService) toolDefinitions(settings *domain.BotSettings) []llm.Tool {
