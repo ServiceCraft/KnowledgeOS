@@ -579,6 +579,11 @@ type rawAnswer struct {
 	usage            llm.Usage
 	handoffRequested bool
 	handoffReason    string
+	// toolsInvoked is true when the model executed at least one data tool
+	// (anything but request_handoff). Such answers are grounded in tool output —
+	// e.g. YClients services/slots — even when they carry no KB sources, so the
+	// no-context guardrail must not escalate them to an operator.
+	toolsInvoked bool
 }
 
 func (s *ChatService) generate(ctx context.Context, companyID, sessionID uuid.UUID, history []domain.ChatMessage, stream bool, emit func(ChatStreamEvent) error) (*domain.ChatMessage, []domain.ChatSource, error) {
@@ -743,6 +748,7 @@ func (s *ChatService) runToolLoop(ctx context.Context, companyID, sessionID uuid
 	var usage llm.Usage
 	handoffRequested := false
 	handoffReason := ""
+	toolsInvoked := false
 	for iter := 0; iter <= maxToolIterations; iter++ {
 		req := llm.ChatRequest{
 			Messages:         llmMessages,
@@ -768,6 +774,7 @@ func (s *ChatService) runToolLoop(ctx context.Context, companyID, sessionID uuid
 				usage:            usage,
 				handoffRequested: handoffRequested,
 				handoffReason:    handoffReason,
+				toolsInvoked:     toolsInvoked,
 			}, nil
 		}
 
@@ -784,6 +791,8 @@ func (s *ChatService) runToolLoop(ctx context.Context, companyID, sessionID uuid
 				if handoffReason == "" {
 					handoffReason = requestHandoffReason(content)
 				}
+			} else {
+				toolsInvoked = true
 			}
 			collected = append(collected, srcs...)
 			toolMsg := toolResultMessage(sessionID, call.ID, content, srcs)
@@ -802,6 +811,7 @@ func (s *ChatService) runToolLoop(ctx context.Context, companyID, sessionID uuid
 		usage:            usage,
 		handoffRequested: handoffRequested,
 		handoffReason:    handoffReason,
+		toolsInvoked:     toolsInvoked,
 	}, nil
 }
 
@@ -1210,7 +1220,7 @@ func buildSystemPrompt(settings *domain.BotSettings, sources []domain.ChatSource
 		b.WriteString("Если данных в <context> недостаточно, сначала вызови инструменты (search_knowledge, get_pricing, get_service_info) и используй их результаты как дополнительный контекст. Не придумывай данные вне <context> и результатов инструментов.\n")
 	}
 	if hasYClientsRead {
-		b.WriteString("Филиалы YClients: вызови yclients_list_branches, чтобы узнать доступные филиалы клиники. Если филиалов несколько — обязательно уточни у клиента, какой филиал ему удобен (спроси не больше одного раза), и во все инструменты YClients (услуги, специалисты, время")
+		b.WriteString("Список филиалов, услуг, специалистов и свободного времени бери ТОЛЬКО из инструментов YClients, а не из базы знаний или памяти. Когда клиент спрашивает про филиалы или хочет записаться — сначала вызови yclients_list_branches и покажи полный актуальный список филиалов. Если филиалов несколько — обязательно уточни у клиента, какой филиал ему удобен (спроси не больше одного раза), и во все инструменты YClients (услуги, специалисты, время")
 		if hasBooking {
 			b.WriteString(", запись")
 		}
@@ -1423,11 +1433,17 @@ func recoverOperatorAnswer(sources []domain.ChatSource) (string, bool) {
 }
 
 func shouldTreatAsNoContext(raw rawAnswer, sources []domain.ChatSource) bool {
-	if len(sources) == 0 {
-		return true
-	}
 	if hasOperatorSources(sources) {
 		return false
+	}
+	if len(sources) == 0 {
+		// An answer grounded in tool output (e.g. YClients services/slots/branches)
+		// carries no KB sources but is NOT no-context — only escalate if the model
+		// itself produced a «нет ответа» reply.
+		if raw.toolsInvoked {
+			return isNoKnowledgeAnswer(raw.content)
+		}
+		return true
 	}
 	return isNoKnowledgeAnswer(raw.content)
 }

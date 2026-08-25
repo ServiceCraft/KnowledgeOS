@@ -53,6 +53,21 @@ func TestIsGreetingOnly(t *testing.T) {
 	}
 }
 
+func TestShouldTreatAsNoContext(t *testing.T) {
+	// No KB sources but the model answered via tools (YClients) → grounded, must NOT escalate.
+	if shouldTreatAsNoContext(rawAnswer{content: "У нас есть филиалы: ...", toolsInvoked: true}, nil) {
+		t.Fatal("tool-grounded answer with no KB sources must not be treated as no-context")
+	}
+	// No KB sources, tools used, but the model says it has no answer → escalate.
+	if !shouldTreatAsNoContext(rawAnswer{content: "К сожалению, такой информации нет.", toolsInvoked: true}, nil) {
+		t.Fatal("a no-knowledge answer must be treated as no-context even if tools were invoked")
+	}
+	// No KB sources and no tools → no-context.
+	if !shouldTreatAsNoContext(rawAnswer{content: "Что-то", toolsInvoked: false}, nil) {
+		t.Fatal("no sources and no tools must be treated as no-context")
+	}
+}
+
 func TestIsConversationStart(t *testing.T) {
 	for _, msg := range []string{"/start", " /start ", "/start@zoomedicbot", "/start welcome_promo", "/START"} {
 		if !isConversationStart(msg) {
