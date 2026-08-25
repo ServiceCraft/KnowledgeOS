@@ -134,6 +134,13 @@ func New(cfg *config.Config) (*App, error) {
 				gid = strconv.Itoa(comp.GroupID)
 			}
 		}
+		// Only auto-list when we can scope to a chain. A bare partner token lists
+		// YCLIENTS demo/example companies, not the clinic's filials — populating
+		// those would point the bot at the wrong data. Without a group_id we leave
+		// branches untouched and fall back to the single configured company_id.
+		if gid == "" {
+			return nil, nil
+		}
 		companies, err := cli.GetCompanies(ctx, gid)
 		if err != nil {
 			return nil, err
