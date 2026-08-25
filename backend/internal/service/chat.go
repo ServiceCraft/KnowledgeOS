@@ -880,12 +880,17 @@ func (s *ChatService) applyGuardrails(cfg guardrailConfig, raw rawAnswer) *domai
 		ValidCitations: len(cites.Valid),
 	})
 
+	// Tool-grounded answers (e.g. YClients services/slots/branches) carry no KB
+	// sources, so the source-count confidence gate would always score them 0 and
+	// escalate. They are grounded in tool output — skip the low-confidence gate.
+	toolGrounded := raw.toolsInvoked && len(sources) == 0
+
 	if cfg.requireCitations && len(cites.Valid) == 0 && len(sources) > 0 {
 		msg := s.refusalMessage(cfg, reasonMissingCite, sources, raw.usage)
 		msg.ConfidenceScore = &confidence
 		return msg
 	}
-	if cfg.minConfidence > 0 && confidence < cfg.minConfidence {
+	if cfg.minConfidence > 0 && confidence < cfg.minConfidence && !toolGrounded {
 		msg := s.refusalMessage(cfg, reasonLowConfidence, sources, raw.usage)
 		msg.ConfidenceScore = &confidence
 		return msg
