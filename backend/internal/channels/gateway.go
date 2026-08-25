@@ -470,8 +470,18 @@ func (g *Gateway) ackWebhookUpdate(ctx context.Context, companyID uuid.UUID, cha
 	return nil
 }
 
+// shouldAckBeforeProcessing reports whether the webhook must return 200 to the
+// provider immediately and run the LLM in the background, delivering the reply
+// via a separate sendMessage. Telegram/MAX/VK all send replies out-of-band, so
+// processing synchronously would keep the provider's connection open for the
+// whole tool-loop — the provider times out, retries, and duplicates the update
+// (observed as pending updates and duplicated /start greetings). Ack first.
 func shouldAckBeforeProcessing(channel domain.ChatChannel) bool {
-	return channel == domain.ChatChannelVK
+	switch channel {
+	case domain.ChatChannelTelegram, domain.ChatChannelMAX, domain.ChatChannelVK:
+		return true
+	}
+	return false
 }
 
 func shouldAckRejected(channel domain.ChatChannel) bool {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 func TestGatewayHandleWebhookCreatesSessionAndSendsReply(t *testing.T) {
 	companyID := uuid.New()
 	repo := &fakeRepo{sessions: map[uuid.UUID]*domain.ChatSession{}}
-	adapter := &fakeAdapter{channel: domain.ChatChannelTelegram, kind: domain.SecretKindTelegram}
+	adapter := &fakeAdapter{channel: domain.ChatChannelTelegram, kind: domain.SecretKindTelegram, updateID: "evt-1"}
 	gateway := NewGateway(
 		repo,
 		&fakeChat{reply: "Ответ"},
@@ -32,6 +33,11 @@ func TestGatewayHandleWebhookCreatesSessionAndSendsReply(t *testing.T) {
 	}
 	if resp == nil || resp.Status != http.StatusOK {
 		t.Fatalf("unexpected response: %#v", resp)
+	}
+	// The session is created synchronously; the reply is delivered by the async
+	// worker, so wait for it to finish before asserting the outbound message.
+	if !repo.waitStatus(repo.updateKey(companyID, domain.ChatChannelTelegram, "evt-1"), "done", time.Second) {
+		t.Fatalf("expected async processing to finish (status done)")
 	}
 	if len(repo.sessions) != 1 {
 		t.Fatalf("expected one session, got %d", len(repo.sessions))
@@ -77,7 +83,7 @@ func TestGatewayHandleWebhookRecordsInboundDuringHandoff(t *testing.T) {
 		chat,
 		&fakeSettings{enabledModules: json.RawMessage(`{"channels":{"telegram":true}}`)},
 		&fakeSecrets{},
-		&fakeAdapter{channel: domain.ChatChannelTelegram, kind: domain.SecretKindTelegram},
+		&fakeAdapter{channel: domain.ChatChannelTelegram, kind: domain.SecretKindTelegram, updateID: "evt-1"},
 	)
 	gateway.SetHandoff(handoff)
 
@@ -87,6 +93,10 @@ func TestGatewayHandleWebhookRecordsInboundDuringHandoff(t *testing.T) {
 	}
 	if resp == nil || resp.Status != http.StatusOK {
 		t.Fatalf("unexpected response: %#v", resp)
+	}
+	// Inbound recording during handoff runs in the async worker now.
+	if !repo.waitStatus(repo.updateKey(companyID, domain.ChatChannelTelegram, "evt-1"), "done", time.Second) {
+		t.Fatalf("expected async processing to finish (status done)")
 	}
 	if chat.calls != 0 {
 		t.Fatalf("bot was called during handoff")
@@ -118,6 +128,12 @@ func TestGatewayHandleWebhookSkipsDuplicateUpdate(t *testing.T) {
 			t.Fatalf("unexpected response: %#v", resp)
 		}
 	}
+	// Telegram acks first and processes asynchronously; the duplicate is dropped
+	// synchronously at claim time, so only one async worker ever runs.
+	key := repo.updateKey(companyID, domain.ChatChannelTelegram, "evt-1")
+	if !repo.waitStatus(key, "done", time.Second) {
+		t.Fatalf("expected async processing to finish (status done)")
+	}
 	if chat.calls != 1 {
 		t.Fatalf("expected one bot call for duplicate update, got %d", chat.calls)
 	}
@@ -139,13 +155,18 @@ func TestGatewayHandleWebhookRetriesAfterTransientFailure(t *testing.T) {
 		adapter,
 	)
 
-	// First delivery fails during bot processing and must not be recorded as done.
-	if _, err := gateway.HandleWebhook(context.Background(), companyID, domain.ChatChannelTelegram, WebhookRequest{}); err == nil {
-		t.Fatalf("expected error on first (failing) delivery")
+	// Telegram acks first, so HandleWebhook returns 200 immediately; the first
+	// (failing) delivery is handled by the async worker and must leave the update
+	// reclaimable (status failed), not done.
+	if _, err := gateway.HandleWebhook(context.Background(), companyID, domain.ChatChannelTelegram, WebhookRequest{}); err != nil {
+		t.Fatalf("HandleWebhook returned error: %v", err)
 	}
 	key := repo.updateKey(companyID, domain.ChatChannelTelegram, "evt-1")
-	if repo.statuses[key] != "failed" {
-		t.Fatalf("expected failed status after transient error, got %q", repo.statuses[key])
+	if !repo.waitStatus(key, "failed", time.Second) {
+		t.Fatalf("expected failed status after transient error")
+	}
+	if chat.calls != 1 {
+		t.Fatalf("expected one bot call after first (failing) delivery, got %d", chat.calls)
 	}
 
 	// Provider retry of the same update must be reprocessed, not dropped as duplicate.
@@ -156,14 +177,14 @@ func TestGatewayHandleWebhookRetriesAfterTransientFailure(t *testing.T) {
 	if resp == nil || resp.Status != http.StatusOK {
 		t.Fatalf("unexpected retry response: %#v", resp)
 	}
+	if !repo.waitStatus(key, "done", time.Second) {
+		t.Fatalf("expected done status after successful retry")
+	}
 	if chat.calls != 2 {
 		t.Fatalf("expected two bot calls (fail + retry), got %d", chat.calls)
 	}
 	if adapter.sendCalls != 1 || adapter.sent == nil || adapter.sent.Text != "Ответ" {
 		t.Fatalf("expected reply delivered on retry, got %d sends %#v", adapter.sendCalls, adapter.sent)
-	}
-	if repo.statuses[key] != "done" {
-		t.Fatalf("expected done status after successful retry, got %q", repo.statuses[key])
 	}
 }
 
@@ -318,9 +339,28 @@ func (s *fakeSecrets) GetPlaintextWithMetadata(context.Context, uuid.UUID, domai
 }
 
 type fakeRepo struct {
+	mu       sync.Mutex
 	sessions map[uuid.UUID]*domain.ChatSession
 	updates  map[string]bool
 	statuses map[string]string
+}
+
+// waitStatus blocks until the update reaches the wanted terminal status or the
+// deadline passes. Locking the same mutex the async worker uses to set the
+// status also publishes the worker's prior writes (chat/adapter counters), so
+// tests can read them race-free once the terminal status is observed.
+func (r *fakeRepo) waitStatus(key, want string, d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		r.mu.Lock()
+		got := r.statuses[key]
+		r.mu.Unlock()
+		if got == want {
+			return true
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	return false
 }
 
 func (r *fakeRepo) CreateSession(_ context.Context, companyID uuid.UUID, session *domain.ChatSession) error {
@@ -373,6 +413,8 @@ func (r *fakeRepo) StartChannelUpdate(_ context.Context, companyID uuid.UUID, ch
 	if r.statuses == nil {
 		r.statuses = map[string]string{}
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	key := r.updateKey(companyID, channel, updateID)
 	switch r.statuses[key] {
 	case "done", "processing":
@@ -388,6 +430,8 @@ func (r *fakeRepo) MarkChannelUpdateDone(_ context.Context, companyID uuid.UUID,
 	if updateID == "" {
 		return nil
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.statuses == nil {
 		r.statuses = map[string]string{}
 	}
@@ -399,6 +443,8 @@ func (r *fakeRepo) MarkChannelUpdateFailed(_ context.Context, companyID uuid.UUI
 	if updateID == "" {
 		return nil
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.statuses == nil {
 		r.statuses = map[string]string{}
 	}
