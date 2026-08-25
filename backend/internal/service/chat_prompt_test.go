@@ -107,15 +107,14 @@ func TestBuildSystemPromptGreetsOnlyOnFirstReply(t *testing.T) {
 	}
 }
 
-// Needs discovery: the client rejected one-line lookups and asked for several
-// questions at once, each on its own line with a dash.
+// Needs discovery: the bot must gather the client's situation, but ask one
+// question at a time (a conversation, not a bulk questionnaire).
 func TestBuildSystemPromptRequiresNeedsDiscovery(t *testing.T) {
 	prompt := buildSystemPrompt(promptSettings(), nil, nil, true)
 	for _, want := range []string{
 		"Выявление потребностей",
 		"Односложные справки недопустимы",
-		"от 2 до 5 в одном сообщении",
-		"каждый вопрос с новой строки и начинается с дефиса",
+		"по одному уточняющему вопросу за раз",
 		"Не переспрашивай то, что клиент уже назвал",
 		"пересчитай ответ под новые данные",
 	} {
@@ -124,10 +123,13 @@ func TestBuildSystemPromptRequiresNeedsDiscovery(t *testing.T) {
 		}
 	}
 
-	// The old rule directly contradicted the requirement and must stay removed.
+	// Old rules that contradict the current behaviour must stay removed:
+	// the terse «one concrete question» rule, and the bulk «2–5 questions
+	// at once» list format the client later rejected.
 	for _, absent := range []string{
 		"задай один конкретный вопрос",
 		"обычно 1–4 предложения",
+		"от 2 до 5 в одном сообщении",
 	} {
 		if strings.Contains(prompt, absent) {
 			t.Fatalf("prompt must no longer contain %q:\n%s", absent, prompt)
