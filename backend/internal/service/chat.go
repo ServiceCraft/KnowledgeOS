@@ -579,10 +579,12 @@ type rawAnswer struct {
 	usage            llm.Usage
 	handoffRequested bool
 	handoffReason    string
-	// toolsInvoked is true when the model executed at least one data tool
-	// (anything but request_handoff). Such answers are grounded in tool output —
-	// e.g. YClients services/slots — even when they carry no KB sources, so the
-	// no-context guardrail must not escalate them to an operator.
+	// toolsInvoked is true when the model executed at least one live-data tool —
+	// anything but request_handoff and search_knowledge. Such answers are grounded
+	// in tool output (e.g. YClients services/slots) and legitimately carry no KB
+	// citations, so the no-context / missing-citation / low-confidence guardrails
+	// must not escalate them to an operator. search_knowledge is excluded because
+	// it yields citable KB sources that we still want the model to cite.
 	toolsInvoked bool
 }
 
@@ -791,7 +793,10 @@ func (s *ChatService) runToolLoop(ctx context.Context, companyID, sessionID uuid
 				if handoffReason == "" {
 					handoffReason = requestHandoffReason(content)
 				}
-			} else {
+			} else if call.Name != "search_knowledge" {
+				// Live-data tools (YClients, pricing, service info) ground the answer
+				// without producing citable KB sources. search_knowledge is excluded:
+				// its results are citable and citation enforcement should still apply.
 				toolsInvoked = true
 			}
 			collected = append(collected, srcs...)
@@ -880,12 +885,14 @@ func (s *ChatService) applyGuardrails(cfg guardrailConfig, raw rawAnswer) *domai
 		ValidCitations: len(cites.Valid),
 	})
 
-	// Tool-grounded answers (e.g. YClients services/slots/branches) carry no KB
-	// sources, so the source-count confidence gate would always score them 0 and
-	// escalate. They are grounded in tool output — skip the low-confidence gate.
-	toolGrounded := raw.toolsInvoked && len(sources) == 0
+	// Answers grounded in live-data tools (YClients services/slots/branches) are
+	// backed by tool output, not KB. They legitimately carry no citations and
+	// score 0 on the source-count confidence, so both the missing-citation and
+	// low-confidence gates would wrongly escalate them — skip both. A prefetched
+	// KB source the model did not use must not trip the citation gate here either.
+	toolGrounded := raw.toolsInvoked
 
-	if cfg.requireCitations && len(cites.Valid) == 0 && len(sources) > 0 {
+	if cfg.requireCitations && len(cites.Valid) == 0 && len(sources) > 0 && !toolGrounded {
 		msg := s.refusalMessage(cfg, reasonMissingCite, sources, raw.usage)
 		msg.ConfidenceScore = &confidence
 		return msg
