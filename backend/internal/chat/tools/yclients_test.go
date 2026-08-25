@@ -140,9 +140,43 @@ func TestYClientsGetServices(t *testing.T) {
 }
 
 func TestParseYClientsMetaNumericCompanyID(t *testing.T) {
-	// company_id stored as a JSON number must still resolve to a string.
-	companyID, _ := parseYClientsMeta(json.RawMessage(`{"company_id":777,"api_base":"https://x"}`))
-	if companyID != "777" {
-		t.Fatalf("expected 777, got %q", companyID)
+	// Legacy single company_id stored as a JSON number must still resolve to a
+	// single branch whose id is the stringified number.
+	branches, baseURL := parseYClientsMeta(json.RawMessage(`{"company_id":777,"api_base":"https://x"}`))
+	if len(branches) != 1 || branches[0].ID != "777" {
+		t.Fatalf("expected single branch 777, got %+v", branches)
+	}
+	if baseURL != "https://x" {
+		t.Fatalf("expected api_base https://x, got %q", baseURL)
+	}
+}
+
+func TestParseYClientsMetaBranches(t *testing.T) {
+	branches, _ := parseYClientsMeta(json.RawMessage(`{"branches":[{"id":"111","name":"На Ленина","address":"ул. Ленина, 1"},{"company_id":222,"name":"На Мира"}]}`))
+	if len(branches) != 2 {
+		t.Fatalf("expected 2 branches, got %d (%+v)", len(branches), branches)
+	}
+	if branches[0].ID != "111" || branches[0].Name != "На Ленина" || branches[0].Address != "ул. Ленина, 1" {
+		t.Fatalf("unexpected first branch: %+v", branches[0])
+	}
+	if branches[1].ID != "222" || branches[1].Name != "На Мира" {
+		t.Fatalf("unexpected second branch: %+v", branches[1])
+	}
+}
+
+func TestSelectBranch(t *testing.T) {
+	one := []yclientsBranch{{ID: "111"}}
+	if id, errRes := selectBranch(one, ""); errRes != nil || id != "111" {
+		t.Fatalf("single branch should auto-select: id=%q err=%v", id, errRes)
+	}
+	multi := []yclientsBranch{{ID: "111"}, {ID: "222"}}
+	if _, errRes := selectBranch(multi, ""); errRes == nil {
+		t.Fatal("multi branch without company_id must return an error result asking to clarify")
+	}
+	if id, errRes := selectBranch(multi, "222"); errRes != nil || id != "222" {
+		t.Fatalf("valid company_id should select it: id=%q err=%v", id, errRes)
+	}
+	if _, errRes := selectBranch(multi, "999"); errRes == nil {
+		t.Fatal("unknown company_id must return an error result")
 	}
 }

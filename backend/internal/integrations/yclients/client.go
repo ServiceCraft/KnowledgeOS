@@ -107,11 +107,54 @@ type BookResult struct {
 	RecordHash string `json:"record_hash"`
 }
 
+// Company is a filial (branch). A YCLIENTS chain groups several companies under
+// one group_id; the partner token can list them to auto-populate the bot's
+// filials without manual entry.
+type Company struct {
+	ID      int    `json:"id"`
+	Title   string `json:"title"`
+	Address string `json:"address"`
+	GroupID int    `json:"group_id"`
+}
+
 // envelope is the standard YCLIENTS response wrapper.
 type envelope struct {
 	Success bool            `json:"success"`
 	Data    json.RawMessage `json:"data"`
 	Meta    json.RawMessage `json:"meta"`
+}
+
+// GetCompany returns a single company, including its group_id — used to discover
+// the chain a known filial belongs to so we can list its siblings.
+func (c *Client) GetCompany(ctx context.Context, companyID string) (Company, error) {
+	data, err := c.get(ctx, fmt.Sprintf("company/%s", url.PathEscape(companyID)), nil)
+	if err != nil {
+		return Company{}, err
+	}
+	var comp Company
+	if err := json.Unmarshal(data, &comp); err != nil {
+		return Company{}, fmt.Errorf("decode company: %w", err)
+	}
+	return comp, nil
+}
+
+// GetCompanies lists active companies (filials). When groupID is non-empty the
+// list is scoped to that chain; the partner token authorizes the call.
+func (c *Client) GetCompanies(ctx context.Context, groupID string) ([]Company, error) {
+	q := url.Values{}
+	if strings.TrimSpace(groupID) != "" {
+		q.Set("group_id", strings.TrimSpace(groupID))
+	}
+	q.Set("active", "1")
+	data, err := c.get(ctx, "companies", q)
+	if err != nil {
+		return nil, err
+	}
+	var companies []Company
+	if err := json.Unmarshal(data, &companies); err != nil {
+		return nil, fmt.Errorf("decode companies: %w", err)
+	}
+	return companies, nil
 }
 
 // GetServices lists services bookable online for the company.

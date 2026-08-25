@@ -26,6 +26,7 @@ func toolNamesFor(t *testing.T, modules string) map[string]bool {
 	t.Helper()
 	svc := &ChatService{toolset: stubToolset{defs: []llm.Tool{
 		{Name: "search_knowledge"},
+		{Name: tools.ToolYClientsListBranches},
 		{Name: tools.ToolYClientsGetServices},
 		{Name: tools.ToolYClientsGetStaff},
 		{Name: tools.ToolYClientsGetTimes},
@@ -42,7 +43,7 @@ func toolNamesFor(t *testing.T, modules string) map[string]bool {
 func TestYClientsReadOnlyWithoutAutobook(t *testing.T) {
 	names := toolNamesFor(t, `{"yclients_booking":true}`)
 
-	for _, read := range []string{tools.ToolYClientsGetServices, tools.ToolYClientsGetStaff, tools.ToolYClientsGetTimes} {
+	for _, read := range []string{tools.ToolYClientsListBranches, tools.ToolYClientsGetServices, tools.ToolYClientsGetStaff, tools.ToolYClientsGetTimes} {
 		if !names[read] {
 			t.Fatalf("read tool %q must be advertised when yclients_booking is on", read)
 		}

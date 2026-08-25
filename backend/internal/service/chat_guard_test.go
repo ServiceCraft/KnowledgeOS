@@ -53,6 +53,23 @@ func TestIsGreetingOnly(t *testing.T) {
 	}
 }
 
+func TestIsConversationStart(t *testing.T) {
+	for _, msg := range []string{"/start", " /start ", "/start@zoomedicbot", "/start welcome_promo", "/START"} {
+		if !isConversationStart(msg) {
+			t.Fatalf("isConversationStart(%q) = false, want true", msg)
+		}
+	}
+	for _, msg := range []string{"start", "давай начнём", "/help", "как записаться /start"} {
+		if isConversationStart(msg) {
+			t.Fatalf("isConversationStart(%q) = true, want false", msg)
+		}
+	}
+	// /start must produce the greeting stub, never an operator escalation.
+	if msg := preLLMGuard("/start"); msg == nil || msg.Content != chatGreetingStub {
+		t.Fatalf("preLLMGuard(/start) must return the greeting stub, got %+v", msg)
+	}
+}
+
 func TestExplicitHandoffRequestPhrases(t *testing.T) {
 	positives := []string{
 		"Мне нужен живой человек, позовите оператора, пожалуйста.",

@@ -31,7 +31,7 @@ func TestBotHandlerGetSecretForEditReturnsPlaintext(t *testing.T) {
 		t.Fatalf("Set() error = %v", err)
 	}
 
-	h := NewBotHandler(nil, secrets)
+	h := NewBotHandler(nil, secrets, nil)
 	router := chi.NewRouter()
 	router.Get("/admin/bot/secrets/{kind}/edit", func(w http.ResponseWriter, r *http.Request) {
 		ctx := middleware.SetCompanyID(r.Context(), companyID)

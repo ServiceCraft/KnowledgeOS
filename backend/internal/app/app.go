@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -122,11 +123,37 @@ func New(cfg *config.Config) (*App, error) {
 	yclientsFactory := func(partnerToken, baseURL string) tools.YClientsAPI {
 		return yclients.NewClient(nil, yclients.Config{PartnerToken: partnerToken, BaseURL: baseURL})
 	}
+	// yclientsBranchFetcher auto-discovers a clinic's filials from its partner
+	// token: prefer an explicit group_id, else derive the chain from a known
+	// company_id, else list everything the token can see.
+	yclientsBranchFetcher := func(ctx context.Context, token, baseURL, groupID, companyID string) ([]handler.YClientsBranchInfo, error) {
+		cli := yclients.NewClient(nil, yclients.Config{PartnerToken: token, BaseURL: baseURL})
+		gid := strings.TrimSpace(groupID)
+		if gid == "" && strings.TrimSpace(companyID) != "" {
+			if comp, err := cli.GetCompany(ctx, strings.TrimSpace(companyID)); err == nil && comp.GroupID > 0 {
+				gid = strconv.Itoa(comp.GroupID)
+			}
+		}
+		companies, err := cli.GetCompanies(ctx, gid)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]handler.YClientsBranchInfo, 0, len(companies))
+		for _, c := range companies {
+			out = append(out, handler.YClientsBranchInfo{
+				ID:      strconv.Itoa(c.ID),
+				Name:    c.Title,
+				Address: c.Address,
+			})
+		}
+		return out, nil
+	}
 	chatTools := tools.NewRegistry(
 		tools.NewSearchKnowledgeTool(retrieverSvc, cfg.RAGHybridTopK),
 		tools.NewGetPricingTool(pricingSvc),
 		tools.NewGetServiceInfoTool(articleSvc, qaSvc, pricingSvc),
 		tools.NewRequestHandoffTool(),
+		tools.NewListYClientsBranchesTool(tenantSecretSvc, yclientsFactory),
 		tools.NewGetYClientsServicesTool(tenantSecretSvc, yclientsFactory),
 		tools.NewGetYClientsStaffTool(tenantSecretSvc, yclientsFactory),
 		tools.NewGetYClientsTimesTool(tenantSecretSvc, yclientsFactory),
@@ -182,7 +209,7 @@ func New(cfg *config.Config) (*App, error) {
 		User:     handler.NewUserHandler(userSvc),
 		Call:     handler.NewCallHandler(callSvc),
 		Backup:   handler.NewBackupHandler(snapshotSvc),
-		Bot:      handler.NewBotHandler(botSettingsSvc, tenantSecretSvc),
+		Bot:      handler.NewBotHandler(botSettingsSvc, tenantSecretSvc, yclientsBranchFetcher),
 		RAG:      handler.NewRAGHandler(ragIndexerSvc, retrieverSvc),
 		Chat:     handler.NewChatHandler(chatSvc),
 		Handoff:  handler.NewHandoffHandler(handoffSvc),

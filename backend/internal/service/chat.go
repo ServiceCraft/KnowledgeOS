@@ -93,6 +93,7 @@ func (s *ChatService) SetHandoffEscalator(handoff chatHandoffEscalator) {
 // truthy for the tool to be advertised and executed. Tools not listed here are
 // always available to every company.
 var moduleGatedTools = map[string]string{
+	tools.ToolYClientsListBranches:  tools.ModuleYClientsBooking,
 	tools.ToolYClientsGetServices:   tools.ModuleYClientsBooking,
 	tools.ToolYClientsGetStaff:      tools.ModuleYClientsBooking,
 	tools.ToolYClientsGetTimes:      tools.ModuleYClientsBooking,
@@ -426,6 +427,15 @@ func looksLikePromptInjection(content string) bool {
 // nothing and needlessly escalates to an operator.
 var greetingOnlyRe = regexp.MustCompile(`^(?:(?:здравствуйте|здрасте|привет|приветик|приветствую|хай|хеллоу|хелло|hello|hi|hey|добрый день|добрый вечер|доброе утро|доброго времени суток|доброго дня|лол|кек|ок|окей|ага|угу|спасибо|благодарю)\s*)+$`)
 
+// isConversationStart matches the «/start» command messengers send when a user
+// first opens the bot (optionally «/start@botname» or with a deep-link payload).
+// It is a conversation-start signal, not a question: without this it flows into
+// RAG, finds nothing and needlessly escalates to an operator.
+func isConversationStart(content string) bool {
+	text := strings.ToLower(strings.TrimSpace(content))
+	return text == "/start" || strings.HasPrefix(text, "/start@") || strings.HasPrefix(text, "/start ")
+}
+
 func isGreetingOnly(content string) bool {
 	text := strings.ToLower(strings.TrimSpace(content))
 	if text == "" || len([]rune(text)) > 60 {
@@ -463,7 +473,7 @@ func preLLMGuard(content string) *domain.ChatMessage {
 		message.CitedSourceIDs = []byte("[]")
 		return message
 	}
-	if isGreetingOnly(content) {
+	if isConversationStart(content) || isGreetingOnly(content) {
 		message := assistantMessage(chatGreetingStub, nil, nil, llm.Usage{})
 		message.GuardrailAction = domain.GuardrailActionAnswer
 		message.CitedSourceIDs = []byte("[]")
@@ -1142,6 +1152,7 @@ func buildSystemPrompt(settings *domain.BotSettings, sources []domain.ChatSource
 	}
 	hasTools := len(toolNames) > 0
 	hasBooking := toolNames[tools.ToolYClientsCreateBooking]
+	hasYClientsRead := toolNames[tools.ToolYClientsGetServices]
 	hasHandoff := toolNames[tools.RequestHandoffToolName]
 
 	var b strings.Builder
@@ -1198,6 +1209,13 @@ func buildSystemPrompt(settings *domain.BotSettings, sources []domain.ChatSource
 	if hasTools {
 		b.WriteString("Если данных в <context> недостаточно, сначала вызови инструменты (search_knowledge, get_pricing, get_service_info) и используй их результаты как дополнительный контекст. Не придумывай данные вне <context> и результатов инструментов.\n")
 	}
+	if hasYClientsRead {
+		b.WriteString("Филиалы YClients: вызови yclients_list_branches, чтобы узнать доступные филиалы клиники. Если филиалов несколько — обязательно уточни у клиента, какой филиал ему удобен (спроси не больше одного раза), и во все инструменты YClients (услуги, специалисты, время")
+		if hasBooking {
+			b.WriteString(", запись")
+		}
+		b.WriteString(") передавай company_id этого филиала. Если филиал один — используй его автоматически, не спрашивая. Разные филиалы имеют разные услуги, цены, специалистов и расписание — не смешивай их.\n")
+	}
 	if hasBooking {
 		b.WriteString("Запись на приём веди строго по шагам через инструменты YClients:\n")
 		b.WriteString("1. Уточни, на какую услугу клиент хочет записаться; список услуг даёт yclients_get_services.\n")
@@ -1209,8 +1227,8 @@ func buildSystemPrompt(settings *domain.BotSettings, sources []domain.ChatSource
 		b.WriteString("Называй клиенту услуги и специалистов по названиям и именам — числовые id не показывай. Услуги, специалистов и время бери только из инструментов, не выдумывай их.\n")
 		b.WriteString("Запись ведёшь именно ты, через эти инструменты. Ответы из <context> вида «передадим администратору», «оставьте заявку на обратный звонок», «администратор свяжется с вами» для записи НЕ используй — вместо этого выполняй шаги записи сам.\n")
 		b.WriteString("Данные, которые клиент уже назвал (услуга, дата, время, имя, телефон, филиал), не переспрашивай. Не задавай один и тот же уточняющий вопрос дважды: если клиент на него не ответил или сказал «любой»/«всё равно» — продолжай запись без этого уточнения.\n")
-		b.WriteString("Про филиал спроси не больше одного раза. На каждое сообщение клиента в процессе записи делай следующий шаг через инструменты (yclients_get_services, yclients_get_staff, yclients_get_times), а не отвечай очередным уточнением.\n")
-		b.WriteString("Запись создаётся в системе онлайн-записи клиники и не требует выбора филиала. Когда услуга, специалист, время, имя и телефон известны и клиент подтвердил — сразу вызывай yclients_create_booking; не откладывай запись из-за филиала.\n")
+		b.WriteString("На каждое сообщение клиента в процессе записи делай следующий шаг через инструменты (yclients_get_services, yclients_get_staff, yclients_get_times), а не отвечай очередным уточнением.\n")
+		b.WriteString("Услуги, специалиста и время бери из того же филиала (company_id), который выбрал клиент. Когда филиал (если их несколько), услуга, специалист, время, имя и телефон известны и клиент подтвердил — сразу вызывай yclients_create_booking, передав тот же company_id.\n")
 	}
 	if hasHandoff {
 		b.WriteString("Если клиент просит живого оператора или ты не можешь помочь по базе знаний и инструментам — вызови request_handoff.\n")

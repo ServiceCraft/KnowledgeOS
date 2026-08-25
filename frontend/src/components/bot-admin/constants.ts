@@ -93,7 +93,7 @@ export const CHANNEL_METADATA_FIELDS: Record<
 
 export const SERVICE_SECRET_HINTS: Partial<Record<SecretKind, string>> = {
   llm: 'IAM-токен или API-ключ сервисного аккаунта Yandex Cloud для YandexGPT. Где взять: console.cloud.yandex.ru → Сервисные аккаунты → Создать API-ключ или получить IAM-токен. Без этого секрета бот не сможет генерировать ответы.',
-  yclients: 'Партнёрский токен YClients (Bearer) для онлайн-записи клиентов. Где взять: developers.yclients.com → раздел для партнёров. Плюс укажите ID филиала (company_id). Работает только при включённом модуле «Запись в YClients».',
+  yclients: 'Партнёрский токен YClients (Bearer). Где взять: developers.yclients.com → раздел для партнёров. Филиалы клиники подтянутся автоматически по ключу. Чтобы ограничить конкретной сетью, можно указать group_id или один company_id — тогда подтянем филиалы этой сети. Работает при включённом модуле «Слоты YClients (чтение)».',
 };
 
 // SERVICE_SECRET_METADATA_FIELDS defines extra config fields (beyond the secret
@@ -104,11 +104,16 @@ export const SERVICE_SECRET_METADATA_FIELDS: Partial<
 > = {
   yclients: [
     {
+      key: 'group_id',
+      label: 'ID сети (group_id), необязательно',
+      placeholder: 'Например 12345',
+      hint: 'Идентификатор сети YClients. Если указан — подтянем все филиалы этой сети. Оставьте пустым, чтобы подтянуть филиалы, доступные по ключу.',
+    },
+    {
       key: 'company_id',
-      label: 'ID филиала (company_id)',
+      label: 'ID филиала (company_id), необязательно',
       placeholder: 'Например 123456',
-      hint: 'Числовой идентификатор филиала YClients, в который создаются записи. Виден в URL кабинета YClients и в настройках филиала.',
-      required: true,
+      hint: 'Один известный филиал. Если group_id не задан, по нему определим сеть и подтянем остальные филиалы. Оставьте пустым — подтянем всё, что доступно по ключу.',
     },
   ],
 };
