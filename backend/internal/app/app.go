@@ -37,6 +37,8 @@ type App struct {
 	cfg          *config.Config
 	db           *gorm.DB
 	ragIndexer   *service.RAGIndexerService
+	gateway      *channels.Gateway
+	secretStore  *store.TenantSecretStore
 	workerCancel context.CancelFunc
 	server       *http.Server
 }
@@ -243,9 +245,11 @@ func New(cfg *config.Config) (*App, error) {
 	})
 
 	return &App{
-		cfg:        cfg,
-		db:         db,
-		ragIndexer: ragIndexerSvc,
+		cfg:         cfg,
+		db:          db,
+		ragIndexer:  ragIndexerSvc,
+		gateway:     channelGateway,
+		secretStore: tenantSecretStore,
 		server: &http.Server{
 			Addr:              ":8080",
 			Handler:           router,
@@ -260,6 +264,9 @@ func (a *App) Run() error {
 	a.workerCancel = cancel
 	if a.cfg.RAGWorkerEnabled {
 		a.ragIndexer.StartWorker(workerCtx)
+	}
+	if a.cfg.TelegramPolling {
+		go a.gateway.RunPolling(workerCtx, a.secretStore, domain.ChatChannelTelegram)
 	}
 
 	errCh := make(chan error, 1)

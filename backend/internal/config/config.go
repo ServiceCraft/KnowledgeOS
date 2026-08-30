@@ -75,6 +75,12 @@ type Config struct {
 	// over plain HTTP (local dev) or behind a proxy without X-Forwarded-Proto.
 	PublicWebhookBaseURL string `env:"PUBLIC_WEBHOOK_BASE_URL"`
 
+	// TelegramPolling switches the Telegram channel from webhook delivery to
+	// long-polling (getUpdates). Needed where Telegram cannot reach our webhook —
+	// e.g. inbound Telegram traffic is filtered to a RU-hosted VM — since polling
+	// runs over the bot's own outbound connection.
+	TelegramPolling bool `env:"TELEGRAM_POLLING, default=false"`
+
 	MaxExtraCACertFile string `env:"MAX_EXTRA_CA_CERT_FILE"`
 	MaxExtraCACertPEM  string `env:"MAX_EXTRA_CA_CERT_PEM"`
 	MaxInsecureTLS     bool   `env:"MAX_INSECURE_SKIP_VERIFY, default=false"`

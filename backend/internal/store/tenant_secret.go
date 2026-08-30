@@ -28,6 +28,20 @@ func (s *TenantSecretStore) List(ctx context.Context, companyID uuid.UUID) ([]do
 	return secrets, nil
 }
 
+// ListCompanyIDsByKind returns the companies that have a secret of the given
+// kind — used by the channel poller to discover which tenants to poll.
+func (s *TenantSecretStore) ListCompanyIDsByKind(ctx context.Context, kind domain.SecretKind) ([]uuid.UUID, error) {
+	applog.TraceCall(ctx, "store.TenantSecretStore.ListCompanyIDsByKind")
+	var ids []uuid.UUID
+	if err := s.db.WithContext(ctx).
+		Model(&domain.TenantSecret{}).
+		Where("kind = ?", kind).
+		Pluck("company_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 // Get executes the store.TenantSecretStore.Get operation.
 func (s *TenantSecretStore) Get(ctx context.Context, companyID uuid.UUID, kind domain.SecretKind) (*domain.TenantSecret, error) {
 	applog.TraceCall(ctx, "store.TenantSecretStore.Get")

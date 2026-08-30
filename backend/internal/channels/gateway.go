@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,6 +42,28 @@ type secretService interface {
 	GetPlaintextWithMetadata(ctx context.Context, companyID uuid.UUID, kind domain.SecretKind) (string, json.RawMessage, error)
 }
 
+// PolledUpdate is one update fetched via long-polling (getUpdates).
+type PolledUpdate struct {
+	UpdateID int64
+	Raw      json.RawMessage
+}
+
+// PollingAdapter is implemented by adapters that support long-polling instead of
+// (or as a fallback for) webhooks — used where the provider cannot reach our
+// webhook. secretMetadataKey names the metadata field holding the shared secret
+// that inbound parsing validates, so the poller can replay updates through the
+// same pipeline.
+type PollingAdapter interface {
+	GetUpdates(ctx context.Context, token string, offset int64) ([]PolledUpdate, int64, error)
+	DeleteWebhook(ctx context.Context, token string) error
+}
+
+// pollCompanyLister enumerates the tenants configured for a channel so the
+// poller knows whom to poll.
+type pollCompanyLister interface {
+	ListCompanyIDsByKind(ctx context.Context, kind domain.SecretKind) ([]uuid.UUID, error)
+}
+
 type Gateway struct {
 	chats    domain.ChatRepository
 	chat     chatService
@@ -48,6 +71,10 @@ type Gateway struct {
 	secrets  secretService
 	handoff  handoffService
 	adapters map[domain.ChatChannel]Adapter
+
+	pollMu      sync.Mutex
+	pollOffsets map[string]int64
+	pollDeleted map[string]bool
 }
 
 type ChannelStatus struct {
@@ -70,7 +97,121 @@ func NewGateway(chats domain.ChatRepository, chat chatService, settings settings
 			byChannel[adapter.Channel()] = adapter
 		}
 	}
-	return &Gateway{chats: chats, chat: chat, settings: settings, secrets: secrets, adapters: byChannel}
+	return &Gateway{chats: chats, chat: chat, settings: settings, secrets: secrets, adapters: byChannel, pollOffsets: map[string]int64{}, pollDeleted: map[string]bool{}}
+}
+
+// RunPolling long-polls the given channel for every configured tenant until the
+// context is cancelled. Used where the provider cannot deliver webhooks to us
+// (e.g. Telegram inbound filtering on a RU-hosted VM): the bot pulls updates
+// over its own outbound connection and replays them through the normal pipeline.
+func (g *Gateway) RunPolling(ctx context.Context, lister pollCompanyLister, channel domain.ChatChannel) {
+	adapter, ok := g.adapters[channel]
+	if !ok {
+		return
+	}
+	poller, ok := adapter.(PollingAdapter)
+	if !ok {
+		applog.From(ctx).Warn().Str("channel", string(channel)).Msg("channel does not support polling")
+		return
+	}
+	applog.From(ctx).Info().Str("channel", string(channel)).Msg("channel polling started")
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		companyIDs, err := lister.ListCompanyIDsByKind(ctx, adapter.SecretKind())
+		if err != nil {
+			applog.From(ctx).Warn().Err(err).Msg("polling: list companies failed")
+		}
+		polled := false
+		for _, companyID := range companyIDs {
+			if got, err := g.pollCompanyOnce(ctx, companyID, channel, adapter, poller); err != nil {
+				applog.From(ctx).Debug().Err(err).Str("company_id", companyID.String()).Msg("polling: company poll failed")
+			} else if got {
+				polled = true
+			}
+		}
+		// getUpdates already blocks server-side; add a small idle gap only when
+		// there was nothing to fetch or no tenants, to avoid a tight loop.
+		if !polled {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Second):
+			}
+		}
+	}
+}
+
+// pollCompanyOnce fetches and dispatches one batch of updates for a tenant.
+// Returns true when at least one update was handled.
+func (g *Gateway) pollCompanyOnce(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, adapter Adapter, poller PollingAdapter) (bool, error) {
+	settings, err := g.settings.Get(ctx, companyID)
+	if err != nil {
+		return false, err
+	}
+	if !settings.Enabled || !channelEnabled(settings.EnabledModules, channel) {
+		return false, nil
+	}
+	token, metadata, err := g.secrets.GetPlaintextWithMetadata(ctx, companyID, adapter.SecretKind())
+	if err != nil || strings.TrimSpace(token) == "" {
+		return false, err
+	}
+	offsetKey := companyID.String() + "|" + string(channel)
+	g.pollMu.Lock()
+	offset := g.pollOffsets[offsetKey]
+	deleted := g.pollDeleted[offsetKey]
+	g.pollMu.Unlock()
+
+	// Webhook and getUpdates are mutually exclusive; drop any stale webhook once
+	// before the first poll so getUpdates does not 409.
+	if !deleted {
+		if err := poller.DeleteWebhook(ctx, token); err != nil {
+			return false, err
+		}
+		g.pollMu.Lock()
+		g.pollDeleted[offsetKey] = true
+		g.pollMu.Unlock()
+	}
+
+	updates, maxID, err := poller.GetUpdates(ctx, token, offset)
+	if err != nil {
+		return false, err
+	}
+	secret := webhookSecretFromMetadata(metadata)
+	for _, u := range updates {
+		req := WebhookRequest{
+			Headers: http.Header{"X-Telegram-Bot-Api-Secret-Token": []string{secret}},
+			Body:    u.Raw,
+		}
+		if _, err := g.HandleWebhook(ctx, companyID, channel, req); err != nil {
+			applog.From(ctx).Debug().Err(err).Str("company_id", companyID.String()).Msg("polling: handle update failed")
+		}
+	}
+	if maxID > 0 {
+		g.pollMu.Lock()
+		g.pollOffsets[offsetKey] = maxID + 1
+		g.pollMu.Unlock()
+	}
+	return len(updates) > 0, nil
+}
+
+// webhookSecretFromMetadata extracts the shared webhook secret so polled updates
+// pass the same inbound validation as real webhook deliveries.
+func webhookSecretFromMetadata(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var m map[string]any
+	if json.Unmarshal(raw, &m) != nil {
+		return ""
+	}
+	for _, key := range []string{"webhook_secret", "secret_token"} {
+		if v, ok := m[key].(string); ok && strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
 
 func (g *Gateway) SetHandoff(handoff handoffService) {

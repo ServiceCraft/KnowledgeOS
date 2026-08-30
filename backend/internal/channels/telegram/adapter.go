@@ -130,6 +130,52 @@ func (a *Adapter) ParseInbound(r channels.WebhookRequest, cfg channels.ChannelCo
 	}, nil, nil
 }
 
+// DeleteWebhook removes any registered webhook so long-polling (getUpdates) can
+// run. Webhook and getUpdates are mutually exclusive in the Bot API.
+func (a *Adapter) DeleteWebhook(ctx context.Context, token string) error {
+	return a.call(ctx, token, "deleteWebhook", map[string]interface{}{"drop_pending_updates": false})
+}
+
+// GetUpdates long-polls the Bot API for new updates starting at offset. It is
+// used where Telegram cannot reach our webhook (e.g. inbound filtering on a
+// RU-hosted VM): the bot pulls updates over its own outbound connection instead.
+// The server-side timeout is kept below the HTTP client timeout so the request
+// always returns cleanly.
+func (a *Adapter) GetUpdates(ctx context.Context, token string, offset int64) ([]channels.PolledUpdate, int64, error) {
+	payload := map[string]interface{}{
+		"timeout":         5,
+		"allowed_updates": []string{"message"},
+	}
+	if offset > 0 {
+		payload["offset"] = offset
+	}
+	data, err := a.callAPI(ctx, token, "getUpdates", payload)
+	if err != nil {
+		return nil, 0, err
+	}
+	var resp struct {
+		Result []json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, 0, applog.TraceErr(ctx, "telegram: decode getUpdates failed", err)
+	}
+	updates := make([]channels.PolledUpdate, 0, len(resp.Result))
+	var maxID int64
+	for _, raw := range resp.Result {
+		var head struct {
+			UpdateID int64 `json:"update_id"`
+		}
+		if err := json.Unmarshal(raw, &head); err != nil {
+			continue
+		}
+		updates = append(updates, channels.PolledUpdate{UpdateID: head.UpdateID, Raw: raw})
+		if head.UpdateID > maxID {
+			maxID = head.UpdateID
+		}
+	}
+	return updates, maxID, nil
+}
+
 func (a *Adapter) SendTyping(ctx context.Context, cfg channels.ChannelConfig, externalChatID string) error {
 	return a.call(ctx, cfg.Token, "sendChatAction", map[string]interface{}{
 		"chat_id": externalChatID,
