@@ -87,6 +87,11 @@ type Config struct {
 	// directly, as on RU-hosted VMs where Telegram is filtered.
 	TelegramAPIBaseURL string `env:"TELEGRAM_API_BASE_URL"`
 
+	// TelegramRelaySecret, when set, is sent as the X-Relay-Secret header on Bot
+	// API calls so a hardened relay worker can reject unauthorized traffic. Must
+	// match the worker's RELAY_SECRET. Empty means no header (open relay).
+	TelegramRelaySecret string `env:"TELEGRAM_RELAY_SECRET"`
+
 	MaxExtraCACertFile string `env:"MAX_EXTRA_CA_CERT_FILE"`
 	MaxExtraCACertPEM  string `env:"MAX_EXTRA_CA_CERT_PEM"`
 	MaxInsecureTLS     bool   `env:"MAX_INSECURE_SKIP_VERIFY, default=false"`

@@ -24,8 +24,9 @@ import (
 const defaultAPIBase = "https://api.telegram.org"
 
 type Adapter struct {
-	client  *http.Client
-	apiBase string
+	client      *http.Client
+	apiBase     string
+	relaySecret string
 }
 
 func New(client *http.Client) *Adapter {
@@ -36,6 +37,13 @@ func New(client *http.Client) *Adapter {
 // baseURL falls back to the public api.telegram.org. Use a relay base when the
 // host's network blocks Telegram directly.
 func NewWithBase(client *http.Client, baseURL string) *Adapter {
+	return NewWithRelay(client, baseURL, "")
+}
+
+// NewWithRelay is NewWithBase plus an optional shared secret sent as the
+// X-Relay-Secret header, matching a hardened relay worker (see
+// scripts/telegram-relay). Empty secret means the header is not sent.
+func NewWithRelay(client *http.Client, baseURL, relaySecret string) *Adapter {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
@@ -43,7 +51,7 @@ func NewWithBase(client *http.Client, baseURL string) *Adapter {
 	if base == "" {
 		base = defaultAPIBase
 	}
-	return &Adapter{client: client, apiBase: base}
+	return &Adapter{client: client, apiBase: base, relaySecret: strings.TrimSpace(relaySecret)}
 }
 
 func (a *Adapter) Channel() domain.ChatChannel { return domain.ChatChannelTelegram }
@@ -234,6 +242,9 @@ func (a *Adapter) callAPI(ctx context.Context, token, method string, payload map
 		return nil, applog.TraceErr(ctx, "telegram: build request failed", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if a.relaySecret != "" {
+		req.Header.Set("X-Relay-Secret", a.relaySecret)
+	}
 	resp, err := a.client.Do(req)
 	if err != nil {
 		return nil, applog.TraceErr(ctx, "telegram: api request failed", err)
