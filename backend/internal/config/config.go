@@ -81,6 +81,12 @@ type Config struct {
 	// runs over the bot's own outbound connection.
 	TelegramPolling bool `env:"TELEGRAM_POLLING, default=false"`
 
+	// TelegramAPIBaseURL overrides the Bot API origin (default
+	// https://api.telegram.org). Point it at a relay (e.g. a Cloudflare Worker
+	// forwarding to Telegram) when the host's network cannot reach Telegram
+	// directly, as on RU-hosted VMs where Telegram is filtered.
+	TelegramAPIBaseURL string `env:"TELEGRAM_API_BASE_URL"`
+
 	MaxExtraCACertFile string `env:"MAX_EXTRA_CA_CERT_FILE"`
 	MaxExtraCACertPEM  string `env:"MAX_EXTRA_CA_CERT_PEM"`
 	MaxInsecureTLS     bool   `env:"MAX_INSECURE_SKIP_VERIFY, default=false"`

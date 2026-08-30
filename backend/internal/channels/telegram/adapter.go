@@ -18,15 +18,32 @@ import (
 	"github.com/knowledgeos/backend/internal/service"
 )
 
+// defaultAPIBase is the public Bot API origin. It can be overridden with a relay
+// (e.g. a Cloudflare Worker forwarding to api.telegram.org) where the host cannot
+// reach Telegram directly — see TELEGRAM_API_BASE_URL.
+const defaultAPIBase = "https://api.telegram.org"
+
 type Adapter struct {
-	client *http.Client
+	client  *http.Client
+	apiBase string
 }
 
 func New(client *http.Client) *Adapter {
+	return NewWithBase(client, "")
+}
+
+// NewWithBase builds an adapter pointing at a custom Bot API base URL. An empty
+// baseURL falls back to the public api.telegram.org. Use a relay base when the
+// host's network blocks Telegram directly.
+func NewWithBase(client *http.Client, baseURL string) *Adapter {
 	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
+		client = &http.Client{Timeout: 15 * time.Second}
 	}
-	return &Adapter{client: client}
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		base = defaultAPIBase
+	}
+	return &Adapter{client: client, apiBase: base}
 }
 
 func (a *Adapter) Channel() domain.ChatChannel { return domain.ChatChannelTelegram }
@@ -212,7 +229,7 @@ func (a *Adapter) callAPI(ctx context.Context, token, method string, payload map
 	if err != nil {
 		return nil, applog.TraceErr(ctx, "telegram: marshal request failed", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("https://api.telegram.org/bot%s/%s", token, method), bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/bot%s/%s", a.apiBase, token, method), bytes.NewReader(body))
 	if err != nil {
 		return nil, applog.TraceErr(ctx, "telegram: build request failed", err)
 	}

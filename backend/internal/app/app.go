@@ -178,7 +178,7 @@ func New(cfg *config.Config) (*App, error) {
 		chatSvc,
 		botSettingsSvc,
 		tenantSecretSvc,
-		telegram.New(nil),
+		telegram.NewWithBase(nil, cfg.TelegramAPIBaseURL),
 		channelmax.New(maxClient),
 		vk.New(nil),
 	)
