@@ -34,7 +34,7 @@ func TestLooksLikePromptInjection(t *testing.T) {
 }
 
 func TestIsGreetingOnly(t *testing.T) {
-	positives := []string{"Здравствуйте!", "привет", "хай", "Добрый день!!", "лол", "ок", "Спасибо!", "Привет! Добрый день :)"}
+	positives := []string{"Здравствуйте!", "привет", "хай", "Добрый день!!", "Привет! Добрый день :)"}
 	for _, msg := range positives {
 		if !isGreetingOnly(msg) {
 			t.Fatalf("isGreetingOnly(%q) = false, want true", msg)
@@ -44,12 +44,40 @@ func TestIsGreetingOnly(t *testing.T) {
 		"Здравствуйте! Сколько стоит приём?",
 		"добрый день, работаете ли вы в праздники?",
 		"хочу записаться",
+		"спасибо, всё понятно", // closing, not greeting
 		"",
 	}
 	for _, msg := range negatives {
 		if isGreetingOnly(msg) {
 			t.Fatalf("isGreetingOnly(%q) = true, want false", msg)
 		}
+	}
+}
+
+func TestIsClosingOnly(t *testing.T) {
+	positives := []string{
+		"спасибо, всё понятно", "Спасибо!", "понятно, спасибо", "ясно", "ок",
+		"хорошо, спасибо", "до свидания", "спасибо большое", "всё понятно",
+	}
+	for _, msg := range positives {
+		if !isClosingOnly(msg) {
+			t.Fatalf("isClosingOnly(%q) = false, want true", msg)
+		}
+	}
+	negatives := []string{
+		"спасибо, а сколько стоит приём?",
+		"понятно, а можно записаться?",
+		"хочу записаться",
+		"",
+	}
+	for _, msg := range negatives {
+		if isClosingOnly(msg) {
+			t.Fatalf("isClosingOnly(%q) = true, want false", msg)
+		}
+	}
+	// A closing must produce the warm closing stub, not a cold refusal.
+	if msg := preLLMGuard("спасибо, всё понятно"); msg == nil || msg.Content != chatClosingStub {
+		t.Fatalf("preLLMGuard(closing) must return the closing stub, got %+v", msg)
 	}
 }
 

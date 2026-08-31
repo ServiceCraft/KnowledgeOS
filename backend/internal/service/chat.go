@@ -373,6 +373,7 @@ const (
 	chatInjectionStub = "Я виртуальный помощник клиники и отвечаю только на вопросы о её услугах. Могу подсказать по ценам, филиалам, услугам или записать на приём — что вас интересует?"
 	chatGreetingStub  = "Здравствуйте! Я виртуальный помощник клиники — подскажу по услугам, ценам и филиалам и помогу записаться на приём. Что вас интересует?"
 	chatIdentityStub  = "Я виртуальный помощник клиники — бот. Могу подсказать по услугам, ценам и филиалам и записать на приём, а если понадобится живой сотрудник — переключу на оператора. Чем помочь?"
+	chatClosingStub   = "Пожалуйста! Если появятся вопросы или понадобится записаться — обращайтесь. Здоровья вашему питомцу!"
 )
 
 // identityQuestionRe matches «а я с роботом разговариваю?», «ты бот или
@@ -425,7 +426,12 @@ func looksLikePromptInjection(content string) bool {
 // greetingOnlyRe matches messages that consist solely of greetings/small talk —
 // they get an instant friendly stub instead of a RAG round-trip that finds
 // nothing and needlessly escalates to an operator.
-var greetingOnlyRe = regexp.MustCompile(`^(?:(?:здравствуйте|здрасте|привет|приветик|приветствую|хай|хеллоу|хелло|hello|hi|hey|добрый день|добрый вечер|доброе утро|доброго времени суток|доброго дня|лол|кек|ок|окей|ага|угу|спасибо|благодарю)\s*)+$`)
+var greetingOnlyRe = regexp.MustCompile(`^(?:(?:здравствуйте|здрасте|привет|приветик|приветствую|хай|хеллоу|хелло|hello|hi|hey|добрый день|добрый вечер|доброе утро|доброго времени суток|доброго дня)\s*)+$`)
+
+// closingOnlyRe matches thank-you / acknowledgement / farewell messages that
+// carry no question. They must get a warm closing, not a RAG lookup that finds
+// nothing and coldly refuses (e.g. «спасибо, всё понятно»).
+var closingOnlyRe = regexp.MustCompile(`^(?:(?:спасибо|спс|благодарю|пожалуйста|понятно|понял|поняла|ясно|хорошо|отлично|супер|класс|ок|окей|окей|ага|угу|всё|все|всего|доброго|до|свидания|свидание|пока|прощайте|большое|это|спасибки|благодарствую|доброй|ночи|спокойной)\s*)+$`)
 
 // isConversationStart matches the «/start» command messengers send when a user
 // first opens the bot (optionally «/start@botname» or with a deep-link payload).
@@ -436,23 +442,38 @@ func isConversationStart(content string) bool {
 	return text == "/start" || strings.HasPrefix(text, "/start@") || strings.HasPrefix(text, "/start ")
 }
 
-func isGreetingOnly(content string) bool {
+// normalizeSmalltalk lowercases and strips punctuation so «Привет!!», «хай)) »,
+// «спасибо, всё понятно» normalize to bare words for the small-talk matchers.
+func normalizeSmalltalk(content string) string {
 	text := strings.ToLower(strings.TrimSpace(content))
 	if text == "" || len([]rune(text)) > 60 {
-		return false
+		return ""
 	}
-	// Keep only letters and spaces so «Привет!!», «хай)) » normalize cleanly.
 	cleaned := strings.Map(func(r rune) rune {
 		if unicode.IsLetter(r) || unicode.IsSpace(r) {
 			return r
 		}
 		return ' '
 	}, text)
-	cleaned = strings.Join(strings.Fields(cleaned), " ")
+	return strings.Join(strings.Fields(cleaned), " ")
+}
+
+func isGreetingOnly(content string) bool {
+	cleaned := normalizeSmalltalk(content)
 	if cleaned == "" {
 		return false
 	}
 	return greetingOnlyRe.MatchString(cleaned)
+}
+
+// isClosingOnly reports whether the message is only thanks / acknowledgement /
+// farewell with no question, so it gets a warm closing instead of a cold refusal.
+func isClosingOnly(content string) bool {
+	cleaned := normalizeSmalltalk(content)
+	if cleaned == "" {
+		return false
+	}
+	return closingOnlyRe.MatchString(cleaned)
 }
 
 // preLLMGuard runs the deterministic pre-LLM checks (injection, small talk) and
@@ -475,6 +496,12 @@ func preLLMGuard(content string) *domain.ChatMessage {
 	}
 	if isConversationStart(content) || isGreetingOnly(content) {
 		message := assistantMessage(chatGreetingStub, nil, nil, llm.Usage{})
+		message.GuardrailAction = domain.GuardrailActionAnswer
+		message.CitedSourceIDs = []byte("[]")
+		return message
+	}
+	if isClosingOnly(content) {
+		message := assistantMessage(chatClosingStub, nil, nil, llm.Usage{})
 		message.GuardrailAction = domain.GuardrailActionAnswer
 		message.CitedSourceIDs = []byte("[]")
 		return message
@@ -1228,12 +1255,20 @@ func buildSystemPrompt(settings *domain.BotSettings, sources []domain.ChatSource
 		b.WriteString("Если данных в <context> недостаточно, сначала вызови инструменты (search_knowledge, get_pricing, get_service_info) и используй их результаты как дополнительный контекст. Не придумывай данные вне <context> и результатов инструментов.\n")
 	}
 	if hasYClientsRead {
-		b.WriteString("Список филиалов, услуг, специалистов и свободного времени бери ТОЛЬКО из инструментов YClients, а не из базы знаний или памяти. Когда клиент спрашивает про филиалы или хочет записаться — сначала вызови yclients_list_branches и покажи полный актуальный список филиалов. Если филиалов несколько — обязательно уточни у клиента, какой филиал ему удобен (спроси не больше одного раза), и во все инструменты YClients (услуги, специалисты, время")
+		b.WriteString("Филиалы бери из yclients_list_branches — это точный список филиалов и адресов. Когда клиент хочет записаться, а филиалов несколько — покажи их списком и уточни нужный (спроси про филиал не больше одного раза, не «вслепую»). Во все инструменты YClients (услуги, специалисты, время")
 		if hasBooking {
 			b.WriteString(", запись")
 		}
-		b.WriteString(") передавай company_id этого филиала. Если филиал один — используй его автоматически, не спрашивая. Разные филиалы имеют разные услуги, цены, специалистов и расписание — не смешивай их.\n")
-		b.WriteString("Когда клиент хочет записаться — самый первый твой вопрос про филиал: вызови yclients_list_branches и покажи адреса филиалов списком, чтобы клиент выбрал. Не спрашивай про филиал «вслепую», без списка.\n")
+		b.WriteString(") передавай company_id выбранного филиала; если филиал один — используй его сам. Разные филиалы имеют разных специалистов и расписание — не смешивай. Если клиент уже назвал филиал — не показывай список повторно, просто подтверди выбор и иди дальше.\n")
+		b.WriteString("ВАЖНО про услуги и врачей: yclients_get_services и yclients_get_staff показывают только то, что доступно для ОНЛАЙН-записи в филиале — это НЕ полный перечень услуг и врачей клиники. Что клиника в принципе делает и каких врачей принимает — бери из базы знаний (<context>, get_service_info, search_knowledge). НИКОГДА не говори «у нас нет такой услуги/такого врача», опираясь только на yclients_get_services: если в онлайн-списке нет — проверь yclients_get_staff (там, например, есть хирурги) и базу знаний; если клиника это делает — подтверди и помоги записаться через оператора.\n")
+		b.WriteString("Свободное время показывай из yclients_get_times по выбранному специалисту и дате. Если на нужную дату окон нет — предложи другие даты и вызови yclients_get_times повторно, а не отказывай.\n")
+	}
+	if hasYClientsRead && !hasBooking {
+		b.WriteString("Запись: ты помогаешь подобрать приём, но саму запись оформляет оператор. Действуй так:\n")
+		b.WriteString("1. Пойми потребность — какое животное, что беспокоит, какой специалист или услуга нужны, какой филиал, желаемая дата. Спрашивай ПО ОДНОМУ вопросу за раз и не переспрашивай уже названное.\n")
+		b.WriteString("2. Нужного специалиста ищи в yclients_get_staff выбранного филиала и в базе знаний; если он есть — назови врача, при желании покажи свободное время из yclients_get_times.\n")
+		b.WriteString("3. Когда собрал филиал, животное, проблему, нужного специалиста/услугу и желаемую дату — передай диалог оператору через request_handoff, кратко перечислив собранное. Оператор подтвердит и оформит запись.\n")
+		b.WriteString("Если ты предложил оператора и клиент согласился («да», «давайте») — сразу вызови request_handoff, не переспрашивай.\n")
 	}
 	if hasBooking {
 		b.WriteString("Запись на приём веди строго по шагам через инструменты YClients:\n")
