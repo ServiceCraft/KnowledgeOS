@@ -219,6 +219,7 @@ func (s *ChatStore) UpdateSession(ctx context.Context, companyID uuid.UUID, sess
 	applog.TraceCall(ctx, "store.ChatStore.UpdateSession")
 	session.CompanyID = companyID
 	return s.db.WithContext(ctx).
+		Model(&domain.ChatSession{}).
 		Scopes(tenantScope(companyID)).
 		Where("id = ?", session.ID).
 		Updates(map[string]interface{}{
