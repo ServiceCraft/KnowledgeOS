@@ -354,6 +354,16 @@ func (g *Gateway) HandleWebhook(ctx context.Context, companyID uuid.UUID, channe
 		g.markWebhookFailed(ctx, companyID, channel, inbound.UpdateID, err)
 		return nil, err
 	}
+	// «/start» begins a fresh conversation: close the current session and open a
+	// clean one so a long prior history (including any queued operator handoff)
+	// does not bias the bot or swallow the new dialog.
+	if isConversationRestart(inbound.Text) {
+		if fresh, restartErr := g.restartSession(ctx, companyID, channel, inbound.ExternalChatID, session); restartErr == nil {
+			session = fresh
+		} else {
+			applog.From(ctx).Warn().Err(restartErr).Msg("session restart on /start failed; continuing with existing session")
+		}
+	}
 	if shouldAckBeforeProcessing(channel) {
 		g.processInboundAsync(companyID, channel, adapter, cfg, session, inbound)
 		return successResponse(channel), nil
@@ -442,14 +452,16 @@ func (g *Gateway) handleHandoffChoice(ctx context.Context, companyID uuid.UUID, 
 	}
 	switch inbound.CallbackData {
 	case callbackBackToBot:
-		if g.handoff == nil || session.State != domain.ChatStateWaitingOperator {
+		if session.State != domain.ChatStateWaitingOperator {
 			// Already handled/claimed or handoff off — nothing to take back.
 			return adapter.SendMessage(ctx, cfg, OutboundMessage{
 				ExternalChatID: inbound.ExternalChatID,
 				Text:           "Этот диалог уже у оператора. Он ответит вам здесь.",
 			})
 		}
-		if _, err := g.handoff.ReturnToBot(ctx, companyID, session.ID); err != nil {
+		// Start a clean conversation so the new topic is not biased by the prior
+		// (handed-off) history.
+		if _, err := g.restartSession(ctx, companyID, session.Channel, inbound.ExternalChatID, session); err != nil {
 			return err
 		}
 		return adapter.SendMessage(ctx, cfg, OutboundMessage{
@@ -581,6 +593,28 @@ func (g *Gateway) checkWebhook(ctx context.Context, companyID uuid.UUID, adapter
 		status.Error = err.Error()
 	}
 	return status
+}
+
+// isConversationRestart reports whether the message is a «/start» command, which
+// messengers send when a user (re)opens the bot and which we treat as an explicit
+// request to begin a new conversation.
+func isConversationRestart(text string) bool {
+	t := strings.ToLower(strings.TrimSpace(text))
+	return t == "/start" || strings.HasPrefix(t, "/start@") || strings.HasPrefix(t, "/start ")
+}
+
+// restartSession closes the given session and returns a fresh one for the same
+// external chat, so a new conversation starts with empty history.
+func (g *Gateway) restartSession(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, externalChatID string, current *domain.ChatSession) (*domain.ChatSession, error) {
+	if current != nil && current.State != domain.ChatStateClosed {
+		current.State = domain.ChatStateClosed
+		current.OperatorID = nil
+		if err := g.chats.UpdateSession(ctx, companyID, current); err != nil {
+			return nil, err
+		}
+	}
+	// GetSessionByExternal skips closed sessions, so this creates a clean one.
+	return g.getOrCreateSession(ctx, companyID, channel, externalChatID)
 }
 
 func (g *Gateway) getOrCreateSession(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, externalChatID string) (*domain.ChatSession, error) {

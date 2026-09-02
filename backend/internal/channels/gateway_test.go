@@ -136,8 +136,17 @@ func TestGatewayHandleWebhookRoutesCallback(t *testing.T) {
 	if !repo.waitStatus(repo.updateKey(companyID, domain.ChatChannelTelegram, "evt-1"), "done", time.Second) {
 		t.Fatalf("expected async processing to finish")
 	}
-	if handoff.returnedToID != sessionID {
-		t.Fatalf("callback did not trigger ReturnToBot; got %s", handoff.returnedToID)
+	// Back-to-bot restarts the conversation: the old session is closed and a fresh
+	// bot session exists for the same external chat.
+	repo.mu.Lock()
+	old := repo.sessions[sessionID]
+	repo.mu.Unlock()
+	if old == nil || old.State != domain.ChatStateClosed {
+		t.Fatalf("expected old session closed after back-to-bot, got %#v", old)
+	}
+	fresh, err := repo.GetSessionByExternal(context.Background(), companyID, domain.ChatChannelTelegram, externalID)
+	if err != nil || fresh.State != domain.ChatStateBot || fresh.ID == sessionID {
+		t.Fatalf("expected a fresh bot session after back-to-bot, got %#v err=%v", fresh, err)
 	}
 }
 
@@ -190,12 +199,15 @@ func TestProcessInboundBackToBotCallback(t *testing.T) {
 	gateway := NewGateway(&fakeRepo{sessions: map[uuid.UUID]*domain.ChatSession{}}, &fakeChat{}, &fakeSettings{}, &fakeSecrets{}, adapter)
 	gateway.SetHandoff(handoff)
 
+	repo := &fakeRepo{sessions: map[uuid.UUID]*domain.ChatSession{sessionID: session}}
+	gateway.chats = repo // restart uses the repo to close old + create fresh
+
 	inbound := &InboundMessage{Channel: domain.ChatChannelTelegram, ExternalChatID: externalID, CallbackData: callbackBackToBot, CallbackID: "cb-1"}
 	if err := gateway.processInbound(context.Background(), companyID, adapter, ChannelConfig{}, session, inbound); err != nil {
 		t.Fatalf("processInbound error: %v", err)
 	}
-	if handoff.returnedToID != sessionID {
-		t.Fatalf("expected ReturnToBot on session %s, got %s", sessionID, handoff.returnedToID)
+	if repo.sessions[sessionID].State != domain.ChatStateClosed {
+		t.Fatalf("expected old session closed, got %s", repo.sessions[sessionID].State)
 	}
 	if adapter.sent == nil || len(adapter.sent.Buttons) != 0 {
 		t.Fatalf("expected a plain confirmation message, got %#v", adapter.sent)
@@ -497,8 +509,11 @@ func (r *fakeRepo) GetSession(_ context.Context, companyID uuid.UUID, id uuid.UU
 	return &copy, nil
 }
 func (r *fakeRepo) GetSessionByExternal(_ context.Context, companyID uuid.UUID, channel domain.ChatChannel, externalChatID string) (*domain.ChatSession, error) {
+	// Mirror the real store: skip closed sessions (so a restart yields a fresh one).
 	for _, session := range r.sessions {
-		if session.CompanyID == companyID && session.Channel == channel && session.ExternalChatID != nil && *session.ExternalChatID == externalChatID {
+		if session.CompanyID == companyID && session.Channel == channel &&
+			session.ExternalChatID != nil && *session.ExternalChatID == externalChatID &&
+			session.State != domain.ChatStateClosed {
 			copy := *session
 			return &copy, nil
 		}
@@ -557,7 +572,13 @@ func (r *fakeRepo) MarkChannelUpdateFailed(_ context.Context, companyID uuid.UUI
 	r.statuses[r.updateKey(companyID, channel, updateID)] = "failed"
 	return nil
 }
-func (r *fakeRepo) UpdateSession(context.Context, uuid.UUID, *domain.ChatSession) error { return nil }
+func (r *fakeRepo) UpdateSession(_ context.Context, companyID uuid.UUID, session *domain.ChatSession) error {
+	if session != nil && session.ID != uuid.Nil {
+		copy := *session
+		r.sessions[session.ID] = &copy
+	}
+	return nil
+}
 func (r *fakeRepo) AppendMessage(context.Context, uuid.UUID, *domain.ChatMessage) error { return nil }
 func (r *fakeRepo) ListMessages(context.Context, uuid.UUID, uuid.UUID, int) ([]domain.ChatMessage, error) {
 	return nil, nil
