@@ -106,6 +106,67 @@ func TestGatewayHandleWebhookRecordsInboundDuringHandoff(t *testing.T) {
 	}
 }
 
+func TestProcessInboundWaitingOperatorOffersChoice(t *testing.T) {
+	companyID := uuid.New()
+	externalID := "external-1"
+	sessionID := uuid.New()
+	session := &domain.ChatSession{
+		BaseModel:      domain.BaseModel{ID: sessionID},
+		CompanyID:      companyID,
+		Channel:        domain.ChatChannelTelegram,
+		ExternalChatID: &externalID,
+		State:          domain.ChatStateWaitingOperator,
+	}
+	adapter := &fakeAdapter{channel: domain.ChatChannelTelegram, kind: domain.SecretKindTelegram}
+	handoff := &fakeHandoff{}
+	gateway := NewGateway(&fakeRepo{sessions: map[uuid.UUID]*domain.ChatSession{}}, &fakeChat{}, &fakeSettings{}, &fakeSecrets{}, adapter)
+	gateway.SetHandoff(handoff)
+
+	inbound := &InboundMessage{Channel: domain.ChatChannelTelegram, ExternalChatID: externalID, Text: "новый вопрос про прививки"}
+	if err := gateway.processInbound(context.Background(), companyID, adapter, ChannelConfig{}, session, inbound); err != nil {
+		t.Fatalf("processInbound error: %v", err)
+	}
+	// The new message must still reach the operator.
+	if handoff.text != "новый вопрос про прививки" {
+		t.Fatalf("inbound not recorded for operator: %q", handoff.text)
+	}
+	// And the client must be offered the two choice buttons.
+	if adapter.sent == nil || len(adapter.sent.Buttons) != 2 {
+		t.Fatalf("expected 2 choice buttons, got %#v", adapter.sent)
+	}
+	if adapter.sent.Buttons[0].Data != callbackWaitOperator || adapter.sent.Buttons[1].Data != callbackBackToBot {
+		t.Fatalf("unexpected button data: %#v", adapter.sent.Buttons)
+	}
+}
+
+func TestProcessInboundBackToBotCallback(t *testing.T) {
+	companyID := uuid.New()
+	externalID := "external-1"
+	sessionID := uuid.New()
+	session := &domain.ChatSession{
+		BaseModel:      domain.BaseModel{ID: sessionID},
+		CompanyID:      companyID,
+		Channel:        domain.ChatChannelTelegram,
+		ExternalChatID: &externalID,
+		State:          domain.ChatStateWaitingOperator,
+	}
+	adapter := &fakeAdapter{channel: domain.ChatChannelTelegram, kind: domain.SecretKindTelegram}
+	handoff := &fakeHandoff{}
+	gateway := NewGateway(&fakeRepo{sessions: map[uuid.UUID]*domain.ChatSession{}}, &fakeChat{}, &fakeSettings{}, &fakeSecrets{}, adapter)
+	gateway.SetHandoff(handoff)
+
+	inbound := &InboundMessage{Channel: domain.ChatChannelTelegram, ExternalChatID: externalID, CallbackData: callbackBackToBot, CallbackID: "cb-1"}
+	if err := gateway.processInbound(context.Background(), companyID, adapter, ChannelConfig{}, session, inbound); err != nil {
+		t.Fatalf("processInbound error: %v", err)
+	}
+	if handoff.returnedToID != sessionID {
+		t.Fatalf("expected ReturnToBot on session %s, got %s", sessionID, handoff.returnedToID)
+	}
+	if adapter.sent == nil || len(adapter.sent.Buttons) != 0 {
+		t.Fatalf("expected a plain confirmation message, got %#v", adapter.sent)
+	}
+}
+
 func TestGatewayHandleWebhookSkipsDuplicateUpdate(t *testing.T) {
 	companyID := uuid.New()
 	repo := &fakeRepo{sessions: map[uuid.UUID]*domain.ChatSession{}, updates: map[string]bool{}}
@@ -311,14 +372,20 @@ func (c *fakeChat) SendMessage(_ context.Context, companyID, sessionID uuid.UUID
 }
 
 type fakeHandoff struct {
-	sessionID uuid.UUID
-	text      string
+	sessionID    uuid.UUID
+	text         string
+	returnedToID uuid.UUID
 }
 
 func (h *fakeHandoff) RecordInbound(_ context.Context, _ uuid.UUID, session *domain.ChatSession, content string) (*domain.ChatMessage, error) {
 	h.sessionID = session.ID
 	h.text = content
 	return &domain.ChatMessage{SessionID: session.ID, Role: domain.ChatRoleUser, Content: content}, nil
+}
+
+func (h *fakeHandoff) ReturnToBot(_ context.Context, _ uuid.UUID, sessionID uuid.UUID) (*domain.ChatSession, error) {
+	h.returnedToID = sessionID
+	return &domain.ChatSession{BaseModel: domain.BaseModel{ID: sessionID}, State: domain.ChatStateBot}, nil
 }
 
 type fakeSettings struct {

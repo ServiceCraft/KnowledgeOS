@@ -70,7 +70,7 @@ func (a *Adapter) registerWebhook(ctx context.Context, token, webhookURL, secret
 	return a.call(ctx, token, "setWebhook", map[string]interface{}{
 		"url":                  webhookURL,
 		"secret_token":         secret,
-		"allowed_updates":      []string{"message"},
+		"allowed_updates":      []string{"message", "callback_query"},
 		"drop_pending_updates": false,
 	})
 }
@@ -122,6 +122,12 @@ func (a *Adapter) ParseInbound(r channels.WebhookRequest, cfg channels.ChannelCo
 	if subtle.ConstantTimeCompare([]byte(r.Headers.Get("X-Telegram-Bot-Api-Secret-Token")), []byte(secret)) != 1 {
 		return nil, nil, statusError(http.StatusUnauthorized, "invalid telegram webhook secret")
 	}
+	return parseTelegramUpdate(r.Body)
+}
+
+// parseTelegramUpdate decodes one Telegram update (message, edited_message or
+// callback_query) into an InboundMessage. Shared by webhook and long-polling.
+func parseTelegramUpdate(body []byte) (*channels.InboundMessage, *channels.WebhookResponse, error) {
 	var update struct {
 		UpdateID int64 `json:"update_id"`
 		Message  *struct {
@@ -136,9 +142,28 @@ func (a *Adapter) ParseInbound(r channels.WebhookRequest, cfg channels.ChannelCo
 				ID int64 `json:"id"`
 			} `json:"chat"`
 		} `json:"edited_message"`
+		CallbackQuery *struct {
+			ID      string `json:"id"`
+			Data    string `json:"data"`
+			Message *struct {
+				Chat struct {
+					ID int64 `json:"id"`
+				} `json:"chat"`
+			} `json:"message"`
+		} `json:"callback_query"`
 	}
-	if err := json.Unmarshal(r.Body, &update); err != nil {
+	if err := json.Unmarshal(body, &update); err != nil {
 		return nil, nil, statusError(http.StatusBadRequest, "invalid telegram update")
+	}
+	// Inline-button press.
+	if cq := update.CallbackQuery; cq != nil && strings.TrimSpace(cq.Data) != "" && cq.Message != nil {
+		return &channels.InboundMessage{
+			Channel:        domain.ChatChannelTelegram,
+			ExternalChatID: strconv.FormatInt(cq.Message.Chat.ID, 10),
+			UpdateID:       strconv.FormatInt(update.UpdateID, 10),
+			CallbackData:   strings.TrimSpace(cq.Data),
+			CallbackID:     cq.ID,
+		}, nil, nil
 	}
 	msg := update.Message
 	if msg == nil {
@@ -169,7 +194,7 @@ func (a *Adapter) DeleteWebhook(ctx context.Context, token string) error {
 func (a *Adapter) GetUpdates(ctx context.Context, token string, offset int64) ([]channels.PolledUpdate, int64, error) {
 	payload := map[string]interface{}{
 		"timeout":         5,
-		"allowed_updates": []string{"message"},
+		"allowed_updates": []string{"message", "callback_query"},
 	}
 	if offset > 0 {
 		payload["offset"] = offset
@@ -209,10 +234,33 @@ func (a *Adapter) SendTyping(ctx context.Context, cfg channels.ChannelConfig, ex
 }
 
 func (a *Adapter) SendMessage(ctx context.Context, cfg channels.ChannelConfig, msg channels.OutboundMessage) error {
-	return a.call(ctx, cfg.Token, "sendMessage", map[string]interface{}{
+	payload := map[string]interface{}{
 		"chat_id": msg.ExternalChatID,
 		"text":    msg.Text,
-	})
+	}
+	if len(msg.Buttons) > 0 {
+		row := make([]map[string]interface{}, 0, len(msg.Buttons))
+		for _, b := range msg.Buttons {
+			row = append(row, map[string]interface{}{"text": b.Text, "callback_data": b.Data})
+		}
+		// One button per row reads better on mobile.
+		rows := make([][]map[string]interface{}, 0, len(row))
+		for _, b := range row {
+			rows = append(rows, []map[string]interface{}{b})
+		}
+		payload["reply_markup"] = map[string]interface{}{"inline_keyboard": rows}
+	}
+	return a.call(ctx, cfg.Token, "sendMessage", payload)
+}
+
+// AnswerCallback acknowledges an inline-button press so the client's button
+// stops showing a loading spinner. Optional text shows as a small toast.
+func (a *Adapter) AnswerCallback(ctx context.Context, cfg channels.ChannelConfig, callbackID, text string) error {
+	payload := map[string]interface{}{"callback_query_id": callbackID}
+	if strings.TrimSpace(text) != "" {
+		payload["text"] = text
+	}
+	return a.call(ctx, cfg.Token, "answerCallbackQuery", payload)
 }
 
 func (a *Adapter) call(ctx context.Context, token, method string, payload map[string]interface{}) error {

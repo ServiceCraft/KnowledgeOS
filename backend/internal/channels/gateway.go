@@ -25,7 +25,16 @@ type chatService interface {
 
 type handoffService interface {
 	RecordInbound(ctx context.Context, companyID uuid.UUID, session *domain.ChatSession, content string) (*domain.ChatMessage, error)
+	// ReturnToBot takes a queued session back from the operator queue
+	// (waiting_operator → bot) when the client chooses to keep talking to the bot.
+	ReturnToBot(ctx context.Context, companyID, sessionID uuid.UUID) (*domain.ChatSession, error)
 }
+
+// Callback payloads for the "you're in the operator queue" choice buttons.
+const (
+	callbackWaitOperator = "handoff_wait"
+	callbackBackToBot    = "handoff_bot"
+)
 
 type webhookDeduper interface {
 	StartChannelUpdate(ctx context.Context, companyID uuid.UUID, channel domain.ChatChannel, updateID string) (bool, error)
@@ -374,8 +383,29 @@ func (g *Gateway) processInboundAsync(companyID uuid.UUID, channel domain.ChatCh
 }
 
 func (g *Gateway) processInbound(ctx context.Context, companyID uuid.UUID, adapter Adapter, cfg ChannelConfig, session *domain.ChatSession, inbound *InboundMessage) error {
+	// Inline-button press from the "operator queue" choice.
+	if inbound.CallbackData != "" {
+		return g.handleHandoffChoice(ctx, companyID, adapter, cfg, session, inbound)
+	}
 	if session.State != domain.ChatStateBot {
-		if g.handoff != nil && (session.State == domain.ChatStateWaitingOperator || session.State == domain.ChatStateOperator) {
+		if g.handoff != nil && session.State == domain.ChatStateWaitingOperator {
+			// Client wrote again while still in the queue (operator hasn't picked
+			// up). Record it for the operator, then offer to keep waiting or return
+			// to the bot for a new topic.
+			if _, err := g.handoff.RecordInbound(ctx, companyID, session, inbound.Text); err != nil {
+				return err
+			}
+			return adapter.SendMessage(ctx, cfg, OutboundMessage{
+				ExternalChatID: inbound.ExternalChatID,
+				Text:           "Ваше обращение уже передано оператору — он ответит здесь. Хотите дождаться оператора или вернуться к боту, чтобы задать новый вопрос?",
+				Buttons: []MessageButton{
+					{Text: "⏳ Дождаться оператора", Data: callbackWaitOperator},
+					{Text: "↩️ Вернуться к боту", Data: callbackBackToBot},
+				},
+			})
+		}
+		if g.handoff != nil && session.State == domain.ChatStateOperator {
+			// Operator is actively handling — just pass the message through.
 			_, err := g.handoff.RecordInbound(ctx, companyID, session, inbound.Text)
 			return err
 		}
@@ -398,6 +428,37 @@ func (g *Gateway) processInbound(ctx context.Context, companyID uuid.UUID, adapt
 		Sources:        exchange.Sources,
 	}); err != nil {
 		return err
+	}
+	return nil
+}
+
+// handleHandoffChoice acts on the "wait for operator" / "back to bot" buttons.
+func (g *Gateway) handleHandoffChoice(ctx context.Context, companyID uuid.UUID, adapter Adapter, cfg ChannelConfig, session *domain.ChatSession, inbound *InboundMessage) error {
+	// Acknowledge the press so the client's button stops spinning.
+	if answerer, ok := adapter.(CallbackAnswerer); ok && inbound.CallbackID != "" {
+		_ = answerer.AnswerCallback(ctx, cfg, inbound.CallbackID, "")
+	}
+	switch inbound.CallbackData {
+	case callbackBackToBot:
+		if g.handoff == nil || session.State != domain.ChatStateWaitingOperator {
+			// Already handled/claimed or handoff off — nothing to take back.
+			return adapter.SendMessage(ctx, cfg, OutboundMessage{
+				ExternalChatID: inbound.ExternalChatID,
+				Text:           "Этот диалог уже у оператора. Он ответит вам здесь.",
+			})
+		}
+		if _, err := g.handoff.ReturnToBot(ctx, companyID, session.ID); err != nil {
+			return err
+		}
+		return adapter.SendMessage(ctx, cfg, OutboundMessage{
+			ExternalChatID: inbound.ExternalChatID,
+			Text:           "Готово, снова на связи бот 🤖. Расскажите, что вас интересует — помогу с услугами, ценами, филиалами или записью.",
+		})
+	case callbackWaitOperator:
+		return adapter.SendMessage(ctx, cfg, OutboundMessage{
+			ExternalChatID: inbound.ExternalChatID,
+			Text:           "Хорошо, оставайтесь на линии — оператор ответит в этом чате. Ваше сообщение ему передано.",
+		})
 	}
 	return nil
 }

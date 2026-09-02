@@ -218,6 +218,15 @@ func (s *HandoffService) RecordInbound(ctx context.Context, companyID uuid.UUID,
 	return message, nil
 }
 
+// ReturnToBot is a client-initiated take-back of a queued session
+// (waiting_operator → bot): the client pressed «вернуться к боту» before an
+// operator picked up. No operator identity is required. A session already being
+// handled by an operator (ChatStateOperator) is not affected.
+func (s *HandoffService) ReturnToBot(ctx context.Context, companyID, sessionID uuid.UUID) (*domain.ChatSession, error) {
+	applog.TraceCall(ctx, "service.HandoffService.ReturnToBot")
+	return s.chats.TransitionSession(ctx, companyID, sessionID, []domain.ChatState{domain.ChatStateWaitingOperator}, domain.ChatStateBot, nil)
+}
+
 func (s *HandoffService) ReleaseToBot(ctx context.Context, companyID uuid.UUID, actor HandoffActor, sessionID uuid.UUID) (*domain.ChatSession, error) {
 	applog.TraceCall(ctx, "service.HandoffService.ReleaseToBot")
 	session, err := s.chats.GetSession(ctx, companyID, sessionID)
