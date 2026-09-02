@@ -106,6 +106,41 @@ func TestGatewayHandleWebhookRecordsInboundDuringHandoff(t *testing.T) {
 	}
 }
 
+func TestGatewayHandleWebhookRoutesCallback(t *testing.T) {
+	// A callback_query carries no Text; it must NOT be dropped by the empty-text
+	// guard — it has to reach processInbound so the button works.
+	companyID := uuid.New()
+	externalID := "external-1"
+	sessionID := uuid.New()
+	repo := &fakeRepo{sessions: map[uuid.UUID]*domain.ChatSession{
+		sessionID: {
+			BaseModel:      domain.BaseModel{ID: sessionID},
+			CompanyID:      companyID,
+			Channel:        domain.ChatChannelTelegram,
+			ExternalChatID: &externalID,
+			State:          domain.ChatStateWaitingOperator,
+		},
+	}}
+	adapter := &fakeAdapter{channel: domain.ChatChannelTelegram, kind: domain.SecretKindTelegram, updateID: "evt-1", callbackData: callbackBackToBot}
+	handoff := &fakeHandoff{}
+	gateway := NewGateway(repo, &fakeChat{}, &fakeSettings{enabledModules: json.RawMessage(`{"channels":{"telegram":true}}`)}, &fakeSecrets{}, adapter)
+	gateway.SetHandoff(handoff)
+
+	resp, err := gateway.HandleWebhook(context.Background(), companyID, domain.ChatChannelTelegram, WebhookRequest{})
+	if err != nil {
+		t.Fatalf("HandleWebhook error: %v", err)
+	}
+	if resp == nil || resp.Status != http.StatusOK {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+	if !repo.waitStatus(repo.updateKey(companyID, domain.ChatChannelTelegram, "evt-1"), "done", time.Second) {
+		t.Fatalf("expected async processing to finish")
+	}
+	if handoff.returnedToID != sessionID {
+		t.Fatalf("callback did not trigger ReturnToBot; got %s", handoff.returnedToID)
+	}
+}
+
 func TestProcessInboundWaitingOperatorOffersChoice(t *testing.T) {
 	companyID := uuid.New()
 	externalID := "external-1"
@@ -325,11 +360,12 @@ func TestGatewayHandleWebhookAcknowledgesDisabledVKChannel(t *testing.T) {
 }
 
 type fakeAdapter struct {
-	channel   domain.ChatChannel
-	kind      domain.SecretKind
-	sent      *OutboundMessage
-	updateID  string
-	sendCalls int
+	channel      domain.ChatChannel
+	kind         domain.SecretKind
+	sent         *OutboundMessage
+	updateID     string
+	sendCalls    int
+	callbackData string // when set, ParseInbound returns a callback instead of text
 }
 
 func (a *fakeAdapter) Channel() domain.ChatChannel   { return a.channel }
@@ -338,6 +374,9 @@ func (a *fakeAdapter) RegisterWebhook(context.Context, ChannelConfig, string) (b
 	return true, nil
 }
 func (a *fakeAdapter) ParseInbound(WebhookRequest, ChannelConfig) (*InboundMessage, *WebhookResponse, error) {
+	if a.callbackData != "" {
+		return &InboundMessage{Channel: a.channel, ExternalChatID: "external-1", UpdateID: a.updateID, CallbackData: a.callbackData, CallbackID: "cb-1"}, nil, nil
+	}
 	return &InboundMessage{Channel: a.channel, ExternalChatID: "external-1", UpdateID: a.updateID, Text: "Привет"}, nil, nil
 }
 func (a *fakeAdapter) SendTyping(context.Context, ChannelConfig, string) error { return nil }

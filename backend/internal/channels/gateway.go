@@ -303,7 +303,9 @@ func (g *Gateway) HandleWebhook(ctx context.Context, companyID uuid.UUID, channe
 	if immediate != nil {
 		return immediate, nil
 	}
-	if inbound == nil || strings.TrimSpace(inbound.Text) == "" {
+	// Drop empty updates, but let inline-button presses (callback_query) through —
+	// they carry no Text, only CallbackData.
+	if inbound == nil || (strings.TrimSpace(inbound.Text) == "" && inbound.CallbackData == "") {
 		return successResponse(channel), nil
 	}
 	if inbound.Channel == "" {
